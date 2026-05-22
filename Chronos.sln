@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chronos.Samples", "src\Chro
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chronos.Orchestration", "src\Chronos.Orchestration\Chronos.Orchestration.csproj", "{BB8BDFDB-D282-4D9A-8A03-DAD9E16AED8A}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{4442E936-7F46-476B-A60D-991757B9D5E0}"
+EndProject
 
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
