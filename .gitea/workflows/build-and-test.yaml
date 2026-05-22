@@ -1,0 +1,10 @@
+- name: Trigger downstream builds
+  if: github.ref == 'refs/heads/dev'
+  run: |
+      for repo in chronos-services chronos-samples; do
+        curl -X POST \
+          -H "Authorization: token ${{ secrets.CROSS_REPO_TRIGGER_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          "${{ env.GITEA_API_URL }}/repos/Chronos/$repo/dispatches" \
+          -d '{"event_type": "upstream-core-updated"}'
+      done
