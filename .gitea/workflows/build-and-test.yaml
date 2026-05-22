@@ -1,10 +1,102 @@
-- name: Trigger downstream builds
-  if: github.ref == 'refs/heads/dev'
-  run: |
-      for repo in chronos-services chronos-samples; do
-        curl -X POST \
-          -H "Authorization: token ${{ secrets.CROSS_REPO_TRIGGER_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          "${{ env.GITEA_API_URL }}/repos/Chronos/$repo/dispatches" \
-          -d '{"event_type": "upstream-core-updated"}'
-      done
+name: build-and-test
+
+on:
+  push:
+    branches: [dev]
+    tags: ['v*']
+  pull_request:
+    branches: [prod]
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  GITEA_FEED_URL: 'https://your-gitea-domain/api/packages/Chronos/nuget/index.json'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore --configfile nuget.config
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+      - name: Run determinism golden tests
+        run: dotnet test tests/Chronos.Determinism.Tests/ --no-build --configuration Release --filter "Category=Determinism"
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          BASE_VERSION=$(cat VERSION.txt | tr -d '\n\r ')
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="${BASE_VERSION}-dev.$(date +%Y%m%d).${{ github.run_number }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_stable=$([[ '${{ github.ref }}' == refs/tags/v* ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+      - name: Pack Chronos.Abstractions
+        run: >
+          dotnet pack src/Chronos.Abstractions/Chronos.Abstractions.csproj
+          --no-build --configuration Release
+          -p:PackageVersion=${{ steps.version.outputs.version }}
+          --output ./nupkgs
+
+      - name: Pack Chronos.Kernel
+        run: >
+          dotnet pack src/Chronos.Kernel/Chronos.Kernel.csproj
+          --no-build --configuration Release
+          -p:PackageVersion=${{ steps.version.outputs.version }}
+          --output ./nupkgs
+
+      - name: Publish to Gitea NuGet
+        if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          dotnet nuget push ./nupkgs/*.nupkg \
+            --source ${{ env.GITEA_FEED_URL }} \
+            --api-key ${{ secrets.LOCAL_NUGET_API_KEY }} \
+            --skip-duplicate
+
+      - name: Publish Chronos.Abstractions to nuget.org
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          dotnet nuget push ./nupkgs/Chronos.Abstractions.*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key ${{ secrets.NUGET_ORG_API_KEY }}
+
+      - name: Trigger downstream repos
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          for repo in chronos-services chronos-samples; do
+            curl -s -X POST \
+              -H "Authorization: token ${{ secrets.CROSS_REPO_TRIGGER_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ env.GIT_API_URL }}/api/v1/repos/Chronos/$repo/dispatches" \
+              -d '{"event_type":"upstream-core-updated"}'
+          done
+
+  # ---- CD placeholder (commented) ----
+  # publish-engine-docker:
+  #   needs: build
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Build and push Engine Docker image
+  #       uses: docker/build-push-action@v5
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: your-gitea-domain/chronos/engine:${{ steps.version.outputs.version }}
