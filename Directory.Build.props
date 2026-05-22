@@ -1,0 +1,19 @@
+<Project>
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+        <AnalysisLevel>latest-all</AnalysisLevel>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+        <NoWarn>$(NoWarn);NU1900</NoWarn>
+
+        <Version>0.1.0</Version>
+        <Authors>Sina Valizadeh</Authors>
+        <Company>Chronos</Company>
+        <Copyright>© 2026 Chronos</Copyright>
+    </PropertyGroup>
+</Project>

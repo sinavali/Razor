@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <WarningsAsErrors>nullable,CS1591</WarningsAsErrors>
+        <RootNamespace>Chronos.Orchestration</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Chronos.Core\Chronos.Core.csproj" />
+        <ProjectReference Include="..\Chronos.Sdk\Chronos.Sdk.csproj" />
+        <ProjectReference Include="..\Chronos.Messaging\Chronos.Messaging.csproj" />
+        <PackageReference Include="MiniExcel" Version="1.43.1" />
+        <PackageReference Include="Polly" Version="8.6.6" />
+        <PackageReference Include="Polly.Core" Version="8.6.6" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.7" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.7" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
+        <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.7" />
+    </ItemGroup>
+
+</Project>
