@@ -14,7 +14,7 @@ jobs:
               shell: bash
               run: |
                   git clone --depth 1 --branch ${{ github.ref_name }} \
-                    https://x-access-token:${{ secrets.GITHUB_TOKEN }}@${{ github.server_url }}/${{ github.repository }}.git .
+                    http://x-access-token:${{ secrets.GITHUB_TOKEN }}@${{ github.host }}/${{ github.repository }}.git .
 
             - name: Code style check
               run: dotnet format --verify-no-changes --severity error
