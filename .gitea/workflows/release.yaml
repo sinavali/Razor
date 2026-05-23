@@ -11,8 +11,11 @@ jobs:
             - name: Clone repository
               shell: bash
               run: |
+                  SERVER_URL="${{ gitea.server_url }}"
+                  HOST_PORT="${SERVER_URL#http://}"
+                  HOST_PORT="${HOST_PORT#https://}"
                   git clone --depth 1 --branch ${{ github.ref_name }} \
-                    http://x-access-token:${{ secrets.GITHUB_TOKEN }}@${{ github.host }}/${{ github.repository }}.git .
+                    http://x-access-token:${{ secrets.GITHUB_TOKEN }}@${HOST_PORT}/${{ github.repository }}.git .
 
             - name: Code style check
               run: dotnet format --verify-no-changes --severity error
