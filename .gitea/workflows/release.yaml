@@ -1,0 +1,97 @@
+name: Release
+
+on:
+    push:
+        tags: ['v*']
+
+env:
+    DOTNET_VERSION: '9.0.x'
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: ${{ env.DOTNET_VERSION }}
+
+            - name: Code style check
+              run: dotnet format --verify-no-changes --severity error
+
+            - name: Prepare nuget.config
+              shell: bash
+              run: |
+                  FEED_URL="${{ secrets.GIT_API_URL }}/api/packages/Chronos/nuget/index.json"
+                  sed -i "s|https://your-gitea-domain/api/packages/Chronos/nuget/index.json|${FEED_URL}|g" nuget.config
+
+            - name: Restore strong-name key
+              shell: bash
+              run: |
+                  echo "${{ secrets.STRONG_NAME_KEY }}" | base64 -d > ${{ runner.temp }}/chronos.snk
+                  echo "SNK_PATH=${{ runner.temp }}/chronos.snk" >> $GITHUB_ENV
+
+            - name: Restore dependencies
+              run: dotnet restore --configfile nuget.config
+
+            - name: Build
+              run: >
+                  dotnet build --no-restore --configuration Release
+                  -p:ContinuousIntegrationBuild=true
+                  -p:SignAssembly=true
+                  -p:AssemblyOriginatorKeyFile=${{ env.SNK_PATH }}
+
+            - name: Test
+              run: dotnet test --no-build --configuration Release --verbosity normal
+
+            - name: Run determinism golden tests
+              run: dotnet test tests/Chronos.Determinism.Tests/ --no-build --configuration Release --filter "Category=Determinism"
+
+            - name: Determine release version
+              id: version
+              shell: bash
+              run: |
+                  VERSION="${GITHUB_REF#refs/tags/v}"
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+            - name: Pack Chronos.Abstractions
+              run: >
+                  dotnet pack src/Chronos.Abstractions/Chronos.Abstractions.csproj
+                  --no-build --configuration Release
+                  -p:PackageVersion=${{ steps.version.outputs.version }}
+                  -p:SignAssembly=true
+                  -p:AssemblyOriginatorKeyFile=${{ env.SNK_PATH }}
+                  --output ./nupkgs
+
+            - name: Pack Chronos.Kernel
+              run: >
+                  dotnet pack src/Chronos.Kernel/Chronos.Kernel.csproj
+                  --no-build --configuration Release
+                  -p:PackageVersion=${{ steps.version.outputs.version }}
+                  -p:SignAssembly=true
+                  -p:AssemblyOriginatorKeyFile=${{ env.SNK_PATH }}
+                  --output ./nupkgs
+
+            - name: Verify NuGet packages
+              shell: bash
+              run: |
+                  for pkg in ./nupkgs/*.nupkg; do
+                    dotnet nuget verify "$pkg"
+                  done
+
+            - name: Publish to Gitea NuGet
+              run: |
+                  FEED_URL="${{ secrets.GIT_API_URL }}/api/packages/Chronos/nuget/index.json"
+                  dotnet nuget push ./nupkgs/*.nupkg \
+                    --source "${FEED_URL}" \
+                    --api-key ${{ secrets.LOCAL_NUGET_API_KEY }} \
+                    --skip-duplicate
+
+            - name: Publish Chronos.Abstractions to nuget.org
+              run: |
+                  dotnet nuget push ./nupkgs/Chronos.Abstractions.*.nupkg \
+                    --source https://api.nuget.org/v3/index.json \
+                    --api-key ${{ secrets.NUGET_ORG_API_KEY }}
