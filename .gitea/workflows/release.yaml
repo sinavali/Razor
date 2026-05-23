@@ -12,7 +12,7 @@ jobs:
               shell: bash
               run: |
                   git clone --depth 1 --branch ${{ github.ref_name }} \
-                    ${{ github.server_url }}/${{ github.repository }}.git .
+                    https://x-access-token:${{ secrets.GITHUB_TOKEN }}@${{ github.server_url }}/${{ github.repository }}.git .
 
             - name: Code style check
               run: dotnet format --verify-no-changes --severity error
