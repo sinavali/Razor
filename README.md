@@ -1,2 +1,2 @@
-# chronos-core
+# chronos abstractions
 
