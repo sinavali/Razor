@@ -13,8 +13,8 @@ jobs:
             - name: Clone repository
               shell: bash
               run: |
-                  git clone --depth 1 --branch ${{ github.ref_name }} ${{ github.repositoryUrl }} .
-                  git fetch --unshallow || true
+                  git clone --depth 1 --branch ${{ github.ref_name }} \
+                    https://x-access-token:${{ secrets.GITHUB_TOKEN }}@${{ github.server_url }}/${{ github.repository }}.git .
 
             - name: Code style check
               run: dotnet format --verify-no-changes --severity error
