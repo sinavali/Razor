@@ -10,8 +10,11 @@ jobs:
     build:
         runs-on: ubuntu-latest
         steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+            - name: Clone repository
+              shell: bash
+              run: |
+                  git clone --depth 1 --branch ${{ github.ref_name }} ${{ github.repositoryUrl }} .
+                  git fetch --unshallow || true
 
             - name: Code style check
               run: dotnet format --verify-no-changes --severity error
