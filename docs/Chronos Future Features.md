@@ -69,7 +69,7 @@
 - **Hardware Intrusion Detection** – Detect memory‑scanning tools (e.g. CheatEngine) to protect deployed proprietary strategies.
 
 ### 7. Developer Experience & SDK
-- **Jupyter Notebook Integration** – Python bridge to query `Chronos.Kernel` backtests directly from Pandas.
+- **Jupyter Notebook Integration** – Python bridge to query `Chronos.Core.Kernel` backtests directly from Pandas.
 - **F# / Python Bindings** – Enable strategy development in other languages via interop or embedded scripting.
 - **Mock Exchange Adapter** – Highly realistic local matching engine that simulates network latency and order book queues.
 - **Indicator Composition DSL** – Write `Indicators.Get("RSI(SMA(14),14)")` using a string‑based domain language.

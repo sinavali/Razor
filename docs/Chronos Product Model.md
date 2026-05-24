@@ -63,7 +63,7 @@ The Marketplace is a separate service, distinct from Chronos Cloud, that handles
 
 ### 2.4 Chronos Abstractions (Public SDK)
 
-To enable plugin development without exposing engine internals, Chronos Co. publishes a **public NuGet package** (`Chronos.Abstractions`). This package contains only the interfaces, abstract base classes, and data models required to compile an adapter or strategy. It includes no runtime implementations, no broker logic, no GA engine, and no pipeline code.
+To enable plugin development without exposing engine internals, Chronos Co. publishes a **public NuGet package** (`Chronos.Core.Abstractions`). This package contains only the interfaces, abstract base classes, and data models required to compile an adapter or strategy. It includes no runtime implementations, no broker logic, no GA engine, and no pipeline code.
 
 The package is proprietary but freely redistributable. It may be open‑sourced at a later stage.
 
@@ -85,7 +85,7 @@ The client must:
 ### 3.3 Plugin Development Environment
 Plugin developers:
 
-- Install the `Chronos.Abstractions` NuGet package in their .NET project.
+- Install the `Chronos.Core.Abstractions` NuGet package in their .NET project.
 - Compile their plugin DLL against the SDK interfaces.
 - Test locally by running the Chronos Engine in their development environment. The same engine binary is used; a free development license from Chronos Cloud limits capabilities (e.g., only a mock adapter for live testing, limited historical data range).
 - Deploy plugins by uploading them to Chronos Cloud (which then pushes to the engine) or, during local testing, by placing the DLL in a designated folder.
@@ -116,7 +116,7 @@ Each engine instance is registered in Chronos Cloud and assigned a unique API ke
 ### 5.1 Developer Workflow
 1. Register for a free developer account on Chronos Cloud.
 2. Download the Chronos Engine binary.
-3. Install the `Chronos.Abstractions` NuGet package.
+3. Install the `Chronos.Core.Abstractions` NuGet package.
 4. Develop a strategy or adapter locally.
 5. Run the engine with the development license key; it connects to Chronos Cloud.
 6. Use the Cloud web interface to upload the plugin, configure a backtest, and view results.

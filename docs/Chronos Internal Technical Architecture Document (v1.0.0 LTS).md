@@ -9,7 +9,7 @@
 
 ## 1. Introduction
 
-This document describes the complete internal architecture of the Chronos engine. It covers all closed‑source components (`Chronos.Kernel`, future `Chronos.Engine`, `Chronos.Cloud`) and explains how they interact with the public `Chronos.Abstractions` SDK and adapters.
+This document describes the complete internal architecture of the Chronos engine. It covers all closed‑source components (`Chronos.Core.Kernel`, future `Chronos.Engine`, `Chronos.Cloud`) and explains how they interact with the public `Chronos.Core.Abstractions` SDK and adapters.
 
 It is the primary technical reference for:
 
@@ -32,8 +32,8 @@ The repository `Chronos/` contains the following **source projects**:
 
 | Project | Role | Visibility | Notes |
 |---------|------|------------|-------|
-| `Chronos.Abstractions` | Public SDK contracts | Public (NuGet) | Interfaces, records, enums, utilities. No runtime logic. |
-| `Chronos.Kernel` | Core engine implementation | Private (closed‑source) | Backtesting, brokers, optimisation, telemetry. References `Chronos.Abstractions`. |
+| `Chronos.Core.Abstractions` | Public SDK contracts | Public (NuGet) | Interfaces, records, enums, utilities. No runtime logic. |
+| `Chronos.Core.Kernel` | Core engine implementation | Private (closed‑source) | Backtesting, brokers, optimisation, telemetry. References `Chronos.Core.Abstractions`. |
 | *(future)* `Chronos.Engine` | User‑facing executable | Private (closed‑source) | Bootstraps the engine, connects to Cloud, manages plugins and lifecycle. Will replace `Hosts.Console`. |
 | *(future)* `Chronos.Cloud` | SaaS control plane | Private (closed‑source) | Web application for management, monitoring, reporting. |
 | `Chronos.Samples` | Example plugins | External repo | Demonstrates adapter and strategy implementation. Not part of the engine build. |
@@ -42,33 +42,33 @@ The repository `Chronos/` contains the following **source projects**:
 
 - `Chronos.Orchestration` – temporary test project; to be deleted.
 - `Chronos.Messaging` – merged into Kernel.
-- `Chronos.Sdk` / `Chronos.Core` – old naming, replaced by `Chronos.Abstractions` and `Chronos.Kernel`.
+- `Chronos.Sdk` / `Chronos.Core` – old naming, replaced by `Chronos.Core.Abstractions` and `Chronos.Core.Kernel`.
 
 The solution currently includes `Hosts.Console` for development convenience; it will be replaced by `Chronos.Engine`.
 
 ### 2.2 Dependency Graph
 
 ```
-Chronos.Abstractions  (no dependencies beyond .NET 10 BCL)
+Chronos.Core.Abstractions  (no dependencies beyond .NET 10 BCL)
        ↑
-Chronos.Kernel        (references Chronos.Abstractions)
+Chronos.Core.Kernel        (references Chronos.Core.Abstractions)
        ↑
-Chronos.Engine        (references Chronos.Kernel, Chronos.Abstractions)
+Chronos.Engine        (references Chronos.Core.Kernel, Chronos.Core.Abstractions)
 ```
 
-Plugins (adapters, strategies) reference **only** `Chronos.Abstractions`. The kernel never references plugin assemblies directly; discovery is via reflection through isolated `AssemblyLoadContext`.
+Plugins (adapters, strategies) reference **only** `Chronos.Core.Abstractions`. The kernel never references plugin assemblies directly; discovery is via reflection through isolated `AssemblyLoadContext`.
 
 ### 2.3 Repository Layout
 
 ```
 Chronos/
 ├── src/
-│   ├── Chronos.Abstractions/
-│   ├── Chronos.Kernel/
+│   ├── Chronos.Core.Abstractions/
+│   ├── Chronos.Core.Kernel/
 │   ├── Chronos.Samples/           # Separate repo in production, here for development
 │   └── Hosts.Console/             # Temporary, will be removed
 ├── tests/
-│   ├── Chronos.Kernel.Tests/
+│   ├── Chronos.Core.Kernel.Tests/
 │   └── Chronos.Determinism.Tests/
 ├── docs/
 ├── Chronos.sln
@@ -154,14 +154,14 @@ Two implementations of `IClock` enforce the separation of market time and wall�
 
 ### 4.1 TickClock
 
-- **Location:** `Chronos.Kernel.Clock.TickClock`
+- **Location:** `Chronos.Core.Kernel.Clock.TickClock`
 - **Purpose:** All trading calculations (PnL, daily drawdown reset, holding cost timing, order execution timing in simulated broker).
 - **Operation:** `SetTickTime(long timestamp)` is called at the very start of every tick processing. `GetTimestamp()` returns the last set value. `GetUtcNow()` converts it to a `DateTime`.
 - **Used by:** `SimulatedBroker`, `LiveBroker` (for market operations), `BacktestRunner` (to advance the clock before each tick batch). Never by telemetry or scheduling.
 
 ### 4.2 SystemClock
 
-- **Location:** `Chronos.Kernel.Clock.SystemClock`
+- **Location:** `Chronos.Core.Kernel.Clock.SystemClock`
 - **Purpose:** Wall‑clock time for non‑trading concerns: in‑flight order guards, telemetry timestamps, health checks.
 - **Operation:** `GetTimestamp()` returns `Environment.TickCount64` (monotonic, unaffected by system time adjustments). `GetUtcNow()` returns `DateTime.UtcNow` (only used for logging/events).
 - **Used by:** `LiveBroker` (order guard timeouts, telemetry), `ChronosMetrics` (recording latencies), and future scheduling logic.

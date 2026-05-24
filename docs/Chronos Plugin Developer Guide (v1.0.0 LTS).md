@@ -36,7 +36,7 @@ Welcome to the Chronos Plugin Developer Guide. This document teaches you how to 
 
 ### 2.1 What is a Plugin?
 
-A plugin is a .NET assembly (DLL) that implements one or more public interfaces defined in the `Chronos.Abstractions` NuGet package. The Chronos engine discovers and loads plugins at runtime through isolated contexts. Plugins never reference the engine directly; they only depend on the SDK.
+A plugin is a .NET assembly (DLL) that implements one or more public interfaces defined in the `Chronos.Core.Abstractions` NuGet package. The Chronos engine discovers and loads plugins at runtime through isolated contexts. Plugins never reference the engine directly; they only depend on the SDK.
 
 ### 2.2 Plugin Types in v1.0.0 LTS
 
@@ -47,7 +47,7 @@ A plugin is a .NET assembly (DLL) that implements one or more public interfaces 
 
 ### 2.3 The Chronos SDK
 
-The SDK is the `Chronos.Abstractions` NuGet package. It contains **only** contracts (interfaces, abstract classes, records, enums, and utilities) – no runtime logic, no GA engine, no broker implementations. You can freely redistribute the package; it may be open‑sourced later.
+The SDK is the `Chronos.Core.Abstractions` NuGet package. It contains **only** contracts (interfaces, abstract classes, records, enums, and utilities) – no runtime logic, no GA engine, no broker implementations. You can freely redistribute the package; it may be open‑sourced later.
 
 **Important:** The SDK includes `ChronosRandom` (portable RNG), `TickWindow`, `BinaryDataMapper`, etc. These are helpers for your plugin code; you are free to use them or implement your own. However, any randomness that affects trading decisions must derive from the master seed (see §8.4).
 
@@ -71,7 +71,7 @@ Create a .NET class library targeting `net10.0` (or later LTS). Example `.csproj
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Chronos.Abstractions" Version="1.0.0" />
+        <PackageReference Include="Chronos.Core.Abstractions" Version="1.0.0" />
     </ItemGroup>
 
 </Project>
@@ -84,8 +84,8 @@ Create a .NET class library targeting `net10.0` (or later LTS). Example `.csproj
 Every plugin assembly must declare the **target SDK version** using `ChronosSdkVersionAttribute`. Adapters should also declare their own release version. Example `AssemblyInfo.cs`:
 
 ```csharp
-using Chronos.Abstractions.Plugins;
-using Chronos.Abstractions.Adapters;
+using Chronos.Core.Abstractions.Plugins;
+using Chronos.Core.Abstractions.Adapters;
 
 [assembly: ChronosSdkVersion("1.0.0")]
 [assembly: AdapterVersion("1.2.3")]          // Adapters only
@@ -505,7 +505,7 @@ During development, place the DLL in the engine’s designated `plugins/` folder
 
 ## 12. Further Resources
 
-- **Chronos.Abstractions** NuGet package: `https://nuget.org/packages/Chronos.Abstractions` (once published)
+- **Chronos.Core.Abstractions** NuGet package: `https://nuget.org/packages/Chronos.Core.Abstractions` (once published)
 - **Sample Plugins**: See the `Chronos.Samples` repository for complete working examples.
 - **Chronos Principles**: For a high‑level understanding of the engine’s design rules, read `ChronosPrinciples.md`.
 

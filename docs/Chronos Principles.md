@@ -1,7 +1,7 @@
 ## Chronos Principles — v1.0.0 LTS
 
 ### Purpose
-This document defines the immutable, mandatory design rules that govern the Chronos trading engine. Every line of code committed to the `Chronos.Abstractions` and `Chronos.Kernel` projects (and future `Chronos.Engine` and `Chronos.Cloud` projects) must respect these principles. They apply to the current v1.0.0 LTS release and all future versions unless explicitly superseded by a later constitution.
+This document defines the immutable, mandatory design rules that govern the Chronos trading engine. Every line of code committed to the `Chronos.Core.Abstractions` and `Chronos.Core.Kernel` projects (and future `Chronos.Engine` and `Chronos.Cloud` projects) must respect these principles. They apply to the current v1.0.0 LTS release and all future versions unless explicitly superseded by a later constitution.
 
 These principles are not implementation details; they are the **architectural contract**. All subsystems – backtesting, live trading, optimisation, reporting, plugin loading – derive from them.
 
@@ -220,7 +220,7 @@ When conflicts arise between these principles, the following precedence order ap
 
 ## 20. Enforcement
 - Pull requests that contradict these principles are rejected.
-- A static analysis step in CI verifies adherence (where automatable, e.g., no `DateTime.UtcNow` in `Chronos.Kernel/Brokers`, no `if (assetClass...)` in core).
+- A static analysis step in CI verifies adherence (where automatable, e.g., no `DateTime.UtcNow` in `Chronos.Core.Kernel/Brokers`, no `if (assetClass...)` in core).
 - The golden determinism test is a CI gate.
 - Adapter developers receive a separate SDK guide derived from this constitution, outlining the mandatory contracts they must honour.
 

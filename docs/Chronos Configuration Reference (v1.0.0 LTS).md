@@ -1,9 +1,9 @@
 ## Chronos Configuration Reference
 
-**Version:** 1.0.0 LTS  
-**Audience:** Plugin developers & power users  
-**Status:** Authoritative  
-**Last Updated:** 2026-05-19  
+**Version:** 1.0.0 LTS
+**Audience:** Plugin developers & power users
+**Status:** Authoritative
+**Last Updated:** 2026-05-19
 
 ---
 
@@ -15,8 +15,8 @@ This document catalogues every configuration object, enumeration, and data contr
 
 ## 1. Strategy Specification
 
-**Type:** `StrategySpecification` (immutable record)  
-**Namespace:** `Chronos.Abstractions.Strategies`  
+**Type:** `StrategySpecification` (immutable record)
+**Namespace:** `Chronos.Core.Abstractions.Strategies`
 
 ### Fields
 
@@ -65,8 +65,8 @@ This document catalogues every configuration object, enumeration, and data contr
 
 ## 2. Execution Specification
 
-**Type:** `ExecutionSpecification` (immutable record)  
-**Namespace:** `Chronos.Kernel.Configuration`  
+**Type:** `ExecutionSpecification` (immutable record)
+**Namespace:** `Chronos.Core.Kernel.Configuration`
 
 Controls the backtest or optimisation run environment.
 
@@ -120,8 +120,8 @@ Controls the backtest or optimisation run environment.
 
 ## 3. Optimization Specification
 
-**Type:** `OptimizationSpecification` (immutable record)  
-**Namespace:** `Chronos.Kernel.Configuration`  
+**Type:** `OptimizationSpecification` (immutable record)
+**Namespace:** `Chronos.Core.Kernel.Configuration`
 
 ### Fields
 
@@ -178,8 +178,8 @@ Controls the backtest or optimisation run environment.
 
 ## 4. Live Specification
 
-**Type:** `LiveSpecification` (immutable record)  
-**Namespace:** `Chronos.Kernel.Configuration`  
+**Type:** `LiveSpecification` (immutable record)
+**Namespace:** `Chronos.Core.Kernel.Configuration`
 
 ### Fields
 
@@ -223,8 +223,8 @@ Controls the backtest or optimisation run environment.
 
 ## 5. Neural Network Specification
 
-**Type:** `NeuralNetworkSpecification` (immutable record)  
-**Namespace:** `Chronos.Abstractions.Strategies`  
+**Type:** `NeuralNetworkSpecification` (immutable record)
+**Namespace:** `Chronos.Core.Abstractions.Strategies`
 
 ### Fields
 
@@ -253,8 +253,8 @@ Controls the backtest or optimisation run environment.
 
 ## 6. Symbol Properties
 
-**Type:** `SymbolProperties` (record)  
-**Namespace:** `Chronos.Abstractions.Shared`  
+**Type:** `SymbolProperties` (record)
+**Namespace:** `Chronos.Core.Abstractions.Shared`
 
 Adapters return this object per symbol; it defines exchange‑specific contract details.
 
@@ -291,8 +291,8 @@ Adapters return this object per symbol; it defines exchange‑specific contract 
 
 ## 7. TimeFrame
 
-**Type:** `TimeFrame` (enum)  
-**Namespace:** `Chronos.Abstractions.Shared`  
+**Type:** `TimeFrame` (enum)
+**Namespace:** `Chronos.Core.Abstractions.Shared`
 
 The integer value equals the duration in minutes.
 
@@ -319,8 +319,8 @@ The integer value equals the duration in minutes.
 
 ## 8. Gene Attributes
 
-**Type:** `GeneAttribute` (attribute)  
-**Namespace:** `Chronos.Abstractions.Strategies`  
+**Type:** `GeneAttribute` (attribute)
+**Namespace:** `Chronos.Core.Abstractions.Strategies`
 
 Used to decorate strategy properties for GA optimisation.
 
@@ -352,8 +352,8 @@ Used to decorate strategy properties for GA optimisation.
 
 ## 9. Data Action Policy
 
-**Type:** `DataActionPolicy` (enum)  
-**Namespace:** `Chronos.Abstractions.Adapters`  
+**Type:** `DataActionPolicy` (enum)
+**Namespace:** `Chronos.Core.Abstractions.Adapters`
 
 | Value | Meaning |
 |-------|---------|

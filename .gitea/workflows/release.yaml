@@ -55,18 +55,18 @@ jobs:
                   VERSION="${GITHUB_REF#refs/tags/v}"
                   echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-            - name: Pack Chronos.Abstractions
+            - name: Pack Chronos.Core.Abstractions
               run: >
-                  dotnet pack src/Chronos.Abstractions/Chronos.Abstractions.csproj
+                  dotnet pack src/Chronos.Core.Abstractions/Chronos.Core.Abstractions.csproj
                   --no-build --configuration Release
                   -p:PackageVersion=${{ steps.version.outputs.version }}
                   -p:SignAssembly=true
                   -p:AssemblyOriginatorKeyFile=${{ env.SNK_PATH }}
                   --output ./nupkgs
 
-            - name: Pack Chronos.Kernel
+            - name: Pack Chronos.Core.Kernel
               run: >
-                  dotnet pack src/Chronos.Kernel/Chronos.Kernel.csproj
+                  dotnet pack src/Chronos.Core.Kernel/Chronos.Core.Kernel.csproj
                   --no-build --configuration Release
                   -p:PackageVersion=${{ steps.version.outputs.version }}
                   -p:SignAssembly=true
@@ -88,8 +88,8 @@ jobs:
                     --api-key ${{ secrets.LOCAL_NUGET_API_KEY }} \
                     --skip-duplicate
 
-            - name: Publish Chronos.Abstractions to nuget.org
+            - name: Publish Chronos.Core.Abstractions to nuget.org
               run: |
-                  dotnet nuget push ./nupkgs/Chronos.Abstractions.*.nupkg \
+                  dotnet nuget push ./nupkgs/Chronos.Core.Abstractions.*.nupkg \
                     --source https://api.nuget.org/v3/index.json \
                     --api-key ${{ secrets.NUGET_ORG_API_KEY }}
