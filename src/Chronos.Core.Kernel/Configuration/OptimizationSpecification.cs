@@ -20,58 +20,31 @@ public enum WalkForwardMode
 public sealed record OptimizationSpecification
 {
     /// <summary>Master seed for reproducibility.</summary>
-    public int MasterSeed
-    {
-        get; init;
-    }
+    public required int MasterSeed { get; init; }
 
     /// <summary>Number of generations to evolve.</summary>
-    public int Generations
-    {
-        get; init;
-    }
+    public required int Generations { get; init; }
 
     /// <summary>Population size.</summary>
-    public int PopulationSize
-    {
-        get; init;
-    }
+    public required int PopulationSize { get; init; }
 
     /// <summary>Number of walk‑forward windows (1 = simple optimisation).</summary>
-    public int Windows
-    {
-        get; init;
-    }
+    public required int Windows { get; init; }
 
     /// <summary>Fraction of data used for training (0.0–1.0).</summary>
-    public double TrainSplit
-    {
-        get; init;
-    }
+    public required double TrainSplit { get; init; }
 
     /// <summary>Base mutation rate.</summary>
-    public double MutationRate
-    {
-        get; init;
-    }
+    public required double MutationRate { get; init; }
 
     /// <summary>Crossover rate.</summary>
-    public double CrossoverRate
-    {
-        get; init;
-    }
+    public required double CrossoverRate { get; init; }
 
     /// <summary>Fraction of population preserved via elitism.</summary>
-    public double ElitismPct
-    {
-        get; init;
-    }
+    public required double ElitismPct { get; init; }
 
     /// <summary>Tournament selection size.</summary>
-    public int TournamentSize
-    {
-        get; init;
-    }
+    public required int TournamentSize { get; init; }
 
     /// <summary>Number of consecutive generations with unchanged best fitness before hyper‑mutation activates.</summary>
     public int StagnationGenerationsBeforeHyper { get; init; } = 3;
@@ -80,60 +53,31 @@ public sealed record OptimizationSpecification
     public WalkForwardMode WalkForwardMode { get; init; } = WalkForwardMode.Anchored;
 
     /// <summary>Fitness model used to evaluate chromosome quality.</summary>
-    public IFitnessModel? FitnessModel { get; init; }
+    public required IFitnessModel FitnessModel { get; init; }
 
     /// <summary>Validates this specification.</summary>
     public void Validate()
     {
         if (Generations <= 0)
-        {
             throw new ConfigurationException("Generations must be positive.");
-        }
-
         if (PopulationSize < 4)
-        {
             throw new ConfigurationException("PopulationSize must be at least 4.");
-        }
-
         if (Windows <= 0)
-        {
             throw new ConfigurationException("Windows must be 1 or more.");
-        }
-
         if (TrainSplit <= 0 || TrainSplit >= 1)
-        {
             throw new ConfigurationException("TrainSplit must be between 0 and 1 (exclusive).");
-        }
-
         if (MutationRate < 0 || MutationRate > 1)
-        {
             throw new ConfigurationException("MutationRate must be between 0 and 1.");
-        }
-
         if (CrossoverRate < 0 || CrossoverRate > 1)
-        {
             throw new ConfigurationException("CrossoverRate must be between 0 and 1.");
-        }
-
         if (ElitismPct < 0 || ElitismPct > 1)
-        {
             throw new ConfigurationException("ElitismPct must be between 0 and 1.");
-        }
-
         if (TournamentSize < 2)
-        {
             throw new ConfigurationException("TournamentSize must be at least 2.");
-        }
-
         if (StagnationGenerationsBeforeHyper < 1)
-        {
             throw new ConfigurationException("StagnationGenerationsBeforeHyper must be at least 1.");
-        }
-
         if (FitnessModel == null)
-        {
             throw new ConfigurationException("FitnessModel is required for optimisation.");
-        }
     }
 
     /// <summary>Creates a validated instance.</summary>

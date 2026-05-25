@@ -3,6 +3,7 @@ namespace Chronos.Core.Abstractions.Shared;
 /// <summary>
 /// Portable deterministic pseudo‑random number generator using the xorshift128+ algorithm.
 /// Guarantees identical sequences across .NET versions and platforms.
+/// <para><b>This class is not thread‑safe.</b> For concurrent usage, create one instance per thread.</para>
 /// </summary>
 public class ChronosRandom
 {

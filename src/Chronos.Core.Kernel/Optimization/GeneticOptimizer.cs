@@ -108,7 +108,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     public int MaxDegreeOfParallelism { get; set; }
 
     /// <inheritdoc/>
-    public void Initialize(Random? rng = null)
+    public void Initialize()
     {
         _currentGeneration = 0;
         _hyperMutation = false;

@@ -19,8 +19,18 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Opens a binary tick file and maps it into virtual memory.
+    /// Opens a binary tick file and maps it into virtual memory for zero‑copy read‑only access.
+    /// The entire file is mapped; if a valid Chronos header is detected (magic <c>"CHRS"</c>, version <c>1</c>),
+    /// the 8‑byte header is automatically skipped via pointer arithmetic so the returned
+    /// <see cref="IReadOnlyList{T}"/> exposes only the tick payload.  Virtual address consumption
+    /// equals the full file size, but physical memory is paged in on demand – safe for very large
+    /// files (e.g. multi‑year tick archives).  Call <see cref="Dispose()"/> to release the mapping.
     /// </summary>
+    /// <param name="filePath">Full path to the binary tick file.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="filePath"/> is <see langword="null"/>.</exception>
+    /// <exception cref="NotSupportedException">
+    /// The file contains more than <c>2,147,483,647</c> ticks, which exceeds the maximum supported count.
+    /// </exception>
     public unsafe MemoryMappedTickList(string filePath)
     {
         ArgumentNullException.ThrowIfNull(filePath);
@@ -40,22 +50,23 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
         long fileLength = fileInfo.Length;
 
         long dataOffset = 0;
-        _fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
-        _ownsStream = true;
 
-        if (fileLength >= BinaryDataMapper.HeaderSize)
+        // ── read & validate header using a temporary stream ────────────
+        using (var headerStream = new FileStream(
+                   filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                   4096, FileOptions.SequentialScan))
         {
-            Span<byte> header = stackalloc byte[BinaryDataMapper.HeaderSize];
-            _fileStream.ReadExactly(header);
-            uint magic = BitConverter.ToUInt32(header);
-            int version = BitConverter.ToInt32(header[4..]);
-            if (magic == BinaryDataMapper.FileMagic && version == BinaryDataMapper.FileVersion)
+            if (fileLength >= BinaryDataMapper.HeaderSize)
             {
-                dataOffset = BinaryDataMapper.HeaderSize;
-            }
-            else
-            {
-                _fileStream.Seek(0, SeekOrigin.Begin);
+                Span<byte> header = stackalloc byte[BinaryDataMapper.HeaderSize];
+                headerStream.ReadExactly(header);
+                uint magic = BitConverter.ToUInt32(header);
+                int version = BitConverter.ToInt32(header[4..]);
+                if (magic == BinaryDataMapper.FileMagic
+                    && version == BinaryDataMapper.FileVersion)
+                {
+                    dataOffset = BinaryDataMapper.HeaderSize;
+                }
             }
         }
 
@@ -71,19 +82,29 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
 
         if (_count == 0)
         {
-            _fileStream.Dispose();
+            _fileStream = null!;
             _mmf = null!;
             _accessor = null!;
             _basePointer = null;
             return;
         }
 
-        _mmf = MemoryMappedFile.CreateFromFile(_fileStream, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
-        _accessor = _mmf.CreateViewAccessor(dataOffset, dataLength, MemoryMappedFileAccess.Read);
+        // ── map the entire file, then skip the header manually ────────
+        _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open);
+
+        // Create a view that starts at offset 0 and covers the whole file.
+        _accessor = _mmf.CreateViewAccessor(0, fileLength,
+            MemoryMappedFileAccess.Read);
 
         byte* ptr = null;
         _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
-        _basePointer = ptr;
+
+        // Skip the header by moving the base pointer forward.
+        _basePointer = ptr + dataOffset;
+
+        // We no longer own a FileStream.
+        _ownsStream = false;
+        _fileStream = null!;
     }
 
     /// <inheritdoc/>
@@ -113,15 +134,29 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
     /// </summary>
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Finalizer to release unmanaged resources if <see cref="Dispose()"/> was not called.
+    /// </summary>
+    ~MemoryMappedTickList() => Dispose(false);
+
+    private void Dispose(bool disposing)
+    {
         if (_disposed) return;
         _disposed = true;
 
         if (_accessor != null)
             _accessor.SafeMemoryMappedViewHandle.ReleasePointer();
 
-        _accessor?.Dispose();
-        _mmf?.Dispose();
-        if (_ownsStream)
-            _fileStream?.Dispose();
+        if (disposing)
+        {
+            _accessor?.Dispose();
+            _mmf?.Dispose();
+            if (_ownsStream)
+                _fileStream?.Dispose();
+        }
     }
 }

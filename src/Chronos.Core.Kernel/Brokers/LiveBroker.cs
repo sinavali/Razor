@@ -116,7 +116,14 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         _wallClock = wallClock ?? throw new ArgumentNullException(nameof(wallClock));
         _orderGuardTimeoutSeconds = orderGuardTimeoutSeconds;
         _syncIntervalTicks = (long)syncInterval * TimeSpan.TicksPerMinute;
-        _adapter.OnExecutionUpdate += HandleExecutionReport;
+
+        // Subscribe with a safe fire‑and‑forget wrapper (Principle 13).
+        _adapter.OnExecutionUpdate += report =>
+            HandleExecutionReportAsync(report).ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    Trace.TraceError($"LiveBroker.HandleExecutionReport error: {t.Exception}");
+            }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
     // ── initialisation ────────────────────────────────────────────
@@ -579,6 +586,9 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             await SyncStateAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
+        // Collect tickets to close outside the lock to avoid deadlocks.
+        List<long>? ticketsToClose = null;
+
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -618,9 +628,10 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                         else if (p.SL > 0 && ask >= p.SL) close = true;
                     }
 
-                    if (close && TryAcquireInFlight($"CLOSE_{p.Ticket}"))
+                    if (close)
                     {
-                        _ = ClosePositionAsync(p.Ticket);
+                        ticketsToClose ??= new List<long>();
+                        ticketsToClose.Add(p.Ticket);
                     }
                 }
             }
@@ -642,6 +653,22 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         finally
         {
             _stateLock.Release();
+        }
+
+        // Process closes outside the lock.
+        if (ticketsToClose != null)
+        {
+            foreach (var ticket in ticketsToClose)
+            {
+                try
+                {
+                    await ClosePositionAsync(ticket).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Trace.TraceError($"Close failed for ticket {ticket}: {ex}");
+                }
+            }
         }
     }
 
@@ -691,139 +718,132 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     }
 
     /// <summary>
-    /// Handles execution reports from the adapter.  Wrapped in try‑catch to prevent
-    /// async‑void exceptions from crashing the process (Principle 13).
+    /// Handles execution reports from the adapter asynchronously.
+    /// Replaces the previous <c>async void</c> handler (Principle 13).
     /// </summary>
-    private async void HandleExecutionReport(ExecutionReport report)
-    {
-        try
-        {
-            await _stateLock.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                if (report.State is not (ExecutionState.Filled or ExecutionState.PartiallyFilled))
-                {
-                    return;
-                }
-
-                if (_positionMap.TryGetValue(report.Ticket, out var pos))
-                {
-                    if (report.State == ExecutionState.Filled && report.RemainingVolume <= 0)
-                    {
-                        // Full close – realise PnL and update balance.
-                        double finalProfit = report.RealizedPnL + pos.Swap;
-                        _balance += finalProfit;
-
-                        var closedPosition = pos with
-                        {
-                            ClosePrice = report.ExecutedPrice,
-                            CloseTime = report.Timestamp,
-                            Profit = finalProfit
-                        };
-                        _history.Add(closedPosition);
-                        _openPositions.Remove(pos);
-                        _positionMap.Remove(report.Ticket);
-                        Broadcast(
-                            $"[bold cyan]POSITION CLOSED:[/] {pos.Symbol} @ {report.ExecutedPrice}");
-                        _messageBus?.Publish(new OrderExecutedEvent
-                        {
-                            Symbol = pos.Symbol,
-                            OrderType = pos.Type.ToString(),
-                            Volume = report.ExecutedVolume,
-                            Price = report.ExecutedPrice,
-                            IsOpen = false,
-                            CorrelationId = Guid.NewGuid()
-                        });
-                    }
-                    else
-                    {
-                        // Partial fill – update volume only; do not adjust balance.
-                        var updated = pos with
-                        {
-                            Volume = pos.Volume
-                                     + (report.Type == pos.Type
-                                         ? report.ExecutedVolume
-                                         : -report.ExecutedVolume)
-                        };
-                        int idx = _openPositions.IndexOf(pos);
-                        if (idx >= 0)
-                        {
-                            _openPositions[idx] = updated;
-                            _positionMap[report.Ticket] = updated;
-                        }
-                    }
-                }
-                else
-                {
-                    // New position opened.
-                    var newPos = new Position
-                    {
-                        Ticket = report.Ticket,
-                        Symbol = report.Symbol,
-                        Type = report.Type,
-                        Volume = report.ExecutedVolume,
-                        OpenPrice = report.ExecutedPrice,
-                        OpenTime = report.Timestamp,
-                        Comment = report.Comment,
-                        Commission = report.Commission,
-                        AccountEquityAtOpen = _equity
-                    };
-                    _openPositions.Add(newPos);
-                    _positionMap[report.Ticket] = newPos;
-                    UpdateDrawdowns();
-                    _messageBus?.Publish(new OrderExecutedEvent
-                    {
-                        Symbol = report.Symbol,
-                        OrderType = report.Type.ToString(),
-                        Volume = report.ExecutedVolume,
-                        Price = report.ExecutedPrice,
-                        IsOpen = true,
-                        CorrelationId = Guid.NewGuid()
-                    });
-                }
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-        }
-#pragma warning disable CA1031
-        catch (Exception ex)
-        {
-            System.Diagnostics.Trace.TraceError(
-                $"LiveBroker.HandleExecutionReport error: {ex}");
-        }
-#pragma warning restore CA1031
-    }
-
-    /// <summary>
-    /// Ends the live session gracefully and publishes a session‑ended event with final metrics.
-    /// </summary>
-    public async Task EndSessionAsync()
+    private async Task HandleExecutionReportAsync(ExecutionReport report)
     {
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            // Close all remaining open positions.
-            foreach (var pos in _openPositions.ToList())
+            if (report.State is not (ExecutionState.Filled or ExecutionState.PartiallyFilled))
             {
-                _ = ClosePositionAsync(pos.Ticket);
+                return;
             }
 
-            _messageBus?.Publish(new LiveSessionEndedEvent
+            if (_positionMap.TryGetValue(report.Ticket, out var pos))
             {
-                FinalBalance = _balance,
-                FinalEquity = _equity,
-                MaxDrawdownPct = MaxDrawdown,
-                MaxDailyDrawdownPct = MaxDailyDrawdown,
-                TotalTrades = _history.Count,
-                CorrelationId = Guid.NewGuid()
-            });
+                if (report.State == ExecutionState.Filled && report.RemainingVolume <= 0)
+                {
+                    // Full close – realise PnL and update balance.
+                    double finalProfit = report.RealizedPnL + pos.Swap;
+                    _balance += finalProfit;
+
+                    var closedPosition = pos with
+                    {
+                        ClosePrice = report.ExecutedPrice,
+                        CloseTime = report.Timestamp,
+                        Profit = finalProfit
+                    };
+                    _history.Add(closedPosition);
+                    _openPositions.Remove(pos);
+                    _positionMap.Remove(report.Ticket);
+                    Broadcast(
+                        $"[bold cyan]POSITION CLOSED:[/] {pos.Symbol} @ {report.ExecutedPrice}");
+                    _messageBus?.Publish(new OrderExecutedEvent
+                    {
+                        Symbol = pos.Symbol,
+                        OrderType = pos.Type.ToString(),
+                        Volume = report.ExecutedVolume,
+                        Price = report.ExecutedPrice,
+                        IsOpen = false,
+                        CorrelationId = Guid.NewGuid()
+                    });
+                }
+                else
+                {
+                    // Partial fill – update volume only; do not adjust balance.
+                    var updated = pos with
+                    {
+                        Volume = pos.Volume
+                                 + (report.Type == pos.Type
+                                     ? report.ExecutedVolume
+                                     : -report.ExecutedVolume)
+                    };
+                    int idx = _openPositions.IndexOf(pos);
+                    if (idx >= 0)
+                    {
+                        _openPositions[idx] = updated;
+                        _positionMap[report.Ticket] = updated;
+                    }
+                }
+            }
+            else
+            {
+                // New position opened.
+                var newPos = new Position
+                {
+                    Ticket = report.Ticket,
+                    Symbol = report.Symbol,
+                    Type = report.Type,
+                    Volume = report.ExecutedVolume,
+                    OpenPrice = report.ExecutedPrice,
+                    OpenTime = report.Timestamp,
+                    Comment = report.Comment,
+                    Commission = report.Commission,
+                    AccountEquityAtOpen = _equity
+                };
+                _openPositions.Add(newPos);
+                _positionMap[report.Ticket] = newPos;
+                UpdateDrawdowns();
+                _messageBus?.Publish(new OrderExecutedEvent
+                {
+                    Symbol = report.Symbol,
+                    OrderType = report.Type.ToString(),
+                    Volume = report.ExecutedVolume,
+                    Price = report.ExecutedPrice,
+                    IsOpen = true,
+                    CorrelationId = Guid.NewGuid()
+                });
+            }
         }
         finally
         {
             _stateLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Ends the live session gracefully.  All remaining open positions are closed
+    /// outside the lock, then a session‑ended event is published with final metrics.
+    /// </summary>
+    public async Task EndSessionAsync()
+    {
+        List<Position> positionsToClose;
+        await _stateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            positionsToClose = _openPositions.ToList();
+            _openPositions.Clear();
+            _positionMap.Clear();
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        var closeTasks = positionsToClose.Select(p => ClosePositionAsync(p.Ticket));
+        await Task.WhenAll(closeTasks).ConfigureAwait(false);
+
+        _messageBus?.Publish(new LiveSessionEndedEvent
+        {
+            FinalBalance = _balance,
+            FinalEquity = _equity,
+            MaxDrawdownPct = MaxDrawdown,
+            MaxDailyDrawdownPct = MaxDailyDrawdown,
+            TotalTrades = _history.Count,
+            CorrelationId = Guid.NewGuid()
+        });
     }
 
     /// <summary>Generates a unique order key for in‑flight tracking.</summary>
@@ -953,7 +973,11 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         });
         _marginUsed = CalculateMarginUsed();
 
-        _ = ClosePositionAsync(worstPos.Ticket);
+        _ = ClosePositionAsync(worstPos.Ticket).ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+                Trace.TraceError($"Stop‑out close failed: {t.Exception}");
+        }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
     /// <summary>Records order outcome telemetry.</summary>
@@ -977,7 +1001,6 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             _lifecycleCts.Dispose();
         }
 
-        _adapter.OnExecutionUpdate -= HandleExecutionReport;
         await _adapter.DisconnectAsync().ConfigureAwait(false);
         _stateLock.Dispose();
         _syncGate.Dispose();

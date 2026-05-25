@@ -39,6 +39,14 @@ public abstract class StrategyBase : IStrategy, IDisposable
     public virtual Task OnStartAsync(IIndicatorRegistry indicators) { Indicators = indicators; return Task.CompletedTask; }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The default implementation calls the deprecated <see cref="OnTickAsync"/> synchronously.
+    /// Override this method directly for new deterministic strategies.
+    /// </remarks>
+    public virtual void OnTick(Tick tick) => OnTickAsync(tick).GetAwaiter().GetResult();
+
+    /// <inheritdoc/>
+    /// <remarks>Deprecated: prefer overriding <see cref="OnTick"/> for new strategies.</remarks>
     public virtual Task OnTickAsync(Tick tick) => Task.CompletedTask;
 
     /// <inheritdoc/>

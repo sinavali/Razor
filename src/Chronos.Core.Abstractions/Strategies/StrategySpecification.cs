@@ -10,10 +10,10 @@ namespace Chronos.Core.Abstractions.Strategies;
 public sealed record StrategySpecification
 {
     /// <summary>Starting account balance in quote currency. Must be &gt; 0.</summary>
-    public double InitialBalance { get; init; }
+    public required double InitialBalance { get; init; }
 
     /// <summary>Account‑wide leverage multiplier (e.g., 10, 50). Must be &gt; 0.</summary>
-    public double Leverage { get; init; }
+    public required double Leverage { get; init; }
 
     /// <summary>Custom slippage/commission model for backtesting. If null, the adapter default is used.</summary>
     public ISimulationFriction? FrictionModel { get; init; }
@@ -22,7 +22,7 @@ public sealed record StrategySpecification
     public IFitnessModel? FitnessModel { get; init; }
 
     /// <summary>Symbols and their timeframes the strategy needs. At least one element required.</summary>
-    public ImmutableArray<SymbolRequest> RequestedSymbols { get; init; } = ImmutableArray<SymbolRequest>.Empty;
+    public required ImmutableArray<SymbolRequest> RequestedSymbols { get; init; }
 
     /// <summary>Validates this specification and throws <see cref="ConfigurationException"/> if invalid.</summary>
     public void Validate()

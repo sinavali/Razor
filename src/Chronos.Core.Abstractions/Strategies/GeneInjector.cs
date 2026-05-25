@@ -1,5 +1,6 @@
 using Chronos.Core.Abstractions.Shared;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 
@@ -70,6 +71,13 @@ public static class GeneInjector
         for (int i = 0; i < props.Count; i++)
         {
             var attr = props[i].GetCustomAttribute<GeneAttribute>()!;
+
+            // Reject unsupported gene types
+            if (attr.Type != GeneType.Continuous && attr.Type != GeneType.Discrete)
+                throw new ConfigurationException(
+                    $"Unsupported GeneType '{attr.Type}' on property '{props[i].Name}'. " +
+                    "Only Continuous and Discrete are supported in v1.0.0.");
+
             double val = Math.Clamp(genes[i], attr.Min, attr.Max);
             if (attr.Step > 0)
             {
@@ -79,14 +87,24 @@ public static class GeneInjector
             }
             Type propType = props[i].PropertyType;
             object converted;
-            if (propType == typeof(int)) converted = (int)Math.Round(val, MidpointRounding.AwayFromZero);
-            else if (propType == typeof(long)) converted = (long)Math.Round(val, MidpointRounding.AwayFromZero);
-            else if (propType == typeof(float)) converted = (float)val;
-            else if (propType == typeof(decimal)) converted = (decimal)val;
-            else converted = Convert.ChangeType(val, propType, CultureInfo.InvariantCulture);
+            try
+            {
+                if (propType == typeof(int)) converted = (int)Math.Round(val, MidpointRounding.AwayFromZero);
+                else if (propType == typeof(long)) converted = (long)Math.Round(val, MidpointRounding.AwayFromZero);
+                else if (propType == typeof(float)) converted = (float)val;
+                else if (propType == typeof(decimal)) converted = (decimal)val;
+                else converted = Convert.ChangeType(val, propType, CultureInfo.InvariantCulture);
+            }
+            catch (InvalidCastException ex)
+            {
+                throw new ConfigurationException(
+                    $"Cannot convert gene value to property type '{propType.FullName}' on property '{props[i].Name}'. " +
+                    "Only primitive numeric types are supported.", ex);
+            }
             props[i].SetValue(strategyInstance, converted);
         }
     }
+
 
     /// <summary>Extracts the gene metadata schema from a strategy type.</summary>
     public static IReadOnlyList<GeneAttribute> ExtractSchema(Type strategyType)
@@ -106,10 +124,9 @@ public static class GeneInjector
     public static void AppendNeuralGenes(IList<GeneAttribute> schema, int[]? topology, ActivationFunction activation)
     {
         ArgumentNullException.ThrowIfNull(schema);
-        if (topology == null || topology.Length < 2) return;
+        if (topology is null || topology.Length < 2) return;
 
-        var dummy = new FeedForwardNetwork(topology, activation);
-        int count = dummy.TotalGeneCount;
+        int count = FeedForwardNetwork.GetTotalGeneCount(topology);
         for (int i = 0; i < count; i++)
             schema.Add(new GeneAttribute(-1.0, 1.0, 0, GeneType.Parametric) { Name = $"NN_W{i}", Order = int.MaxValue });
     }
@@ -143,6 +160,7 @@ public static class GeneInjector
     public static double GenerateRandomGene(ChronosRandom rng, double min, double max, double step)
     {
         ArgumentNullException.ThrowIfNull(rng);
+        Debug.Assert(min <= max, "Gene min must be ≤ max.");
         if (step <= 0)
             return min + rng.NextDouble() * (max - min);
 
@@ -150,9 +168,7 @@ public static class GeneInjector
         return steps < 0 ? min : min + rng.Next(steps + 1) * step;
     }
 
-    /// <summary>
-    /// Builds the complete chromosome schema (properties + optional neural weights).
-    /// </summary>
+    /// <summary>Builds the complete chromosome schema (properties + optional neural weights).</summary>
     public static IReadOnlyList<GeneAttribute> BuildCompleteSchema(Type strategyType, int[]? neuralTopology, ActivationFunction activation)
     {
         ArgumentNullException.ThrowIfNull(strategyType);

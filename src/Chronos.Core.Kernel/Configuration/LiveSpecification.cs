@@ -10,43 +10,25 @@ namespace Chronos.Core.Kernel.Configuration;
 public sealed record LiveSpecification
 {
     /// <summary>Unique magic number for order tagging.</summary>
-    public int MagicNumber
-    {
-        get; init;
-    }
+    public required int MagicNumber { get; init; }
 
     /// <summary>A Timeout for Order requests in seconds</summary>
     public int OrderGuardTimeoutSeconds { get; init; } = 5;
 
     /// <summary>Whether to run continuous background optimisation.</summary>
-    public bool ContinuousOptimization
-    {
-        get; init;
-    }
+    public bool ContinuousOptimization { get; init; }
 
     /// <summary>Lookback days for continuous optimisation.</summary>
-    public int LookbackDays
-    {
-        get; init;
-    }
+    public int LookbackDays { get; init; }
 
     /// <summary>Number of recent days to skip in continuous optimisation.</summary>
-    public int SkipRecentDays
-    {
-        get; init;
-    }
+    public int SkipRecentDays { get; init; }
 
     /// <summary>Notification channels.</summary>
-    public ImmutableArray<INotificationChannel> NotificationChannels
-    {
-        get; init;
-    } = [];
+    public ImmutableArray<INotificationChannel> NotificationChannels { get; init; } = [];
 
     /// <summary>If true, the master seed will be rotated for each continuous optimisation cycle.</summary>
-    public bool RotateOptimizationSeed
-    {
-        get; init;
-    }
+    public bool RotateOptimizationSeed { get; init; }
 
     /// <summary>Delay in minutes before the first continuous optimisation run.</summary>
     public int InitialDelayMinutes { get; init; } = 1;
@@ -58,34 +40,26 @@ public sealed record LiveSpecification
     public void Validate()
     {
         if (MagicNumber <= 0)
-        {
             throw new ConfigurationException("MagicNumber must be positive.");
-        }
 
-        if (LookbackDays <= 0)
+        if (ContinuousOptimization)
         {
-            throw new ConfigurationException("LookbackDays must be positive.");
+            if (LookbackDays <= 0)
+                throw new ConfigurationException(
+                    "LookbackDays must be positive when ContinuousOptimization is enabled.");
         }
 
         if (SkipRecentDays < 0)
-        {
             throw new ConfigurationException("SkipRecentDays cannot be negative.");
-        }
 
         if (InitialDelayMinutes < 0)
-        {
             throw new ConfigurationException("InitialDelayMinutes cannot be negative.");
-        }
 
         if (OptimizationIntervalHours <= 0)
-        {
             throw new ConfigurationException("OptimizationIntervalHours must be positive.");
-        }
 
         if (OrderGuardTimeoutSeconds <= 0)
-        {
             throw new ConfigurationException("OrderGuardTimeoutSeconds must be positive.");
-        }
     }
 
     /// <summary>Creates a validated instance.</summary>

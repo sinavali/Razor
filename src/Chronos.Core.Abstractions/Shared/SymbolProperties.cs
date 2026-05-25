@@ -1,42 +1,42 @@
 namespace Chronos.Core.Abstractions.Shared;
 
-/// <summary>Exchange‑specific symbol properties.</summary>
+/// <summary>Exchange‑specific symbol properties. All fields must be explicitly set by the adapter.</summary>
 public sealed record SymbolProperties
 {
     /// <summary>Asset class.</summary>
-    public AssetClass AssetClass { get; init; } = AssetClass.CryptoSpot;
+    public required AssetClass AssetClass { get; init; }
     /// <summary>Margin mode.</summary>
-    public MarginMode MarginMode { get; init; } = MarginMode.Cross;
+    public required MarginMode MarginMode { get; init; }
     /// <summary>Pending order trigger logic.</summary>
-    public PendingOrderTriggerMode PendingTrigger { get; init; } = PendingOrderTriggerMode.UseAskForBuy;
+    public required PendingOrderTriggerMode PendingTrigger { get; init; }
     /// <summary>Currency used for margin calculations (e.g. USDT).</summary>
-    public string MarginCurrency { get; init; } = "USDT";
+    public required string MarginCurrency { get; init; }
     /// <summary>Contract size.</summary>
-    public double ContractSize { get; init; } = 1.0;
+    public required double ContractSize { get; init; }
     /// <summary>Minimum price increment.</summary>
-    public double TickSize { get; init; } = 0.01;
+    public required double TickSize { get; init; }
     /// <summary>Monetary value of one tick.</summary>
-    public double TickValue { get; init; } = 1.0;
+    public required double TickValue { get; init; }
     /// <summary>Minimum order volume.</summary>
-    public double MinVolume { get; init; } = 0.0001;
+    public required double MinVolume { get; init; }
     /// <summary>Maximum allowed leverage.</summary>
-    public double MaxLeverage { get; init; } = 1.0;
+    public required double MaxLeverage { get; init; }
     /// <summary>Swap rate for long positions (per day).</summary>
-    public double SwapLong { get; init; }
+    public required double SwapLong { get; init; }
     /// <summary>Swap rate for short positions (per day).</summary>
-    public double SwapShort { get; init; }
+    public required double SwapShort { get; init; }
     /// <summary>Hour (UTC) at which swap/rollover is charged.</summary>
-    public int SwapRolloverHourUtc { get; init; } = 21;
+    public required int SwapRolloverHourUtc { get; init; }
     /// <summary>Multiplier for triple‑swap days.</summary>
-    public double TripleSwapDayMultiplier { get; init; } = 3.0;
+    public required double TripleSwapDayMultiplier { get; init; }
     /// <summary>Funding rate for perpetual contracts.</summary>
-    public double FundingRate { get; init; }
+    public required double FundingRate { get; init; }
     /// <summary>Initial margin rate (fraction).</summary>
-    public double InitialMarginRate { get; init; } = 1.0;
+    public required double InitialMarginRate { get; init; }
     /// <summary>Maintenance margin rate (fraction).</summary>
-    public double MaintenanceMarginRate { get; init; } = 0.5;
+    public required double MaintenanceMarginRate { get; init; }
     /// <summary>Maker fee rate (fraction).</summary>
-    public double MakerFeeRate { get; init; } = 0.001;
+    public required double MakerFeeRate { get; init; }
     /// <summary>Taker fee rate (fraction).</summary>
-    public double TakerFeeRate { get; init; } = 0.0015;
+    public required double TakerFeeRate { get; init; }
 }

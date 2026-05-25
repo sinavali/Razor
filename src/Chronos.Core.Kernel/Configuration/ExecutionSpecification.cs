@@ -9,10 +9,10 @@ namespace Chronos.Core.Kernel.Configuration;
 public sealed record ExecutionSpecification
 {
     /// <summary>Start of the data window (inclusive).</summary>
-    public DateTime StartDate { get; init; }
+    public required DateTime StartDate { get; init; }
 
     /// <summary>End of the data window (inclusive).</summary>
-    public DateTime EndDate { get; init; }
+    public required DateTime EndDate { get; init; }
 
     /// <summary>Maximum parallel threads (0 = auto).</summary>
     public int MaxParallelThreads { get; init; }
@@ -24,16 +24,16 @@ public sealed record ExecutionSpecification
     public int WarmupWindowCount { get; init; }
 
     /// <summary>Maximum open positions allowed.</summary>
-    public int MaxOpenPositions { get; init; }
+    public required int MaxOpenPositions { get; init; }
 
     /// <summary>Stop‑out level as a ratio (e.g., 0.5 = 50%).</summary>
-    public double StopOutLevel { get; init; }
+    public required double StopOutLevel { get; init; }
 
     /// <summary>Policy for cached historical data.</summary>
     public DataActionPolicy HistoricalDataPolicy { get; init; }
 
     /// <summary>Seed used for deterministic gene initialization when no specific genes are provided.</summary>
-    public int GeneInitializationSeed { get; init; }
+    public required int GeneInitializationSeed { get; init; }
 
     /// <summary>Validates this specification.</summary>
     public void Validate()

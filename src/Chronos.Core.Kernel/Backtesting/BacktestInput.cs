@@ -37,7 +37,7 @@ public sealed record BacktestInput
     public FeedForwardNetwork? NeuralNetwork { get; init; }
 
     /// <summary>Seed used for deterministic gene initialization when <see cref="Genes"/> is null.</summary>
-    public int GeneInitializationSeed { get; init; }
+    public required int GeneInitializationSeed { get; init; }
 
     /// <summary>Optional progress reporter.</summary>
     public IProgress<BacktestProgress>? Progress { get; init; }

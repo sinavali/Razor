@@ -7,34 +7,18 @@ namespace Chronos.Core.Kernel.Optimization;
 public interface IGeneticOptimizer : IOptimizer
 {
     /// <summary>Current generation index (0‑based).</summary>
-    int CurrentGeneration
-    {
-        get;
-    }
+    int CurrentGeneration { get; }
     /// <summary>Population size.</summary>
-    int PopulationSize
-    {
-        get;
-    }
+    int PopulationSize { get; }
     /// <summary>Whether hyper‑mutation is currently active.</summary>
-    bool IsHyperMutation
-    {
-        get;
-    }
+    bool IsHyperMutation { get; }
     /// <summary>Best solution found so far.</summary>
-    Chromosome BestSolution
-    {
-        get;
-    }
+    Chromosome BestSolution { get; }
     /// <summary>Current population snapshot (sorted).</summary>
-    IReadOnlyList<Chromosome> Population
-    {
-        get;
-    }
+    IReadOnlyList<Chromosome> Population { get; }
 
     /// <summary>Initialises or resets the population for generation 0.</summary>
-    /// <param name="rng">Optional random number generator. If null, a new one is created.</param>
-    void Initialize(Random? rng = null);
+    void Initialize();
 
     /// <summary>
     /// Evaluates every unevaluated chromosome using the provided delegate.

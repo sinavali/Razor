@@ -34,6 +34,27 @@ public sealed class FeedForwardNetwork : INeuralNetwork
         }
     }
 
+    /// <summary>
+    /// Computes the total number of genes (weights + biases) for a given topology
+    /// without instantiating a network.
+    /// </summary>
+    /// <param name="topology">Network topology (at least two layers).</param>
+    /// <returns>Total number of double values needed to encode weights and biases.</returns>
+    /// <exception cref="ArgumentException">Thrown if topology is null or has fewer than 2 layers.</exception>
+    public static int GetTotalGeneCount(int[] topology)
+    {
+        if (topology is null || topology.Length < 2)
+            throw new ArgumentException("Topology must have at least an input and output layer.", nameof(topology));
+
+        int count = 0;
+        for (int i = 0; i < topology.Length - 1; i++)
+        {
+            count += topology[i] * topology[i + 1]; // weights
+            count += topology[i + 1];                // biases
+        }
+        return count;
+    }
+
     /// <summary>Creates a new network with the given topology and activation function.</summary>
     public FeedForwardNetwork(int[] topology, ActivationFunction activation = ActivationFunction.Tanh)
     {

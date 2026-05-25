@@ -25,6 +25,11 @@ public sealed class BacktestRunner : IBacktestRunner
     {
         ArgumentNullException.ThrowIfNull(input);
 
+        // If no pre‑set genes, the seed must be non‑zero.
+        if (input.Genes is null && input.GeneInitializationSeed == 0)
+            throw new ConfigurationException(
+                "GeneInitializationSeed must be non‑zero when Genes is not pre‑supplied.");
+
         // ---------- setup ----------
         var clock = new TickClock();
         var broker = new SimulatedBroker(
@@ -89,7 +94,7 @@ public sealed class BacktestRunner : IBacktestRunner
 #pragma warning disable CA1849
                 broker.OnTickAsync(sym, tick).GetAwaiter().GetResult();
                 tickWindow.PushTick(sym, tick);
-                input.Strategy.OnTickAsync(tick).GetAwaiter().GetResult();
+                input.Strategy.OnTick(tick);               // synchronous, deterministic
 #pragma warning restore CA1849
 
                 processed++;
