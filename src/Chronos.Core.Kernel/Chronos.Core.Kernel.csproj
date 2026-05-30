@@ -10,8 +10,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Chronos.Core.Abstractions" Version="0.1.1" />
-<!--        <ProjectReference Include="../Chronos.Core.Abstractions/Chronos.Core.Abstractions.csproj"/>-->
+      <PackageReference Include="Chronos.Core.Abstractions" Version="0.1.5" />
     </ItemGroup>
 
 </Project>

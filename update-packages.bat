@@ -2,11 +2,12 @@
 setlocal enabledelayedexpansion
 
 REM ==============================================================
-REM  Chronos Packages Update Script
-REM  Prerequisite: Run this command ONCE to store credentials for
-REM  the feed URL:
-REM    dotnet nuget update source Gitea --username git --password YOUR_TOKEN --store-password-in-clear-text
+REM  Chronos Packages Update Script – absolute final
+REM  (uses temp PS script to update .csproj, zero hangs)
 REM ==============================================================
+
+REM --- Disable QuickEdit (for new console windows) ---
+reg add HKCU\Console /v QuickEdit /t REG_DWORD /d 0 /f >nul 2>&1
 
 REM --- Configuration ---
 set TOKEN=a535a3fa75145f3dc64ba0439560fa71bd90021c
@@ -54,9 +55,11 @@ dotnet build %ABSTR_PROJ% --configuration Release
 if %errorlevel% neq 0 goto :ERROR "Build failed for Chronos.Core.Abstractions."
 
 echo [2/5] Packing Chronos.Core.Abstractions...
+dotnet build-server shutdown >nul 2>&1
+set MSBUILDNOINPROCNODE=1
 dotnet pack %ABSTR_PROJ% --no-build --configuration Release ^
-    -p:PackageVersion=%NEW_VERSION% ^
-    --output "%NUPKG_DIR%"
+    -p:PackageVersion=%NEW_VERSION% --output "%NUPKG_DIR%" ^
+    -nodeReuse:false
 if %errorlevel% neq 0 goto :ERROR "Pack failed for Chronos.Core.Abstractions."
 
 echo [3/5] Pushing Chronos.Core.Abstractions to Gitea...
@@ -67,19 +70,45 @@ dotnet nuget push "%NUPKG_DIR%\Chronos.Core.Abstractions.%NEW_VERSION%.nupkg" ^
 if %errorlevel% neq 0 goto :ERROR "Push failed for Chronos.Core.Abstractions."
 
 REM ==============================================================
-REM  2. Clear local cache & update Kernel reference
+REM  2. Update Kernel reference (safe XML edit via temp PS)
 REM ==============================================================
 echo.
-echo [4/5] Clearing local NuGet cache...
-dotnet nuget locals http-cache --clear
-if %errorlevel% neq 0 echo Warning: Could not clear HTTP cache, but continuing...
-
-echo Updating Chronos.Core.Kernel to use Chronos.Core.Abstractions %NEW_VERSION%...
+echo [4/5] Updating Chronos.Core.Kernel to use Chronos.Core.Abstractions %NEW_VERSION%...
 pushd src\Chronos.Core.Kernel
-dotnet add package Chronos.Core.Abstractions --version %NEW_VERSION% --source "%GITEA_FEED%"
+
+set CSPROJ=Chronos.Core.Kernel.csproj
+if not exist "%CSPROJ%" goto :ERROR "Missing %CSPROJ%"
+
+REM Create a temporary PowerShell script to update the version
+set PS_SCRIPT=%TEMP%\update_ref_%RANDOM%.ps1
+(
+echo $xml = [xml](Get-Content '%CSPROJ%')
+echo $node = $xml.Project.ItemGroup.PackageReference ^| Where-Object { $_.Include -eq 'Chronos.Core.Abstractions' }
+echo if ($node) {
+echo     $node.Version = '%NEW_VERSION%'
+echo     $xml.Save('%CSPROJ%')
+echo     Write-Host 'Updated version in csproj to %NEW_VERSION%'
+echo } else {
+echo     Write-Error 'PackageReference not found'
+echo     exit 1
+echo }
+) > "%PS_SCRIPT%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+if %errorlevel% neq 0 (
+    del "%PS_SCRIPT%" 2>nul
+    popd
+    goto :ERROR "Failed to update package reference in Kernel project file."
+)
+del "%PS_SCRIPT%" 2>nul
+
+REM Now restore (credentials are set)
+set NUGET_USERNAME=sinavali
+set NUGET_PASSWORD=%TOKEN%
+dotnet restore --source "%GITEA_FEED%"
 if %errorlevel% neq 0 (
     popd
-    goto :ERROR "Failed to update package reference in Chronos.Core.Kernel."
+    goto :ERROR "Restore failed for Chronos.Core.Kernel."
 )
 popd
 
@@ -91,9 +120,11 @@ echo [5/5] Building and packing Chronos.Core.Kernel...
 dotnet build %KERNEL_PROJ% --configuration Release
 if %errorlevel% neq 0 goto :ERROR "Build failed for Chronos.Core.Kernel."
 
+dotnet build-server shutdown >nul 2>&1
+set MSBUILDNOINPROCNODE=1
 dotnet pack %KERNEL_PROJ% --no-build --configuration Release ^
-    -p:PackageVersion=%NEW_VERSION% ^
-    --output "%NUPKG_DIR%"
+    -p:PackageVersion=%NEW_VERSION% --output "%NUPKG_DIR%" ^
+    -nodeReuse:false
 if %errorlevel% neq 0 goto :ERROR "Pack failed for Chronos.Core.Kernel."
 
 echo Pushing Chronos.Core.Kernel to Gitea...
