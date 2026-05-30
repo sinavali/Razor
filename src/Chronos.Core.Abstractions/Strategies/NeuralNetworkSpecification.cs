@@ -7,6 +7,8 @@ namespace Chronos.Core.Abstractions.Strategies;
 /// </summary>
 public sealed record NeuralNetworkSpecification
 {
+    private static readonly HashSet<string> ValidModelTypes = new(StringComparer.OrdinalIgnoreCase) { "FeedForward", "LSTM" };
+
     /// <summary>Number of neurons per layer (input .. hidden .. output).</summary>
     public required int[] Topology { get; init; }
 
@@ -21,12 +23,12 @@ public sealed record NeuralNetworkSpecification
     {
         if (Topology == null || Topology.Length < 2)
             throw new ConfigurationException("Neural network topology must contain at least an input and output layer.");
+
         if (Topology.Any(l => l <= 0))
             throw new ConfigurationException("All topology layer sizes must be positive.");
 
-        var validModelTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FeedForward", "LSTM" };
-        if (!validModelTypes.Contains(ModelType))
+        if (!ValidModelTypes.Contains(ModelType))
             throw new ConfigurationException(
-                $"Unknown ModelType '{ModelType}'. Valid values: {string.Join(", ", validModelTypes)}.");
+                $"Unknown ModelType '{ModelType}'. Valid values: {string.Join(", ", ValidModelTypes)}.");
     }
 }

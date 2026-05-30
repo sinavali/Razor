@@ -10,7 +10,13 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Chronos.Core.Abstractions" Version="0.1.5" />
+        <ProjectReference Include="..\Chronos.Core.Abstractions\Chronos.Core.Abstractions.csproj" Condition="'$(UseLocalAbstractions)' == 'true'" />
+        <PackageReference Include="Chronos.Core.Abstractions" Version="0.1.5" Condition="'$(UseLocalAbstractions)' != 'true'" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Chronos.Core.Kernel.UnitTests" />
+        <InternalsVisibleTo Include="Chronos.Core.Kernel.IntegrationTests" />
     </ItemGroup>
 
 </Project>

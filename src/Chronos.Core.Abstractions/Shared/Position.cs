@@ -30,21 +30,21 @@ public sealed record Position
     public double Commission { get; init; }
     /// <summary>Cumulative swap / funding.</summary>
     public double Swap { get; init; }
-    /// <summary>Realised or unrealised P&amp;L.</summary>
+    /// <summary>Realised or unrealised PnL.</summary>
     public double Profit { get; init; }
-    /// <summary>
-    /// Return on the margin used for this position (Profit / RequiredMargin).
-    /// Not an account‑level return.
-    /// </summary>
+    /// <summary>Return on the margin used for this position.</summary>
     public double ReturnPct { get; init; }
     /// <summary>The account equity at the moment the position was opened.</summary>
     public double AccountEquityAtOpen { get; init; }
     /// <summary>Leverage used (0 if spot or unknown).</summary>
     public double Leverage { get; init; }
-    /// <summary>Explicit flag for margin trading (independent of leverage value).</summary>
+    /// <summary>Explicit flag for margin trading.</summary>
     public bool IsMargin { get; init; }
     /// <summary>User comment.</summary>
     public string Comment { get; init; } = string.Empty;
     /// <summary>Whether the position is closed.</summary>
     public bool IsClosed => CloseTime > 0;
+
+    /// <summary>Sequence identifier to differentiate multiple partial closes of the same ticket.</summary>
+    public int CloseSequence { get; init; }
 }

@@ -1,3 +1,5 @@
+#pragma warning disable CA1031 // We are safely wrapping plugin loading failures so entire process won't crash
+
 using System.Reflection;
 using Chronos.Core.Abstractions.Adapters;
 using Chronos.Core.Abstractions.Plugins;
@@ -7,21 +9,18 @@ namespace Chronos.Core.Kernel.Plugins;
 
 /// <summary>
 /// Discovers adapter implementations in a directory and creates instances by name.
+/// Implements isolated AssemblyLoadContext loading per Principle 14.
 /// </summary>
 public sealed class AdapterFactory : IAdapterFactory
 {
     private readonly Dictionary<string, Type> _adapterTypes;
 
-    /// <summary>
-    /// Initialises the factory by scanning assemblies in the specified plugins folder.
-    /// </summary>
-    /// <param name="pluginsPath">Directory containing adapter DLLs.</param>
+    /// <summary>Initializes a new factory by querying available adapters.</summary>
     public AdapterFactory(string pluginsPath)
     {
         ArgumentNullException.ThrowIfNull(pluginsPath);
         if (!Directory.Exists(pluginsPath))
             throw new DirectoryNotFoundException($"Plugins directory not found: {pluginsPath}");
-
         _adapterTypes = LoadAdapters(pluginsPath);
     }
 
@@ -30,7 +29,6 @@ public sealed class AdapterFactory : IAdapterFactory
     {
         if (!_adapterTypes.TryGetValue(adapterName, out var type))
             throw new AdapterException(adapterName, $"No adapter found with name '{adapterName}'.");
-
         return (IAdapter)Activator.CreateInstance(type)!;
     }
 
@@ -43,18 +41,17 @@ public sealed class AdapterFactory : IAdapterFactory
         {
             try
             {
-                var asm = Assembly.LoadFrom(dll);
-                // Validate SDK version before loading adapters
-                var versionAttr = asm.GetCustomAttribute<ChronosSdkVersionAttribute>();
-                if (versionAttr != null)
+                // ARCH-01 Fix: Use isolated context loading.
+                var context = new PluginLoadContext(dll);
+                var asm = context.LoadFromAssemblyPath(dll);
+
+                // ARCH-02 / BUG-03 Fix: Defer to central validation authority, don't silent load rogue assemblies.
+                var validationErrors = PluginValidator.ValidateAssembly(asm, expectedMajor: 1);
+                if (validationErrors.Count > 0)
                 {
-                    // Simple check: major version must match 1
-                    if (Version.TryParse(versionAttr.Version, out var ver) && ver.Major != 1)
-                    {
-                        System.Diagnostics.Trace.TraceWarning(
-                            $"Skipping assembly '{dll}' because it targets SDK version {versionAttr.Version}, but this host requires 1.x.");
-                        continue;
-                    }
+                    foreach (var error in validationErrors)
+                        System.Diagnostics.Trace.TraceWarning($"Skipping adapter assembly '{dll}': {error}");
+                    continue;
                 }
 
                 foreach (var type in asm.GetExportedTypes()
@@ -67,9 +64,7 @@ public sealed class AdapterFactory : IAdapterFactory
                     }
                 }
             }
-#pragma warning disable CA1031 // Reason: Plugin loading must gracefully skip any assembly that cannot be loaded.
             catch (Exception ex)
-#pragma warning restore CA1031
             {
                 System.Diagnostics.Trace.TraceWarning($"Failed to load adapter assembly {dll}: {ex.Message}");
             }
@@ -78,3 +73,4 @@ public sealed class AdapterFactory : IAdapterFactory
         return result;
     }
 }
+#pragma warning restore CA1031

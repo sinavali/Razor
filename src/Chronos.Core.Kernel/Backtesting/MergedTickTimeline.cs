@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Kernel.Backtesting;
@@ -8,8 +9,6 @@ namespace Chronos.Core.Kernel.Backtesting;
 public static class MergedTickTimeline
 {
     /// <summary>Yields ticks in chronological order across all streams.</summary>
-    /// <param name="streams">Sorted tick streams.</param>
-    /// <param name="symbols">Symbol names (not used by the merge, passed for context).</param>
     public static IEnumerable<(long Time, int StreamIndex, Tick Tick)> EnumerateEvents(IReadOnlyList<Tick>[] streams, string[] symbols)
     {
         ArgumentNullException.ThrowIfNull(streams);
@@ -22,10 +21,16 @@ public static class MergedTickTimeline
             int cmp = a.Time.CompareTo(b.Time);
             return cmp != 0 ? cmp : a.Index.CompareTo(b.Index);
         });
+
         var queue = new PriorityQueue<int, (long, int)>(comparer);
+        long[] lastTimePerStream = new long[streamCount];
 
         for (int i = 0; i < streamCount; i++)
         {
+            lastTimePerStream[i] = long.MinValue;
+
+            if (streams[i] == null) continue; // CA1062 Safety Check
+
             var e = streams[i].GetEnumerator();
             enumerators[i] = e;
             if (e.MoveNext()) queue.Enqueue(i, (e.Current.Time, i));
@@ -34,7 +39,16 @@ public static class MergedTickTimeline
         while (queue.TryDequeue(out int idx, out _))
         {
             var e = enumerators[idx];
-            yield return (e.Current.Time, idx, e.Current);
+            var currentTick = e.Current;
+
+            // ARCH-08 Fix: Hard strict validation for sorted invariants per Principle 8.
+            if (currentTick.Time < lastTimePerStream[idx])
+            {
+                throw new InvalidOperationException($"Stream {idx} ({symbols?[idx]}) contains unsorted ticks: {currentTick.Time} < {lastTimePerStream[idx]}");
+            }
+            lastTimePerStream[idx] = currentTick.Time;
+
+            yield return (currentTick.Time, idx, currentTick);
             if (e.MoveNext()) queue.Enqueue(idx, (e.Current.Time, idx));
         }
     }

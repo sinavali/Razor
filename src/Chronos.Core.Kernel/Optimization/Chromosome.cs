@@ -7,39 +7,27 @@ namespace Chronos.Core.Kernel.Optimization;
 public sealed class Chromosome
 {
     /// <summary>Genes array (normalised property values + optional neural weights).</summary>
-    public double[] Genes
-    {
-        get;
-    }
+    public double[] Genes { get; }
 
     /// <summary>Fitness value (higher = better). Set by the evaluation function.</summary>
-    public double Fitness { get; set; } = double.MinValue;
+    public double Fitness { get; set; } = double.NegativeInfinity; // BUG-04 Fix
 
     /// <summary>Generation in which this chromosome was created.</summary>
-    public int Generation
-    {
-        get; set;
-    }
+    public int Generation { get; set; }
 
     /// <summary>Index within the population (0‑based).</summary>
-    public int IndividualIndex
-    {
-        get; set;
-    }
+    public int IndividualIndex { get; set; }
 
     /// <summary>Random seed used to generate this individual (0 = evolved).</summary>
-    public int Seed
-    {
-        get; set;
-    }
+    public int Seed { get; set; }
 
-    /// <summary>Creates a new chromosome with the given gene count.</summary>
+    /// <summary>Constructs a new Chromosome instance.</summary>
     public Chromosome(int geneCount)
     {
         Genes = new double[geneCount];
     }
 
-    /// <summary>Deep copy.</summary>
+    /// <summary>Deep Clones the current chromosome.</summary>
     public Chromosome Clone()
     {
         var clone = new Chromosome(Genes.Length);
@@ -52,7 +40,6 @@ public sealed class Chromosome
     }
 }
 
-// Extension for copying chromosomes
 internal static class ChromosomeExtensions
 {
     public static void CopyFrom(this Chromosome target, Chromosome source)

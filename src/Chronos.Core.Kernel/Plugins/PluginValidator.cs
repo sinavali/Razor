@@ -4,7 +4,8 @@ using Chronos.Core.Abstractions.Plugins;
 namespace Chronos.Core.Kernel.Plugins;
 
 /// <summary>
-/// Validates plugin assemblies against the expected Chronos SDK version.
+/// ARCH-02 / GAP-02: Validates plugin assemblies against the expected Chronos SDK version.
+/// Provides central validation authority.
 /// </summary>
 public static class PluginValidator
 {

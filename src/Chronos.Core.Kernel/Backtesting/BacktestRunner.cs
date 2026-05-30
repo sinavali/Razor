@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Shared.Events;
 using Chronos.Core.Abstractions.Strategies;
+using Chronos.Core.Abstractions.Telemetry;
 using Chronos.Core.Kernel.Brokers;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Indicators;
@@ -11,10 +12,9 @@ using Chronos.Core.Kernel.Telemetry;
 namespace Chronos.Core.Kernel.Backtesting;
 
 /// <summary>
-/// Deterministic tick‑by‑tick backtest runner. Merges tick streams chronologically
-/// and feeds them to the strategy. Uses <see cref="TickWindow"/> for strategies that
-/// need aggregated statistics. Emits progress reports, a completed event with full
-/// metrics, and records throughput telemetry.
+/// Deterministic tick‑by‑tick backtest runner.
+/// Merges tick streams chronologically and feeds them to the strategy. 
+/// Emits progress reports, a completed event with full metrics, and records throughput telemetry.
 /// </summary>
 public sealed class BacktestRunner : IBacktestRunner
 {
@@ -25,17 +25,24 @@ public sealed class BacktestRunner : IBacktestRunner
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        // If no pre‑set genes, the seed must be non‑zero.
-        if (input.Genes is null && input.GeneInitializationSeed == 0)
-            throw new ConfigurationException(
-                "GeneInitializationSeed must be non‑zero when Genes is not pre‑supplied.");
+        // ARCH-05 Fix: Strong contextual evaluation required prior to launching
+        input.Validate();
 
+        // ARCH-03 Fix: Defer execution blocking payload appropriately onto ThreadPool ensuring full caller safety.
+        return Task.Run(() => RunInternal(input, cancellationToken), cancellationToken);
+    }
+
+    private BacktestResult RunInternal(BacktestInput input, CancellationToken cancellationToken)
+    {
         // ---------- setup ----------
         var clock = new TickClock();
+
+        // Fix CS0019: Use implicit interface assignment safely
+        IChronosMetrics metrics = input.Metrics ?? new ChronosMetrics("backtest-runner-internal");
+
         var broker = new SimulatedBroker(
             input.MarketCalculator,
-            input.StrategySpecification.FrictionModel
-                ?? throw new InvalidOperationException("Friction model required."),
+            input.StrategySpecification.FrictionModel!,
             input.SymbolProperties,
             input.StrategySpecification.InitialBalance,
             input.StrategySpecification.Leverage,
@@ -51,26 +58,44 @@ public sealed class BacktestRunner : IBacktestRunner
             .Distinct()
             .Where(tf => tf != TimeFrame.Tick)
             .ToList();
+
         using var tickWindow = new TickWindow(symbols, timeframes);
+
+        // ARCH-04/GAP-01 Fix: Establish Warm-up Phase Guard constraints safely
+        int warmupRemaining = input.ExecutionSpecification.WarmupWindowCount;
+        broker.IsWarmup = warmupRemaining > 0;
+
+        if (warmupRemaining > 0)
+        {
+            tickWindow.WindowCompleted += (sym, tf) =>
+            {
+                if (broker.IsWarmup)
+                {
+                    warmupRemaining--;
+                    if (warmupRemaining <= 0) broker.IsWarmup = false;
+                }
+            };
+        }
 
         if (input.Strategy is StrategyBase sb)
         {
             sb.WireUp(broker, tickWindow);
         }
 
-        double[] genes = input.Genes
-            ?? GeneInjector.ExtractAndInitializeGenes(
+        double[] genes = input.Genes ??
+            GeneInjector.ExtractAndInitializeGenes(
                 input.Strategy,
                 input.NeuralNetwork,
                 input.GeneInitializationSeed);
+
         input.Strategy.InjectGenes(genes);
 
         // ---------- initialise strategy ----------
-#pragma warning disable CA1849 // Sync-over-async intentional for deterministic loop
         input.Strategy.OnConfigureAsync(input.StrategySpecification).GetAwaiter().GetResult();
-        var indicatorRegistry = IndicatorRegistryFactory.Create();
+
+        // Data sources explicitly bound
+        var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
         input.Strategy.OnStartAsync(indicatorRegistry).GetAwaiter().GetResult();
-#pragma warning restore CA1849
 
         // ---------- publish started event ----------
         input.MessageBus?.Publish(new BacktestStartedEvent());
@@ -78,10 +103,8 @@ public sealed class BacktestRunner : IBacktestRunner
         // ---------- main merge & processing loop ----------
         var merged = MergedTickTimeline.EnumerateEvents(input.TickStreams, symbols);
         long processed = 0;
-        long totalEvents = input.TickStreams.Sum(s => (long)s.Count);
+        long totalEvents = input.TickStreams.Sum(s => (long)(s?.Count ?? 0));
         var lastProgress = -1;
-
-        // Start the wall clock for throughput measurement.
         var wallClock = Stopwatch.StartNew();
 
         try
@@ -91,19 +114,17 @@ public sealed class BacktestRunner : IBacktestRunner
                 cancellationToken.ThrowIfCancellationRequested();
                 string sym = symbols[streamIdx];
 
-#pragma warning disable CA1849
                 broker.OnTickAsync(sym, tick).GetAwaiter().GetResult();
                 tickWindow.PushTick(sym, tick);
-                input.Strategy.OnTick(tick);               // synchronous, deterministic
-#pragma warning restore CA1849
+
+                input.Strategy.OnTick(tick); // deterministic principle enforced strictly.
 
                 processed++;
-                int pct = (int)(processed * 100 / totalEvents);
+                int pct = totalEvents > 0 ? (int)(processed * 100 / totalEvents) : 100;
                 if (pct > lastProgress)
                 {
                     lastProgress = pct;
-                    input.Progress?.Report(
-                        new BacktestProgress(pct, $"Processing tick {processed}/{totalEvents}"));
+                    input.Progress?.Report(new BacktestProgress(pct, $"Processing tick {processed}/{totalEvents}"));
                 }
             }
         }
@@ -111,13 +132,10 @@ public sealed class BacktestRunner : IBacktestRunner
         {
             // ---------- teardown (always runs) ----------
             foreach (var sym in symbols)
-#pragma warning disable CA1849
                 broker.CloseAllAsync(sym).GetAwaiter().GetResult();
-#pragma warning restore CA1849
+
             indicatorRegistry.DisposeAll();
-#pragma warning disable CA1849
             input.Strategy.OnStopAsync().GetAwaiter().GetResult();
-#pragma warning restore CA1849
             tickWindow.Dispose();
         }
 
@@ -140,11 +158,7 @@ public sealed class BacktestRunner : IBacktestRunner
 
         // ---------- publish completed event with full metrics ----------
         var metricsCalc = new MetricsCalculator();
-        var summary = metricsCalc.Calculate(
-            result,
-            input.StrategySpecification.InitialBalance,
-            input.ExecutionSpecification.StartDate,
-            input.ExecutionSpecification.EndDate);
+        var summary = metricsCalc.Calculate(result, input.StrategySpecification.InitialBalance, input.ExecutionSpecification.StartDate, input.ExecutionSpecification.EndDate);
 
         input.MessageBus?.Publish(new BacktestCompletedEvent
         {
@@ -166,9 +180,9 @@ public sealed class BacktestRunner : IBacktestRunner
         if (elapsedSeconds > 0.0)
         {
             double ticksPerSec = totalEvents / elapsedSeconds;
-            ChronosMetrics.RecordBacktestTicksPerSecond(ticksPerSec);
+            metrics.RecordBacktestTicksPerSecond(ticksPerSec);
         }
 
-        return Task.FromResult(result);
+        return result;
     }
 }

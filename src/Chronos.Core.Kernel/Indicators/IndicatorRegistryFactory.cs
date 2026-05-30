@@ -1,3 +1,4 @@
+using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Strategies;
 
 namespace Chronos.Core.Kernel.Indicators;
@@ -6,5 +7,5 @@ namespace Chronos.Core.Kernel.Indicators;
 public static class IndicatorRegistryFactory
 {
     /// <summary>Creates a new registry.</summary>
-    public static IIndicatorRegistry Create() => new IndicatorRegistry();
+    public static IIndicatorRegistry Create(TickWindow tickWindow) => new IndicatorRegistry(tickWindow);
 }

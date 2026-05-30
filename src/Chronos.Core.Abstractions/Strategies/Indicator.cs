@@ -1,12 +1,16 @@
 using System.Buffers;
+using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Abstractions.Strategies;
 
 /// <summary>Base class for all technical indicators.</summary>
-public abstract class Indicator : IDisposable
+public abstract class Indicator : IDisposable, IWindowAwareIndicator
 {
     /// <summary>Unique signature used for chaining and caching.</summary>
     public string Signature { get; internal set; } = string.Empty;
+
+    /// <summary>Gives access to the underlying tick stream aggregate window.</summary>
+    protected TickWindow Window { get; private set; } = null!;
 
     private double[] _buffer = [];
     private int _count;
@@ -18,6 +22,9 @@ public abstract class Indicator : IDisposable
         get => _count == 0 ? 0 : _buffer[(int)(index % _count)];
         set => _buffer[(int)(index % _count)] = value;
     }
+
+    /// <summary>Dependency injection from the Indicator Registry.</summary>
+    public void SetWindow(TickWindow window) => Window = window;
 
     /// <summary>Initialises the indicator with a fixed buffer size.</summary>
     public virtual void Initialize(int capacity)

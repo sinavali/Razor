@@ -1,7 +1,8 @@
-using System.Diagnostics;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Strategies;
+using Chronos.Core.Abstractions.Telemetry;
 using Chronos.Core.Kernel.Telemetry;
+using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Optimization;
 
@@ -16,17 +17,16 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     private readonly int _populationSize;
     private readonly int _masterSeed;
     private readonly ChronosRandom _mainRng;
+    private readonly IChronosMetrics _metrics;
 
     private Chromosome[] _population;
     private int _currentGeneration;
     private bool _evaluated;
-
     private readonly double _mutationRate;
     private readonly double _crossoverRate;
     private readonly double _elitismPct;
     private readonly int _tournamentSize;
-
-    private double _bestOverallFitness = double.MinValue;
+    private double _bestOverallFitness = double.NegativeInfinity; // BUG-04 Fix
     private int _stagnationCount;
     private bool _hyperMutation;
     private readonly int _stagnationGenerationsBeforeHyper;
@@ -34,47 +34,21 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
 
     /// <inheritdoc/>
     public int CurrentGeneration => _currentGeneration;
-
     /// <inheritdoc/>
     public int PopulationSize => _populationSize;
-
     /// <inheritdoc/>
     public bool IsHyperMutation => _hyperMutation;
-
     /// <inheritdoc/>
-    public Chromosome BestSolution
-    {
-        get
-        {
-            Sort();
-            return _population[0];
-        }
-    }
-
+    public Chromosome BestSolution { get { Sort(); return _population[0]; } }
     /// <inheritdoc/>
-    public IReadOnlyList<Chromosome> Population
-    {
-        get
-        {
-            Sort();
-            return _population;
-        }
-    }
+    public IReadOnlyList<Chromosome> Population { get { Sort(); return _population; } }
+    /// <summary>Configures threading limits for parallel evaluations.</summary>
+    public int MaxDegreeOfParallelism { get; set; }
 
-    /// <summary>
-    /// Creates a new genetic optimiser.
-    /// </summary>
-    /// <param name="schema">Gene metadata (min, max, step, type) – produced by <see cref="GeneInjector"/>.</param>
-    /// <param name="populationSize">Number of individuals per generation.</param>
-    /// <param name="masterSeed">Seed for the main random number generator. Must be supplied for reproducibility.</param>
-    /// <param name="mutationRate">Base probability of gene mutation.</param>
-    /// <param name="crossoverRate">Probability that a gene comes from parent 1 (vs parent 2).</param>
-    /// <param name="elitismPct">Fraction of best individuals preserved unchanged.</param>
-    /// <param name="tournamentSize">Tournament group size for selection.</param>
-    /// <param name="stagnationGenerationsBeforeHyper">Number of consecutive generations with unchanged best fitness before hyper‑mutation activates (default 3 = hyper‑mutation on 4th).</param>
-    /// <param name="maxDegreeOfParallelism">Maximum parallel evaluations (0 = auto, based on <see cref="Environment.ProcessorCount"/>).</param>
+    /// <summary>Initializes a new optimizer instance.</summary>
     public GeneticOptimizer(
         IReadOnlyList<GeneAttribute> schema,
+        IChronosMetrics metrics,
         int populationSize = 100,
         int masterSeed = 0,
         double mutationRate = 0.1,
@@ -85,6 +59,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         int maxDegreeOfParallelism = 0)
     {
         _schema = schema ?? throw new ArgumentNullException(nameof(schema));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _populationSize = Math.Max(4, populationSize);
         _masterSeed = masterSeed;
         _mutationRate = mutationRate;
@@ -94,33 +69,27 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _stagnationGenerationsBeforeHyper = stagnationGenerationsBeforeHyper;
 
         _mainRng = new ChronosRandom(masterSeed);
-
         _population = new Chromosome[_populationSize];
         for (int i = 0; i < _populationSize; i++)
             _population[i] = new Chromosome(_schema.Count);
 
-        MaxDegreeOfParallelism = maxDegreeOfParallelism > 0
-            ? maxDegreeOfParallelism
-            : Math.Max(1, Environment.ProcessorCount - 1);
+        MaxDegreeOfParallelism = maxDegreeOfParallelism > 0 ? maxDegreeOfParallelism : Math.Max(1, Environment.ProcessorCount - 1);
     }
 
-    /// <summary>Gets or sets the maximum degree of parallelism for fitness evaluations.</summary>
-    public int MaxDegreeOfParallelism { get; set; }
-
     /// <inheritdoc/>
-    public void Initialize()
+    public void Initialize() // B09 Fix: Removing unused RNG param
     {
         _currentGeneration = 0;
         _hyperMutation = false;
         _stagnationCount = 0;
-        _bestOverallFitness = double.MinValue;
+        _bestOverallFitness = double.NegativeInfinity; // BUG-04 Fix
 
         for (int i = 0; i < _populationSize; i++)
         {
             var c = _population[i];
             c.Generation = 0;
             c.IndividualIndex = i;
-            c.Fitness = double.MinValue;
+            c.Fitness = double.NegativeInfinity; // BUG-04 Fix
 
             int individualSeed = GenerateIndividualSeed(i);
             c.Seed = individualSeed;
@@ -132,7 +101,6 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
                 c.Genes[j] = GeneInjector.GenerateRandomGene(indRng, attr.Min, attr.Max, attr.Step);
             }
         }
-
         _evaluated = false;
     }
 
@@ -140,26 +108,22 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     public async Task EvaluateAsync(Func<Chromosome, CancellationToken, Task<double>> evaluator, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
-        var unevaluated = _population.Where(c => c.Fitness <= double.MinValue).ToList();
+        var unevaluated = _population.Where(c => c.Fitness <= double.NegativeInfinity).ToList(); // BUG-04 Fix
         if (unevaluated.Count == 0) return;
 
-        var parallelOptions = new ParallelOptions
-        {
-            CancellationToken = ct,
-            MaxDegreeOfParallelism = MaxDegreeOfParallelism
-        };
-
+        var parallelOptions = new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = MaxDegreeOfParallelism };
         var sw = Stopwatch.StartNew();
 
         await Parallel.ForEachAsync(unevaluated, parallelOptions,
                 async (c, innerCt) => { c.Fitness = await evaluator(c, innerCt).ConfigureAwait(false); })
             .ConfigureAwait(false);
 
-        if (_population.Any(c => c.Fitness <= double.MinValue))
+        // BUG-04 Fix: NegativeInfinity tracks exactly un-evaluated chromosomes.
+        if (_population.Any(c => c.Fitness <= double.NegativeInfinity))
             throw new OptimizationException("One or more chromosomes were not evaluated.");
 
         sw.Stop();
-        ChronosMetrics.RecordOptimizationDuration(sw.Elapsed.TotalSeconds);
+        _metrics.RecordOptimizationDuration(sw.Elapsed.TotalSeconds);
 
         _evaluated = true;
         Sort();
@@ -169,14 +133,13 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     public void Evolve()
     {
         if (!_evaluated) throw new InvalidOperationException("Population must be evaluated before evolving.");
-
         Sort();
         double genBest = _population[0].Fitness;
 
-        if (genBest > _bestOverallFitness)
+        if (genBest > _bestOverallFitness && _bestOverallFitness > double.NegativeInfinity)
         {
             double improvement = genBest - _bestOverallFitness;
-            ChronosMetrics.RecordGaFitnessImprovement(improvement);
+            _metrics.RecordGaFitnessImprovement(improvement);
         }
 
         if (Math.Abs(genBest - _bestOverallFitness) < _fitnessEpsilon)
@@ -198,9 +161,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         int elitismCount = Math.Max(1, (int)(_populationSize * _elitismPct));
 
         var nextPop = new Chromosome[_populationSize];
-        for (int i = 0; i < _populationSize; i++)
-            nextPop[i] = new Chromosome(_schema.Count);
-
+        for (int i = 0; i < _populationSize; i++) nextPop[i] = new Chromosome(_schema.Count);
         for (int i = 0; i < elitismCount; i++)
         {
             nextPop[i].CopyFrom(_population[i]);
@@ -228,7 +189,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
 
             child.Generation = _currentGeneration + 1;
             child.IndividualIndex = i;
-            child.Fitness = double.MinValue;
+            child.Fitness = double.NegativeInfinity; // BUG-04 Fix
             child.Seed = 0;
         }
 
@@ -237,7 +198,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _evaluated = false;
     }
 
-    /// <summary>Serialises the full optimiser state for pause/resume.</summary>
+    /// <summary>Saves current state.</summary>
     public GeneticOptimizerState SaveState() => new()
     {
         Population = [.. _population.Select(c => c.Clone())],
@@ -248,8 +209,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         HyperMutation = _hyperMutation
     };
 
-    /// <summary>Restores a previously saved state.</summary>
-    /// <param name="state">The state to restore.</param>
+    /// <summary>Restores state.</summary>
     public void LoadState(GeneticOptimizerState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -261,17 +221,14 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _hyperMutation = state.HyperMutation;
     }
 
-    /// <summary>
-    /// Resets all fitness values to unevaluated. Call after <see cref="LoadState"/> when the data has changed.
-    /// </summary>
+    /// <summary>Marks fitness as dirty.</summary>
     public void InvalidateFitness()
     {
-        foreach (var c in _population) c.Fitness = double.MinValue;
+        foreach (var c in _population) c.Fitness = double.NegativeInfinity;
         _evaluated = false;
     }
 
     private void Sort() => Array.Sort(_population, (a, b) => b.Fitness.CompareTo(a.Fitness));
-
     private int GenerateIndividualSeed(int index) => (int)(((uint)_masterSeed * 397) ^ (uint)index);
 
     private Chromosome TournamentSelect()
@@ -282,7 +239,6 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             var competitor = _population[_mainRng.Next(_populationSize)];
             if (competitor.Fitness > best.Fitness) best = competitor;
         }
-
         return best;
     }
 }
