@@ -86,11 +86,11 @@ chronos-core/
 
 - **[Chronos Principles](docs/Chronos%20Principles.md)** – Immutable architectural rules for all Chronos projects.
 - **[Product Model](docs/Chronos%20Product%20Model.md)** – Business and product definition.
-- **[Glossary](docs/Chronos%20Glossary%20(v1.0.0%20LTS).md)** – All domain terms defined.
-- **[Configuration Reference](docs/Chronos%20Configuration%20Reference%20(v1.0.0%20LTS).md)** – Every configuration object, field, and validation rule.
-- **[Plugin Developer Guide](docs/Chronos%20Plugin%20Developer%20Guide%20(v1.0.0%20LTS).md)** – How to build adapters, strategies, indicators, and all other plugin types.
-- **[Installation & Deployment Guide](docs/Chronos%20Installation%20%26%20Deployment%20Guide%20(v1.0.0%20LTS).md)** – How to install the Chronos Engine on Windows/Linux.
-- **[Internal Architecture](docs/Chronos%20Internal%20Technical%20Architecture%20Document%20(v1.0.0%20LTS).md)** – Closed‑source engine internals (for core developers only).
+- **[Glossary](docs/Chronos%20Glossary.md)** – All domain terms defined.
+- **[Configuration Reference](docs/Chronos%20Configuration%20Reference.md)** – Every configuration object, field, and validation rule.
+- **[Plugin Developer Guide](docs/Chronos%20Plugin%20Developer%20Guide.md)** – How to build adapters, strategies, indicators, and all other plugin types.
+- **[Installation & Deployment Guide](docs/Chronos%20Installation%20%26%20Deployment%20Guide.md)** – How to install the Chronos Engine on Windows/Linux.
+- **[Internal Architecture](docs/Chronos%20Internal%20Technical%20Architecture%20Document.md)** – Closed‑source engine internals (for core developers only).
 
 ---
 
