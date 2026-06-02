@@ -10,8 +10,8 @@ namespace Chronos.Core.Kernel.Indicators;
 internal sealed class IndicatorRegistry : IIndicatorRegistry
 {
     private readonly ConcurrentDictionary<string, Indicator> _cache = new();
-    private readonly ConcurrentBag<Indicator> _active = []; // ARCH-09 Fix applied
-    private readonly TickWindow _tickWindow; // Context reference passed
+    private readonly ConcurrentDictionary<string, Indicator> _active = new();
+    private readonly TickWindow _tickWindow;
 
     private static readonly ConcurrentDictionary<(Type, int), Func<object[], object>> _ctorCache = new();
 
@@ -20,11 +20,12 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
         _tickWindow = tickWindow ?? throw new ArgumentNullException(nameof(tickWindow));
     }
 
-    public IReadOnlyList<Indicator> ActiveIndicators => _active.ToArray();
+    public IReadOnlyList<Indicator> ActiveIndicators => _active.Values.ToArray();
 
     public T Get<T>(params object[] args) where T : Indicator
     {
         string sig = typeof(T).FullName + ":" + string.Join(",", args.Select(a => a?.ToString() ?? "null"));
+
         if (_cache.TryGetValue(sig, out var existing) && existing is T typed)
         {
             return typed;
@@ -43,14 +44,13 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
 
         instance.Signature = sig;
         _cache[sig] = instance;
-        _active.Add(instance);
+        _active[sig] = instance;
 
         if (instance is IRegistryAwareIndicator aware)
         {
             aware.SetRegistry(this);
         }
 
-        // ARCH-06 Fix: Indicator properly seeded with global reference
         if (instance is IWindowAwareIndicator windowAware)
         {
             windowAware.SetWindow(_tickWindow);
@@ -62,8 +62,9 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
     public bool Unregister(Indicator indicator)
     {
         if (indicator == null) return false;
-        string sig = indicator.Signature;
-        if (_cache.TryRemove(sig, out _))
+
+        if (_cache.TryRemove(indicator.Signature, out _) &&
+            _active.TryRemove(indicator.Signature, out _))
         {
             indicator.Dispose();
             return true;
@@ -73,7 +74,7 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
 
     public void DisposeAll()
     {
-        foreach (var ind in _active)
+        foreach (var ind in _active.Values)
         {
             ind.Dispose();
         }

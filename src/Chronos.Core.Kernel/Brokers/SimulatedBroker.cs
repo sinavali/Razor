@@ -54,7 +54,7 @@ public sealed class SimulatedBroker : IBroker
     public double MaxDailyDrawdown { get; private set; }
 
     /// <summary>GAP-01/ARCH-04: True if the engine is currently processing warm-up data.</summary>
-    public bool IsWarmup { get; set; }
+    public bool IsWarmup { get; internal set; }
 
     /// <summary>Constructs the simulated broker for backtest environments.</summary>
     public SimulatedBroker(

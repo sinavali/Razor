@@ -26,7 +26,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     private readonly double _crossoverRate;
     private readonly double _elitismPct;
     private readonly int _tournamentSize;
-    private double _bestOverallFitness = double.NegativeInfinity; // BUG-04 Fix
+    private double _bestOverallFitness = Chromosome.NotEvaluated;
     private int _stagnationCount;
     private bool _hyperMutation;
     private readonly int _stagnationGenerationsBeforeHyper;
@@ -77,19 +77,19 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     }
 
     /// <inheritdoc/>
-    public void Initialize() // B09 Fix: Removing unused RNG param
+    public void Initialize()
     {
         _currentGeneration = 0;
         _hyperMutation = false;
         _stagnationCount = 0;
-        _bestOverallFitness = double.NegativeInfinity; // BUG-04 Fix
+        _bestOverallFitness = Chromosome.NotEvaluated;
 
         for (int i = 0; i < _populationSize; i++)
         {
             var c = _population[i];
             c.Generation = 0;
             c.IndividualIndex = i;
-            c.Fitness = double.NegativeInfinity; // BUG-04 Fix
+            c.Fitness = Chromosome.NotEvaluated;
 
             int individualSeed = GenerateIndividualSeed(i);
             c.Seed = individualSeed;
@@ -104,11 +104,10 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _evaluated = false;
     }
 
-    /// <inheritdoc/>
     public async Task EvaluateAsync(Func<Chromosome, CancellationToken, Task<double>> evaluator, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
-        var unevaluated = _population.Where(c => c.Fitness <= double.NegativeInfinity).ToList(); // BUG-04 Fix
+        var unevaluated = _population.Where(c => c.Fitness <= Chromosome.NotEvaluated).ToList();
         if (unevaluated.Count == 0) return;
 
         var parallelOptions = new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = MaxDegreeOfParallelism };
@@ -118,8 +117,8 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
                 async (c, innerCt) => { c.Fitness = await evaluator(c, innerCt).ConfigureAwait(false); })
             .ConfigureAwait(false);
 
-        // BUG-04 Fix: NegativeInfinity tracks exactly un-evaluated chromosomes.
-        if (_population.Any(c => c.Fitness <= double.NegativeInfinity))
+        // Ensure no chromosome still has the NotEvaluated sentinel (catches evaluator returning it maliciously)
+        if (_population.Any(c => c.Fitness <= Chromosome.NotEvaluated))
             throw new OptimizationException("One or more chromosomes were not evaluated.");
 
         sw.Stop();
@@ -189,7 +188,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
 
             child.Generation = _currentGeneration + 1;
             child.IndividualIndex = i;
-            child.Fitness = double.NegativeInfinity; // BUG-04 Fix
+            child.Fitness = Chromosome.NotEvaluated;
             child.Seed = 0;
         }
 
@@ -224,7 +223,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     /// <summary>Marks fitness as dirty.</summary>
     public void InvalidateFitness()
     {
-        foreach (var c in _population) c.Fitness = double.NegativeInfinity;
+        foreach (var c in _population) c.Fitness = Chromosome.NotEvaluated;
         _evaluated = false;
     }
 

@@ -17,6 +17,10 @@ public class ChronosRandom
     }
 
     /// <summary>Creates a new generator from a 32‑bit seed.</summary>
+    /// <remarks>
+    /// Negative seeds are cast to <see cref="ulong"/> before use, so seed -1 produces
+    /// a different sequence than seed 1. Use consistent seed conventions.
+    /// </remarks>
     public ChronosRandom(int seed) : this((ulong)seed) { }
 
     private static ulong SplitMix64(ulong state)

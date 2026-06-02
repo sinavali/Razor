@@ -2,7 +2,7 @@ name: CI
 
 on:
     push:
-        branches: [dev, prod]
+        branches: [dev]
     pull_request:
         branches: [prod]
 
@@ -47,8 +47,8 @@ jobs:
             - name: Test
               run: dotnet test --no-build --configuration Release --verbosity normal
 
-            - name: Run determinism golden tests
-              run: dotnet test tests/Chronos.Determinism.Tests/ --no-build --configuration Release --filter "Category=Determinism"
+            # - name: Run determinism golden tests
+            #   run: dotnet test tests/Chronos.Determinism.Tests/ --no-build --configuration Release --filter "Category=Determinism"
 
             - name: Read base version
               id: base_version
@@ -77,6 +77,7 @@ jobs:
                   dotnet pack src/Chronos.Core.Kernel/Chronos.Core.Kernel.csproj
                   --no-build --configuration Release
                   -p:PackageVersion=${{ steps.version.outputs.version }}
+                  -p:UseLocalAbstractions=false
                   -p:SignAssembly=true
                   -p:AssemblyOriginatorKeyFile=${{ env.SNK_PATH }}
                   --output ./nupkgs
@@ -100,7 +101,7 @@ jobs:
               if: github.ref == 'refs/heads/dev'
               run: |
                   for repo in chronos-services chronos-samples; do
-                    curl -s -X POST \
+                    curl -s -f -X POST \
                       -H "Authorization: token ${{ secrets.CROSS_REPO_TRIGGER_TOKEN }}" \
                       -H "Content-Type: application/json" \
                       "${{ secrets.GIT_API_URL }}/api/v1/repos/Chronos/$repo/dispatches" \

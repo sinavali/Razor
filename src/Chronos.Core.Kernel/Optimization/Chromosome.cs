@@ -6,11 +6,17 @@ namespace Chronos.Core.Kernel.Optimization;
 /// </summary>
 public sealed class Chromosome
 {
+    /// <summary>
+    /// Fitness value that indicates a chromosome has not yet been evaluated.
+    /// Fitness evaluation functions must never return this value.
+    /// </summary>
+    public const double NotEvaluated = double.NegativeInfinity;
+
     /// <summary>Genes array (normalised property values + optional neural weights).</summary>
     public double[] Genes { get; }
 
     /// <summary>Fitness value (higher = better). Set by the evaluation function.</summary>
-    public double Fitness { get; set; } = double.NegativeInfinity; // BUG-04 Fix
+    public double Fitness { get; set; } = NotEvaluated;
 
     /// <summary>Generation in which this chromosome was created.</summary>
     public int Generation { get; set; }

@@ -10,7 +10,7 @@ public sealed record GeneticOptimizerState
     /// <summary>Whether the current population has been evaluated.</summary>
     public bool Evaluated { get; init; }
     /// <summary>Best fitness observed across all generations.</summary>
-    public double BestOverallFitness { get; init; } = double.NegativeInfinity; // BUG-04 Fix
+    public double BestOverallFitness { get; init; } = Chromosome.NotEvaluated;
     /// <summary>Consecutive generations without improvement.</summary>
     public int StagnationCount { get; init; }
     /// <summary>Whether hyper‑mutation is active.</summary>
