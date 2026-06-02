@@ -14,24 +14,29 @@ public sealed class ChronosMetrics : IChronosMetrics
 
     private static readonly Histogram<double> GaFitnessImprovementHistogram =
         Meter.CreateHistogram<double>("chronos.ga.fitness_improvement", description: "Improvement in best fitness per generation");
+
     private static readonly Histogram<double> BacktestTicksPerSecondHistogram =
         Meter.CreateHistogram<double>("chronos.backtest.ticks_per_second", "ticks/s", "Rate of tick processing during backtest");
+
     private static readonly Histogram<double> LiveOrderLatencyHistogram =
         Meter.CreateHistogram<double>("chronos.live.order_latency_ms", "ms", "Latency of live order placement");
+
     private static readonly Counter<long> LiveOrderRejectionCounter =
         Meter.CreateCounter<long>("chronos.live.order_rejections_total", description: "Total live order rejections");
+
     private static readonly Histogram<double> OptimizationDurationHistogram =
         Meter.CreateHistogram<double>("chronos.optimization.duration_seconds", "s", "Duration of an optimization run");
+
     private static readonly Histogram<double> LiveTickLatencyHistogram =
         Meter.CreateHistogram<double>("chronos.live.tick_latency_ticks", "ticks", "Tick arrival latency");
 
-    // Track the internal instance variables
     private bool _isConnected;
     private string _adapterName = "unknown";
     private readonly KeyValuePair<string, object?> _instanceTag;
 
     /// <inheritdoc />
     public bool IsConnected => _isConnected;
+
     /// <inheritdoc />
     public string AdapterName => _adapterName;
 
@@ -40,9 +45,8 @@ public sealed class ChronosMetrics : IChronosMetrics
     {
         _instanceTag = new KeyValuePair<string, object?>("instance_id", instanceId);
 
-        // A static meter with instance tags mapped per object reference allows multiple engines to emit simultaneously.
         Meter.CreateObservableGauge(
-            $"chronos.live.connection_state_{instanceId}", // OpenTelemetry requires unique gauge IDs internally
+            "chronos.live.connection_state",
             () => new Measurement<int>(_isConnected ? 1 : 0, _instanceTag),
             description: "1 if connected, 0 if disconnected");
     }
@@ -56,14 +60,19 @@ public sealed class ChronosMetrics : IChronosMetrics
 
     /// <inheritdoc />
     public void RecordLiveTickLatency(long ticks) => LiveTickLatencyHistogram.Record(ticks, _instanceTag);
+
     /// <inheritdoc />
     public void RecordGaFitnessImprovement(double improvement) => GaFitnessImprovementHistogram.Record(improvement, _instanceTag);
+
     /// <inheritdoc />
     public void RecordBacktestTicksPerSecond(double ticksPerSec) => BacktestTicksPerSecondHistogram.Record(ticksPerSec, _instanceTag);
+
     /// <inheritdoc />
     public void RecordLiveOrderLatency(long milliseconds) => LiveOrderLatencyHistogram.Record(milliseconds, _instanceTag);
+
     /// <inheritdoc />
     public void RecordLiveOrderRejection() => LiveOrderRejectionCounter.Add(1, _instanceTag);
+
     /// <inheritdoc />
     public void RecordOptimizationDuration(double seconds) => OptimizationDurationHistogram.Record(seconds, _instanceTag);
 }

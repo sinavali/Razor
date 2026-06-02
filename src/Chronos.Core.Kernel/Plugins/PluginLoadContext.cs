@@ -18,9 +18,7 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
 
     protected override Assembly? Load(AssemblyName assemblyName)
     {
-        // Must share the Chronos.Core.Abstractions interface contracts from the Host context
-        // Fix for CA1310
-        if (assemblyName.Name != null && assemblyName.Name.StartsWith("Chronos.Core.Abstractions", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(assemblyName.Name, "Chronos.Core.Abstractions", StringComparison.OrdinalIgnoreCase))
         {
             return null; // Force fallback to default context to share types
         }

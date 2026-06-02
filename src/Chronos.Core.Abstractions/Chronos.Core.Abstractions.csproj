@@ -11,16 +11,17 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Chronos.Core.Kernel" />
+        <InternalsVisibleTo Include="Chronos.Core.Abstractions.UnitTests" />
+        <InternalsVisibleTo Include="Chronos.Core.Abstractions.IntegrationTests" />
     </ItemGroup>
-
 
     <PropertyGroup>
         <Description>Public SDK for developing Chronos plugins (adapters, strategies). Contains only contracts and utilities; no runtime logic.</Description>
         <PackageTags>trading;algorithmic;chronos;adapter;strategy;fx;crypto</PackageTags>
-        <PackageProjectUrl>https://chronos-trading.com</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/your-org/chronos-core</RepositoryUrl>
+        <PackageProjectUrl>https://chronos.io</PackageProjectUrl>
+        <RepositoryUrl>https://git.chronos.io/Chronos/chronos-core.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageLicenseExpression>MIT</PackageLicenseExpression>   <!-- Change to your actual license -->
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageIcon>icon.png</PackageIcon>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
@@ -30,11 +31,6 @@
     <ItemGroup>
         <None Include="../../assets/icon.png" Pack="true" PackagePath="" />
         <None Include="../../README.md" Pack="true" PackagePath="" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <InternalsVisibleTo Include="Chronos.Core.Abstractions.UnitTests" />
-        <InternalsVisibleTo Include="Chronos.Core.Abstractions.IntegrationTests" />
     </ItemGroup>
 
 </Project>
