@@ -2,7 +2,7 @@
 
 **Institutional‑grade algorithmic trading engine – v1.0.0 LTS**
 
-`chronos-core` is the heart of the Chronos ecosystem. It contains the public SDK for plugin developers and the closed‑source core engine that executes backtests, optimisations, and live trading. This repository is the single source of truth for all Chronos trading logic.
+`core` is the heart of the Chronos ecosystem. It contains the public SDK for plugin developers and the closed‑source core engine that executes backtests, optimisations, and live trading. This repository is the single source of truth for all Chronos trading logic.
 
 ---
 
@@ -62,7 +62,7 @@ All plugins share a common versioning and isolation model via `AssemblyLoadConte
 ## Repository Structure
 
 ```
-chronos-core/
+core/
 ├── src/
 │   ├── Chronos.Core.Abstractions/     ← Public SDK (NuGet package)
 │   └── Chronos.Core.Kernel/           ← Closed‑source engine
@@ -84,13 +84,13 @@ chronos-core/
 
 ## Documentation
 
-- **[Chronos Principles](docs/Chronos%20Principles.md)** – Immutable architectural rules for all Chronos projects.
-- **[Product Model](docs/Chronos%20Product%20Model.md)** – Business and product definition.
-- **[Glossary](docs/Chronos%20Glossary%20(v1.0.0%20LTS).md)** – All domain terms defined.
-- **[Configuration Reference](docs/Chronos%20Configuration%20Reference%20(v1.0.0%20LTS).md)** – Every configuration object, field, and validation rule.
-- **[Plugin Developer Guide](docs/Chronos%20Plugin%20Developer%20Guide%20(v1.0.0%20LTS).md)** – How to build adapters, strategies, indicators, and all other plugin types.
-- **[Installation & Deployment Guide](docs/Chronos%20Installation%20%26%20Deployment%20Guide%20(v1.0.0%20LTS).md)** – How to install the Chronos Engine on Windows/Linux.
-- **[Internal Architecture](docs/Chronos%20Internal%20Technical%20Architecture%20Document%20(v1.0.0%20LTS).md)** – Closed‑source engine internals (for core developers only).
+- **[Chronos Principles](./docs/Chronos%20Principles.md)** – Immutable architectural rules for all Chronos projects.
+- **[Product Model](./docs/Chronos%20Product%20Model.md)** – Business and product definition.
+- **[Glossary](./docs/Chronos%20Glossary%20.md)** – All domain terms defined.
+- **[Configuration Reference](./docs/Chronos%20Configuration%20Reference%20.md)** – Every configuration object, field, and validation rule.
+- **[Plugin Developer Guide](./docs/Chronos%20Plugin%20Developer%20Guide%20.md)** – How to build adapters, strategies, indicators, and all other plugin types.
+- **[Installation & Deployment Guide](./docs/Chronos%20Installation%20%26%20Deployment%20Guide%20.md)** – How to install the Chronos Engine on Windows/Linux.
+- **[Internal Architecture](./docs/Chronos%20Internal%20Technical%20Architecture%20Document%20.md)** – Closed‑source engine internals (for core developers only).
 
 ---
 
@@ -113,8 +113,8 @@ chronos-core/
 ### Build
 
 ```bash
-git clone http://localhost:300/Chronos/chronos-core.git
-cd chronos-core
+git clone http://localhost:300/Chronos/core.git
+cd core
 dotnet restore
 dotnet build --configuration Release
 ```

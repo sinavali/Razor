@@ -685,7 +685,6 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
 
     private bool TryAcquireInFlight(string key)
     {
-        // BUG-02 Fix: WallClock is TickCount64 (milliseconds). Use milliseconds duration.
         long now = _wallClock.GetTimestamp();
         if (_inFlightOps.TryGetValue(key, out long expiry) && now < expiry) return false;
 
@@ -721,17 +720,18 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             return;
         }
 
-        if (currentTime >= _nextHoldingCostTime)
+        // Process each missed day individually
+        while (currentTime >= _nextHoldingCostTime)
         {
+            long prevBoundary = _nextHoldingCostTime - TimeSpan.TicksPerDay;
+
             for (int i = 0; i < _openPositions.Count; i++)
             {
                 var pos = _openPositions[i];
                 if (_symbolSpecs.TryGetValue(pos.Symbol, out var spec))
                 {
-                    // BUG-01 Fix: Start of charge period correctly anchored 
-                    long prevBoundary = _nextHoldingCostTime - TimeSpan.TicksPerDay;
                     double cost = _adapter.Calculator.CalculateHoldingCost(
-                        spec, pos.Volume, pos.OpenPrice, pos.Type, prevBoundary, currentTime);
+                        spec, pos.Volume, pos.OpenPrice, pos.Type, prevBoundary, _nextHoldingCostTime);
 
                     if (Math.Abs(cost) > 0)
                     {
@@ -742,11 +742,11 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 }
             }
 
-            DateTime utcCurrent = new DateTime(currentTime, DateTimeKind.Utc).Date;
-            DateTime utcLast = new DateTime(currentTime - TimeSpan.TicksPerDay, DateTimeKind.Utc).Date;
+            DateTime utcCurrent = new DateTime(_nextHoldingCostTime, DateTimeKind.Utc).Date;
+            DateTime utcLast = new DateTime(prevBoundary, DateTimeKind.Utc).Date;
             if (utcCurrent != utcLast) _peakDailyEquity = _equity;
 
-            _nextHoldingCostTime = (currentTime / TimeSpan.TicksPerDay + 1) * TimeSpan.TicksPerDay;
+            _nextHoldingCostTime += TimeSpan.TicksPerDay;
         }
     }
 
@@ -780,10 +780,18 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         });
         _marginUsed = CalculateMarginUsed();
 
-        _ = Task.Run(() => ClosePositionAsync(worstPos.Ticket)).ContinueWith(t =>
+        // Fire-and-forget close with robust error logging
+        _ = Task.Run(async () =>
         {
-            if (t.IsFaulted) Trace.TraceError($"Stop‑out close failed: {t.Exception}");
-        }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            try
+            {
+                await ClosePositionAsync(worstPos.Ticket).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Stop‑out close failed for ticket {worstPos.Ticket}: {ex}");
+            }
+        });
     }
 
     private void RecordTelemetry(bool success, long latencyMs)
@@ -796,7 +804,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await EndSessionAsync().ConfigureAwait(false);
-        if (_lifecycleCts != null)
+        if (_lifecycleCts is not null)
         {
             await _lifecycleCts.CancelAsync().ConfigureAwait(false);
             _lifecycleCts.Dispose();

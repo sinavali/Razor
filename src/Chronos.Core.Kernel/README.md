@@ -85,7 +85,7 @@ Chronos.Core.Kernel/
 ### Restore & Build
 
 ```bash
-cd chronos-core
+cd core
 dotnet restore
 dotnet build --configuration Release
 ```

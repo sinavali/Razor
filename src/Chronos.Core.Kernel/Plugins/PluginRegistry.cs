@@ -13,6 +13,9 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
     /// <summary>List of available discovered plugin names.</summary>
     public IReadOnlyList<string> AvailableNames => _pluginTypes.Keys.ToList();
 
+    /// <summary>Creates a new registry by scanning the given directory for plugins.</summary>
+    /// <param name="pluginsPath">The directory containing plugin DLLs.</param>
+    /// <param name="attributeType">The discovery attribute type that marks plugin classes (e.g., <c>typeof(AdapterNameAttribute)</c>).</param>
     public PluginRegistry(string pluginsPath, Type attributeType)
     {
         ArgumentNullException.ThrowIfNull(pluginsPath);
@@ -26,6 +29,10 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
         _pluginTypes = LoadPlugins(pluginsPath, attributeType);
     }
 
+    /// <summary>Creates an instance of the plugin with the given name.</summary>
+    /// <param name="name">The plugin name (as declared by its discovery attribute).</param>
+    /// <returns>The plugin instance.</returns>
+    /// <exception cref="InvalidOperationException">No plugin with the specified name was found.</exception>
     public TPlugin Create(string name)
     {
         if (!_pluginTypes.TryGetValue(name, out var type))
@@ -68,7 +75,9 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
                     }
                 }
             }
+#pragma warning disable CA1031 // Do not catch general exception types
             catch (Exception ex)
+#pragma warning restore CA1031 // Do not catch general exception types
             {
                 System.Diagnostics.Trace.TraceWarning($"Failed to load assembly {dll}: {ex.Message}");
             }

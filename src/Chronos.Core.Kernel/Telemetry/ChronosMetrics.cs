@@ -30,6 +30,10 @@ public sealed class ChronosMetrics : IChronosMetrics
     private static readonly Histogram<double> LiveTickLatencyHistogram =
         Meter.CreateHistogram<double>("chronos.live.tick_latency_ticks", "ticks", "Tick arrival latency");
 
+    // Single static gauge for connection state; instances register their tag once
+    private static readonly List<ChronosMetrics> _instances = new();
+    private static bool _gaugeRegistered;
+
     private bool _isConnected;
     private string _adapterName = "unknown";
     private readonly KeyValuePair<string, object?> _instanceTag;
@@ -45,10 +49,29 @@ public sealed class ChronosMetrics : IChronosMetrics
     {
         _instanceTag = new KeyValuePair<string, object?>("instance_id", instanceId);
 
-        Meter.CreateObservableGauge(
-            "chronos.live.connection_state",
-            () => new Measurement<int>(_isConnected ? 1 : 0, _instanceTag),
-            description: "1 if connected, 0 if disconnected");
+        lock (_instances)
+        {
+            _instances.Add(this);
+            if (!_gaugeRegistered)
+            {
+                Meter.CreateObservableGauge(
+                    "chronos.live.connection_state",
+                    () =>
+                    {
+                        var measurements = new Measurement<int>[_instances.Count];
+                        for (int i = 0; i < _instances.Count; i++)
+                        {
+                            var inst = _instances[i];
+                            measurements[i] = new Measurement<int>(
+                                inst._isConnected ? 1 : 0,
+                                inst._instanceTag);
+                        }
+                        return measurements;
+                    },
+                    description: "1 if connected, 0 if disconnected");
+                _gaugeRegistered = true;
+            }
+        }
     }
 
     /// <inheritdoc />

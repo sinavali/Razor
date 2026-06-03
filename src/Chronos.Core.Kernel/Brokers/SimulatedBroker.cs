@@ -535,25 +535,24 @@ public sealed class SimulatedBroker : IBroker
             return;
         }
 
-        if (currentTime >= _nextHoldingCostTime)
+        while (currentTime >= _nextHoldingCostTime)
         {
-            if (currentTime > 0)
+            long prevBoundary = _nextHoldingCostTime - TimeSpan.TicksPerDay;
+
+            foreach (var p in _positions)
             {
-                foreach (var p in _positions)
+                if (_symbolSpecs.TryGetValue(p.Symbol, out var spec))
                 {
-                    if (_symbolSpecs.TryGetValue(p.Symbol, out var spec))
-                    {
-                        long prevBoundary = _nextHoldingCostTime - TimeSpan.TicksPerDay;
-                        double cost = _calculator.CalculateHoldingCost(spec, p.Volume, p.OpenPrice, p.Type, prevBoundary, _nextHoldingCostTime);
-                        p.Swap += cost;
-                    }
+                    double cost = _calculator.CalculateHoldingCost(spec, p.Volume, p.OpenPrice, p.Type, prevBoundary, _nextHoldingCostTime);
+                    p.Swap += cost;
                 }
             }
 
-            DateTime utcCurrent = new DateTime(currentTime, DateTimeKind.Utc).Date;
-            DateTime utcLast = new DateTime(currentTime - TimeSpan.TicksPerDay, DateTimeKind.Utc).Date;
+            DateTime utcCurrent = new DateTime(_nextHoldingCostTime, DateTimeKind.Utc).Date;
+            DateTime utcLast = new DateTime(prevBoundary, DateTimeKind.Utc).Date;
             if (utcCurrent != utcLast) _peakDailyEquity = _equity;
-            _nextHoldingCostTime = (currentTime / TimeSpan.TicksPerDay + 1) * TimeSpan.TicksPerDay;
+
+            _nextHoldingCostTime += TimeSpan.TicksPerDay;
         }
     }
 

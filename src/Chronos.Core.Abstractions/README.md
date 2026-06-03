@@ -54,7 +54,7 @@ Proprietary. Redistribution allowed. See the license file included in the reposi
 
 ---
 
-Now for the **`Chronos Installation & Deployment Guide (v1.0.0 LTS).md`** – I will output the complete, exhaustive version below. (Place it at `/chronos-core/docs/Chronos Installation & Deployment Guide (v1.0.0 LTS).md`.)
+Now for the **`Chronos Installation & Deployment Guide (v1.0.0 LTS).md`** – I will output the complete, exhaustive version below. (Place it at `/core/docs/Chronos Installation & Deployment Guide (v1.0.0 LTS).md`.)
 
 ```markdown
 ## Chronos Installation & Deployment Guide

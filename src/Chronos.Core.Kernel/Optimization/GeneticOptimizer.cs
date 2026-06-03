@@ -104,6 +104,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _evaluated = false;
     }
 
+    /// <inheritdoc/>
     public async Task EvaluateAsync(Func<Chromosome, CancellationToken, Task<double>> evaluator, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(evaluator);

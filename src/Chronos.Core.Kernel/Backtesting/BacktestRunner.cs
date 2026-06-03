@@ -24,11 +24,7 @@ public sealed class BacktestRunner : IBacktestRunner
     public Task<BacktestResult> RunAsync(BacktestInput input, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(input);
-
-        // ARCH-05 Fix: Strong contextual evaluation required prior to launching
         input.Validate();
-
-        // ARCH-03 Fix: Defer execution blocking payload appropriately onto ThreadPool ensuring full caller safety.
         return Task.Run(() => RunInternal(input, cancellationToken), cancellationToken);
     }
 
@@ -36,8 +32,6 @@ public sealed class BacktestRunner : IBacktestRunner
     {
         // ---------- setup ----------
         var clock = new TickClock();
-
-        // Fix CS0019: Use implicit interface assignment safely
         IChronosMetrics metrics = input.Metrics ?? new ChronosMetrics("backtest-runner-internal");
 
         var broker = new SimulatedBroker(
@@ -61,7 +55,6 @@ public sealed class BacktestRunner : IBacktestRunner
 
         using var tickWindow = new TickWindow(symbols, timeframes);
 
-        // ARCH-04/GAP-01 Fix: Establish Warm-up Phase Guard constraints safely
         int warmupRemaining = input.ExecutionSpecification.WarmupWindowCount;
         broker.IsWarmup = warmupRemaining > 0;
 
@@ -92,8 +85,6 @@ public sealed class BacktestRunner : IBacktestRunner
 
         // ---------- initialise strategy ----------
         input.Strategy.OnConfigureAsync(input.StrategySpecification).GetAwaiter().GetResult();
-
-        // Data sources explicitly bound
         var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
         input.Strategy.OnStartAsync(indicatorRegistry).GetAwaiter().GetResult();
 
@@ -105,6 +96,7 @@ public sealed class BacktestRunner : IBacktestRunner
         long processed = 0;
         long totalEvents = input.TickStreams.Sum(s => (long)(s?.Count ?? 0));
         var lastProgress = -1;
+        // Start wall clock just before processing ticks (after gene injection & strategy init)
         var wallClock = Stopwatch.StartNew();
 
         try
@@ -116,8 +108,7 @@ public sealed class BacktestRunner : IBacktestRunner
 
                 broker.OnTickAsync(sym, tick).GetAwaiter().GetResult();
                 tickWindow.PushTick(sym, tick);
-
-                input.Strategy.OnTick(tick); // deterministic principle enforced strictly.
+                input.Strategy.OnTick(tick);
 
                 processed++;
                 int pct = totalEvents > 0 ? (int)(processed * 100 / totalEvents) : 100;
@@ -130,7 +121,6 @@ public sealed class BacktestRunner : IBacktestRunner
         }
         finally
         {
-            // ---------- teardown (always runs) ----------
             foreach (var sym in symbols)
                 broker.CloseAllAsync(sym).GetAwaiter().GetResult();
 
