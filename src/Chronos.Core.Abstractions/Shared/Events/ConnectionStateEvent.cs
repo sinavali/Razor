@@ -6,7 +6,7 @@ namespace Chronos.Core.Abstractions.Shared.Events;
 public sealed record ConnectionStateEvent(bool IsConnected, string AdapterName) : IMessage
 {
     /// <inheritdoc/>
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public required DateTime Timestamp { get; init; }
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
     /// <inheritdoc/>

@@ -37,10 +37,21 @@ public sealed class GeneAttribute : Attribute
     /// <summary>Creates a new gene attribute.</summary>
     public GeneAttribute(double min, double max, double step = 1.0, GeneType type = GeneType.Continuous)
     {
-        if (min > max) throw new ArgumentException("A gene cannot have a minimum value greater than its maximum value.");
-        if (step < 0) throw new ArgumentException("Gene step must be non‑negative.");
+        if (min > max)
+        {
+            throw new ArgumentException("A gene cannot have a minimum value greater than its maximum value.");
+        }
+
+        if (step < 0)
+        {
+            throw new ArgumentException("Gene step must be non‑negative.");
+        }
+
         if ((type == GeneType.Categorical || type == GeneType.Discrete) && step < 1)
+        {
             throw new ArgumentException("Categorical and Discrete genes must have a step of at least 1.");
+        }
+
         Min = min;
         Max = max;
         Step = step;

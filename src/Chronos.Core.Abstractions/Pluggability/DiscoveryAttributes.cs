@@ -90,3 +90,13 @@ public sealed class FitnessModelNameAttribute : Attribute
     /// <summary>Creates a new attribute instance.</summary>
     public FitnessModelNameAttribute(string name) => Name = name;
 }
+
+/// <summary>Marks a market data provider class with its canonical name.</summary>
+[AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
+public sealed class MarketDataProviderNameAttribute : Attribute
+{
+    /// <summary>The market data provider name.</summary>
+    public string Name { get; }
+    /// <summary>Creates a new attribute instance.</summary>
+    public MarketDataProviderNameAttribute(string name) => Name = name;
+}

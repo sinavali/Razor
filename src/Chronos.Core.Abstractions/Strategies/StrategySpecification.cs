@@ -28,19 +28,32 @@ public sealed record StrategySpecification
     public void Validate()
     {
         if (InitialBalance <= 0)
+        {
             throw new ConfigurationException("InitialBalance must be positive.");
+        }
+
         if (Leverage <= 0)
+        {
             throw new ConfigurationException("Leverage must be positive.");
+        }
+
         if (RequestedSymbols.IsDefaultOrEmpty)
+        {
             throw new ConfigurationException("At least one symbol must be requested.");
+        }
 
         foreach (var sr in RequestedSymbols)
         {
             if (string.IsNullOrWhiteSpace(sr.Symbol))
+            {
                 throw new ConfigurationException("SymbolRequest.Symbol must not be empty.");
+            }
+
             if (sr.TimeFrames.IsDefaultOrEmpty)
+            {
                 throw new ConfigurationException(
                     $"SymbolRequest for '{sr.Symbol}' must specify at least one timeframe.");
+            }
         }
     }
 

@@ -24,7 +24,9 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
         _pluginTypeIdentifier = typeof(TPlugin).Name;
 
         if (!Directory.Exists(pluginsPath))
+        {
             throw new DirectoryNotFoundException($"Plugins directory not found: {pluginsPath}");
+        }
 
         _pluginTypes = LoadPlugins(pluginsPath, attributeType);
     }
@@ -32,11 +34,20 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
     /// <summary>Creates an instance of the plugin with the given name.</summary>
     /// <param name="name">The plugin name (as declared by its discovery attribute).</param>
     /// <returns>The plugin instance.</returns>
-    /// <exception cref="InvalidOperationException">No plugin with the specified name was found.</exception>
+    /// <exception cref="InvalidOperationException">No plugin with the specified name was found, or the plugin does not have a public parameterless constructor.</exception>
     public TPlugin Create(string name)
     {
         if (!_pluginTypes.TryGetValue(name, out var type))
+        {
             throw new InvalidOperationException($"No {_pluginTypeIdentifier} found with name '{name}'.");
+        }
+
+        // K‑P1‑6: enforce parameterless constructor
+        if (type.GetConstructor(Type.EmptyTypes) == null)
+        {
+            throw new InvalidOperationException(
+                $"Plugin type '{type.FullName}' does not have a public parameterless constructor, which is required.");
+        }
 
         return (TPlugin)Activator.CreateInstance(type)!;
     }
@@ -57,7 +68,10 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
                 if (validationErrors.Count > 0)
                 {
                     foreach (var error in validationErrors)
+                    {
                         System.Diagnostics.Trace.TraceWarning($"Skipping assembly '{dll}': {error}");
+                    }
+
                     continue;
                 }
 

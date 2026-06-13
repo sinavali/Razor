@@ -40,26 +40,38 @@ public sealed record LiveSpecification
     public void Validate()
     {
         if (MagicNumber <= 0)
+        {
             throw new ConfigurationException("MagicNumber must be positive.");
+        }
 
         if (ContinuousOptimization)
         {
             if (LookbackDays <= 0)
+            {
                 throw new ConfigurationException(
                     "LookbackDays must be positive when ContinuousOptimization is enabled.");
+            }
         }
 
         if (SkipRecentDays < 0)
+        {
             throw new ConfigurationException("SkipRecentDays cannot be negative.");
+        }
 
         if (InitialDelayMinutes < 0)
+        {
             throw new ConfigurationException("InitialDelayMinutes cannot be negative.");
+        }
 
         if (OptimizationIntervalHours <= 0)
+        {
             throw new ConfigurationException("OptimizationIntervalHours must be positive.");
+        }
 
         if (OrderGuardTimeoutSeconds <= 0)
+        {
             throw new ConfigurationException("OrderGuardTimeoutSeconds must be positive.");
+        }
     }
 
     /// <summary>Creates a validated instance.</summary>

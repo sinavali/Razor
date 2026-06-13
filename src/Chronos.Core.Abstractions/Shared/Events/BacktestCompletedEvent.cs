@@ -2,11 +2,12 @@ namespace Chronos.Core.Abstractions.Shared.Events;
 
 /// <summary>
 /// Published when a backtest completes, carrying full performance metrics.
+/// The <see cref="Timestamp"/> must be set from the tick clock to preserve determinism.
 /// </summary>
 public sealed record BacktestCompletedEvent : IMessage
 {
     /// <inheritdoc/>
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public required DateTime Timestamp { get; init; }
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
     /// <inheritdoc/>

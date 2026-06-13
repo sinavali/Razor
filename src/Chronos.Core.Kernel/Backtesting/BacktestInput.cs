@@ -42,9 +42,13 @@ public sealed record BacktestInput
     public void Validate()
     {
         if (Genes is null && GeneInitializationSeed == 0)
+        {
             throw new ConfigurationException("GeneInitializationSeed must be non-zero when Genes is not pre-supplied.");
+        }
 
         if (StrategySpecification.FrictionModel == null)
+        {
             throw new ConfigurationException("FrictionModel is required for backtesting contexts.");
+        }
     }
 }

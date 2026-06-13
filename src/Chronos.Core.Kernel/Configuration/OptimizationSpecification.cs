@@ -59,25 +59,60 @@ public sealed record OptimizationSpecification
     public void Validate()
     {
         if (Generations <= 0)
+        {
             throw new ConfigurationException("Generations must be positive.");
+        }
+
         if (PopulationSize < 4)
+        {
             throw new ConfigurationException("PopulationSize must be at least 4.");
+        }
+
         if (Windows <= 0)
+        {
             throw new ConfigurationException("Windows must be 1 or more.");
+        }
+
         if (TrainSplit <= 0 || TrainSplit >= 1)
+        {
             throw new ConfigurationException("TrainSplit must be between 0 and 1 (exclusive).");
+        }
+
+        // K‑P2‑5: when multiple windows are used, the training split must be less than 1 so that a test window exists
+        if (Windows > 1 && TrainSplit >= 1)
+        {
+            throw new ConfigurationException("TrainSplit must be less than 1 when Windows > 1.");
+        }
+
         if (MutationRate < 0 || MutationRate > 1)
+        {
             throw new ConfigurationException("MutationRate must be between 0 and 1.");
+        }
+
         if (CrossoverRate < 0 || CrossoverRate > 1)
+        {
             throw new ConfigurationException("CrossoverRate must be between 0 and 1.");
+        }
+
         if (ElitismPct < 0 || ElitismPct > 1)
+        {
             throw new ConfigurationException("ElitismPct must be between 0 and 1.");
+        }
+
         if (TournamentSize < 2)
+        {
             throw new ConfigurationException("TournamentSize must be at least 2.");
+        }
+
         if (StagnationGenerationsBeforeHyper < 1)
+        {
             throw new ConfigurationException("StagnationGenerationsBeforeHyper must be at least 1.");
+        }
+
         if (FitnessModel == null)
+        {
             throw new ConfigurationException("FitnessModel is required for optimisation.");
+        }
     }
 
     /// <summary>Creates a validated instance.</summary>

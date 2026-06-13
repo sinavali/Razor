@@ -26,9 +26,15 @@ public abstract class Indicator : IDisposable, IWindowAwareIndicator
     /// <summary>Dependency injection from the Indicator Registry.</summary>
     public void SetWindow(TickWindow window) => Window = window;
 
-    /// <summary>Initialises the indicator with a fixed buffer size.</summary>
+    /// <summary>Initialises the indicator with a fixed buffer size.
+    /// Must be called with a positive capacity.</summary>
     public virtual void Initialize(int capacity)
     {
+        if (capacity <= 0)
+        {
+            throw new ArgumentException("Indicator capacity must be positive.", nameof(capacity));
+        }
+
         if (_isRented)
         {
             ArrayPool<double>.Shared.Return(_buffer);

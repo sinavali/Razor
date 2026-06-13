@@ -28,6 +28,27 @@ public sealed class BorrowedTickData : IAsyncDisposable
         IReadOnlyList<string> filePaths,
         IAdapter adapter)
     {
+        ArgumentNullException.ThrowIfNull(streams);
+        ArgumentNullException.ThrowIfNull(symbols);
+        ArgumentNullException.ThrowIfNull(mappedLists);
+        ArgumentNullException.ThrowIfNull(filePaths);
+        ArgumentNullException.ThrowIfNull(adapter);
+
+        if (streams.Length != symbols.Length)
+        {
+            throw new ArgumentException($"Streams count ({streams.Length}) must equal symbols count ({symbols.Length}).");
+        }
+
+        if (mappedLists.Count != streams.Length)
+        {
+            throw new ArgumentException($"MappedLists count ({mappedLists.Count}) must equal streams count ({streams.Length}).");
+        }
+
+        if (filePaths.Count != streams.Length)
+        {
+            throw new ArgumentException($"FilePaths count ({filePaths.Count}) must equal streams count ({streams.Length}).");
+        }
+
         Streams = streams;
         Symbols = symbols;
         _mappedLists = mappedLists;
@@ -39,8 +60,13 @@ public sealed class BorrowedTickData : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         foreach (var mm in _mappedLists)
+        {
             mm.Dispose();
+        }
+
         foreach (var path in _filePaths)
+        {
             await _adapter.NotifyFileSafeToDeleteAsync(path).ConfigureAwait(false);
+        }
     }
 }

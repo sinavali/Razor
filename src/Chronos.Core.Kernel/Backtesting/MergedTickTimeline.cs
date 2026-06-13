@@ -12,8 +12,17 @@ public static class MergedTickTimeline
     public static IEnumerable<(long Time, int StreamIndex, Tick Tick)> EnumerateEvents(IReadOnlyList<Tick>[] streams, string[] symbols)
     {
         ArgumentNullException.ThrowIfNull(streams);
+        ArgumentNullException.ThrowIfNull(symbols);
+
+        if (streams.Length != symbols.Length)
+        {
+            throw new ArgumentException($"Streams count ({streams.Length}) must equal symbols count ({symbols.Length}).");
+        }
         int streamCount = streams.Length;
-        if (streamCount == 0) yield break;
+        if (streamCount == 0)
+        {
+            yield break;
+        }
 
         var enumerators = new IEnumerator<Tick>[streamCount];
         var comparer = Comparer<(long Time, int Index)>.Create((a, b) =>
@@ -29,11 +38,17 @@ public static class MergedTickTimeline
         {
             lastTimePerStream[i] = long.MinValue;
 
-            if (streams[i] == null) continue; // CA1062 Safety Check
+            if (streams[i] == null)
+            {
+                continue;
+            }
 
             var e = streams[i].GetEnumerator();
             enumerators[i] = e;
-            if (e.MoveNext()) queue.Enqueue(i, (e.Current.Time, i));
+            if (e.MoveNext())
+            {
+                queue.Enqueue(i, (e.Current.Time, i));
+            }
         }
 
         while (queue.TryDequeue(out int idx, out _))
@@ -44,12 +59,15 @@ public static class MergedTickTimeline
             // ARCH-08 Fix: Hard strict validation for sorted invariants per Principle 8.
             if (currentTick.Time < lastTimePerStream[idx])
             {
-                throw new InvalidOperationException($"Stream {idx} ({symbols?[idx]}) contains unsorted ticks: {currentTick.Time} < {lastTimePerStream[idx]}");
+                throw new InvalidOperationException($"Stream {idx} ({symbols[idx]}) contains unsorted ticks: {currentTick.Time} < {lastTimePerStream[idx]}");
             }
             lastTimePerStream[idx] = currentTick.Time;
 
             yield return (currentTick.Time, idx, currentTick);
-            if (e.MoveNext()) queue.Enqueue(idx, (e.Current.Time, idx));
+            if (e.MoveNext())
+            {
+                queue.Enqueue(idx, (e.Current.Time, idx));
+            }
         }
     }
 }

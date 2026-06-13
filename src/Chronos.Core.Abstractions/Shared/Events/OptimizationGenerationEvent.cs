@@ -4,30 +4,15 @@ namespace Chronos.Core.Abstractions.Shared.Events;
 public sealed record OptimizationGenerationEvent : IMessage
 {
     /// <inheritdoc/>
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public required DateTime Timestamp { get; init; }
     /// <inheritdoc/>
-    public Guid? CorrelationId
-    {
-        get; init;
-    }
+    public Guid? CorrelationId { get; init; }
     /// <inheritdoc/>
-    public string? EventId
-    {
-        get; init;
-    }
+    public string? EventId { get; init; }
     /// <summary>Generation index.</summary>
-    public int Generation
-    {
-        get; init;
-    }
+    public int Generation { get; init; }
     /// <summary>Best fitness in this generation.</summary>
-    public double BestFitness
-    {
-        get; init;
-    }
+    public double BestFitness { get; init; }
     /// <summary>Whether hyper‑mutation is active.</summary>
-    public bool IsHyperMutation
-    {
-        get; init;
-    }
+    public bool IsHyperMutation { get; init; }
 }

@@ -40,14 +40,23 @@ public abstract class StrategyBase : IStrategy, IDisposable
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The default implementation calls the deprecated <see cref="OnTickAsync"/> synchronously.
-    /// Override this method directly for new deterministic strategies.
+    /// The default implementation does nothing. Override this method to add your tick‑processing logic.
+    /// For backward compatibility, the deprecated <see cref="OnTickAsync"/> will call this method.
     /// </remarks>
-    public virtual void OnTick(Tick tick) => OnTickAsync(tick).GetAwaiter().GetResult();
+    public virtual void OnTick(Tick tick) { }
 
     /// <inheritdoc/>
-    /// <remarks>Deprecated: prefer overriding <see cref="OnTick"/> for new strategies.</remarks>
-    public virtual Task OnTickAsync(Tick tick) => Task.CompletedTask;
+    /// <remarks>
+    /// <para><b>[Obsolete]</b> Override the synchronous <see cref="OnTick"/> instead.
+    /// This method is retained for backward compatibility and will be removed in v2.0.</para>
+    /// <para>The default implementation calls <see cref="OnTick"/> synchronously.</para>
+    /// </remarks>
+    [Obsolete("Use OnTick instead. This method will be removed in v2.0.", error: false)]
+    public virtual Task OnTickAsync(Tick tick)
+    {
+        OnTick(tick);
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc/>
     public virtual Task OnStopAsync() => Task.CompletedTask;
@@ -115,5 +124,10 @@ public abstract class StrategyBase : IStrategy, IDisposable
     public void Dispose() { Dispose(true); GC.SuppressFinalize(this); }
 
     /// <summary>Releases the lock resource.</summary>
-    protected virtual void Dispose(bool disposing) { if (disposing) _geneLock.Dispose(); }
+    protected virtual void Dispose(bool disposing) {
+        if (disposing)
+        {
+            _geneLock.Dispose();
+        }
+    }
 }

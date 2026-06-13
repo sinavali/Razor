@@ -504,7 +504,6 @@ latest.txt
 CoverageReport
 CoverageSummary
 TestResults
-nuget.config
 *.DotSettings.user
-.env
-**/.env
+#.env
+#**/.env

@@ -2,7 +2,10 @@ namespace Chronos.Core.Abstractions.Shared;
 
 /// <summary>
 /// OHLCV bar used only for converting external chart data to synthetic ticks.
-/// Chronos itself is tick‑only; this struct is never used in the core pipeline.
+/// <para>
+/// <c>OpenTime</c> is inclusive; <c>CloseTime</c> is inclusive. Both represent the same
+/// exchange‑reported timestamps without modification.
+/// </para>
 /// </summary>
 public readonly struct Bar : IEquatable<Bar>
 {

@@ -34,7 +34,10 @@ public static class GeneInjector
         var props = GetGeneProperties(strategyInstance.GetType());
         double[] genes = new double[props.Count];
         for (int i = 0; i < props.Count; i++)
+        {
             genes[i] = Convert.ToDouble(props[i].GetValue(strategyInstance), CultureInfo.InvariantCulture);
+        }
+
         return genes;
     }
 
@@ -46,54 +49,105 @@ public static class GeneInjector
     {
         ArgumentNullException.ThrowIfNull(strategyInstance);
         var propertyGenes = ExtractGenes(strategyInstance);
-        if (neuralNet == null) return propertyGenes;
+        if (neuralNet == null)
+        {
+            return propertyGenes;
+        }
 
         int neuralGeneCount = neuralNet.TotalGeneCount;
-        if (neuralGeneCount == 0) return propertyGenes;
+        if (neuralGeneCount == 0)
+        {
+            return propertyGenes;
+        }
 
         var rng = new ChronosRandom(seed);
         double[] neuralGenes = new double[neuralGeneCount];
         for (int i = 0; i < neuralGeneCount; i++)
+        {
             neuralGenes[i] = (rng.NextDouble() * 2.0) - 1.0;
+        }
 
         return [.. propertyGenes, .. neuralGenes];
     }
 
-    /// <summary>Injects gene values into the strategy's properties (clamped and stepped).</summary>
+    /// <summary>Injects gene values into the strategy's properties (clamped and stepped according to gene type).</summary>
     public static void InjectPropertyGenes(object strategyInstance, double[] genes)
     {
         ArgumentNullException.ThrowIfNull(strategyInstance);
         ArgumentNullException.ThrowIfNull(genes);
+
         var props = GetGeneProperties(strategyInstance.GetType());
         if (genes.Length < props.Count)
+        {
             throw new ArgumentException($"Gene array too short. Expected at least {props.Count}, got {genes.Length}.");
+        }
 
         for (int i = 0; i < props.Count; i++)
         {
             var attr = props[i].GetCustomAttribute<GeneAttribute>()!;
+            double val = genes[i];
 
-            // Reject unsupported gene types
-            if (attr.Type != GeneType.Continuous && attr.Type != GeneType.Discrete)
-                throw new ConfigurationException(
-                    $"Unsupported GeneType '{attr.Type}' on property '{props[i].Name}'. " +
-                    "Only Continuous and Discrete are supported in v1.0.0.");
-
-            double val = Math.Clamp(genes[i], attr.Min, attr.Max);
-            if (attr.Step > 0)
+            // Apply gene‑type‑specific transformations
+            switch (attr.Type)
             {
-                double steps = (val - attr.Min) / attr.Step;
-                steps = Math.Round(steps, MidpointRounding.AwayFromZero);
-                val = attr.Min + steps * attr.Step;
+                case GeneType.Continuous:
+                    // Clamp to allowed range, no stepping
+                    val = Math.Clamp(val, attr.Min, attr.Max);
+                    break;
+
+                case GeneType.Discrete:
+                    // Clamp, then snap to nearest step
+                    val = Math.Clamp(val, attr.Min, attr.Max);
+                    if (attr.Step > 0)
+                    {
+                        double steps = (val - attr.Min) / attr.Step;
+                        steps = Math.Round(steps, MidpointRounding.AwayFromZero);
+                        val = attr.Min + steps * attr.Step;
+                        val = Math.Clamp(val, attr.Min, attr.Max);
+                    }
+                    break;
+
+                case GeneType.Categorical:
+                    // Clamp, then round to nearest integer (assumes step >= 1)
+                    val = Math.Clamp(val, attr.Min, attr.Max);
+                    val = Math.Round(val, MidpointRounding.AwayFromZero);
+                    break;
+
+                case GeneType.Parametric:
+                case GeneType.Structural:
+                    // No automatic clamping/stepping for parametric/structural genes
+                    break;
+
+                default:
+                    throw new ConfigurationException(
+                        $"Unsupported GeneType '{attr.Type}' on property '{props[i].Name}'.");
             }
+
+            // Convert to the property's actual type
             Type propType = props[i].PropertyType;
             object converted;
             try
             {
-                if (propType == typeof(int)) converted = (int)Math.Round(val, MidpointRounding.AwayFromZero);
-                else if (propType == typeof(long)) converted = (long)Math.Round(val, MidpointRounding.AwayFromZero);
-                else if (propType == typeof(float)) converted = (float)val;
-                else if (propType == typeof(decimal)) converted = (decimal)val;
-                else converted = Convert.ChangeType(val, propType, CultureInfo.InvariantCulture);
+                if (propType == typeof(int))
+                {
+                    converted = (int)Math.Round(val, MidpointRounding.AwayFromZero);
+                }
+                else if (propType == typeof(long))
+                {
+                    converted = (long)Math.Round(val, MidpointRounding.AwayFromZero);
+                }
+                else if (propType == typeof(float))
+                {
+                    converted = (float)val;
+                }
+                else if (propType == typeof(decimal))
+                {
+                    converted = (decimal)val;
+                }
+                else
+                {
+                    converted = Convert.ChangeType(val, propType, CultureInfo.InvariantCulture);
+                }
             }
             catch (InvalidCastException ex)
             {
@@ -105,8 +159,8 @@ public static class GeneInjector
         }
     }
 
-
-    /// <summary>Extracts the gene metadata schema from a strategy type.</summary>
+    /// <summary>Extracts the gene metadata schema from a strategy type.
+    /// Returns a read‑only list of <b>copies</b> of the attributes to preserve immutability.</summary>
     public static IReadOnlyList<GeneAttribute> ExtractSchema(Type strategyType)
     {
         ArgumentNullException.ThrowIfNull(strategyType);
@@ -116,7 +170,16 @@ public static class GeneInjector
                 .Where(p => Attribute.IsDefined(p, typeof(GeneAttribute)))
                 .OrderBy(p => p.GetCustomAttribute<GeneAttribute>()!.Order)
                 .ThenBy(p => p.Name)
-                .Select(p => p.GetCustomAttribute<GeneAttribute>()!)];
+                .Select(p =>
+                {
+                    var orig = p.GetCustomAttribute<GeneAttribute>()!;
+                    // Return a copy to prevent mutation of the cached schema
+                    return new GeneAttribute(orig.Min, orig.Max, orig.Step, orig.Type)
+                    {
+                        Name = orig.Name,
+                        Order = orig.Order
+                    };
+                })];
         });
     }
 
@@ -124,11 +187,16 @@ public static class GeneInjector
     public static void AppendNeuralGenes(IList<GeneAttribute> schema, int[]? topology, ActivationFunction activation)
     {
         ArgumentNullException.ThrowIfNull(schema);
-        if (topology is null || topology.Length < 2) return;
+        if (topology is null || topology.Length < 2)
+        {
+            return;
+        }
 
         int count = FeedForwardNetwork.GetTotalGeneCount(topology);
         for (int i = 0; i < count; i++)
+        {
             schema.Add(new GeneAttribute(-1.0, 1.0, 0, GeneType.Parametric) { Name = $"NN_W{i}", Order = int.MaxValue });
+        }
     }
 
     /// <summary>Injects neural weights from a gene array starting at offset.</summary>
@@ -138,7 +206,10 @@ public static class GeneInjector
         ArgumentNullException.ThrowIfNull(genes);
         int needed = network.TotalGeneCount;
         if (genes.Length - offset < needed)
+        {
             throw new ArgumentException($"Insufficient genes for neural network. Needed {needed}, available {genes.Length - offset}.");
+        }
+
         double[] slice = new double[needed];
         Array.Copy(genes, offset, slice, 0, needed);
         network.InjectWeights(slice);
@@ -153,7 +224,9 @@ public static class GeneInjector
         int propCount = props.Count;
         InjectPropertyGenes(strategyInstance, genes);
         if (neuralNet != null && genes.Length > propCount)
+        {
             InjectNeuralGenes(neuralNet, genes, propCount);
+        }
     }
 
     /// <summary>Generates a random gene value within constraints using the given ChronosRandom.</summary>
@@ -162,7 +235,9 @@ public static class GeneInjector
         ArgumentNullException.ThrowIfNull(rng);
         Debug.Assert(min <= max, "Gene min must be ≤ max.");
         if (step <= 0)
+        {
             return min + rng.NextDouble() * (max - min);
+        }
 
         int steps = (int)Math.Round((max - min) / step);
         return steps < 0 ? min : min + rng.Next(steps + 1) * step;

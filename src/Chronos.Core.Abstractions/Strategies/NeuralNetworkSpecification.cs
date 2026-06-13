@@ -22,13 +22,19 @@ public sealed record NeuralNetworkSpecification
     public void Validate()
     {
         if (Topology == null || Topology.Length < 2)
+        {
             throw new ConfigurationException("Neural network topology must contain at least an input and output layer.");
+        }
 
         if (Topology.Any(l => l <= 0))
+        {
             throw new ConfigurationException("All topology layer sizes must be positive.");
+        }
 
         if (!ValidModelTypes.Contains(ModelType))
+        {
             throw new ConfigurationException(
                 $"Unknown ModelType '{ModelType}'. Valid values: {string.Join(", ", ValidModelTypes)}.");
+        }
     }
 }

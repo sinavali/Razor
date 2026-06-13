@@ -47,9 +47,42 @@ public class ChronosRandom
     /// <summary>Returns a uniform double in [0.0, 1.0).</summary>
     public double NextDouble() => (NextUInt64() >> 11) * (1.0 / (1UL << 53));
 
+    /// <summary>Returns a uniform double in [0.0, maxValue).</summary>
+    public double NextDouble(double maxValue) => NextDouble() * maxValue;
+
+    /// <summary>Returns a uniform double in [minValue, maxValue).</summary>
+    public double NextDouble(double minValue, double maxValue) =>
+        minValue + NextDouble() * (maxValue - minValue);
+
     /// <summary>Returns a non‑negative random integer less than <paramref name="maxValue"/>.</summary>
-    public int Next(int maxValue) => (int)(NextUInt64() % (ulong)maxValue);
+    public int Next(int maxValue)
+    {
+        if (maxValue <= 0)
+        {
+            return 0;
+        }
+
+        return (int)(NextUInt64() % (ulong)maxValue);
+    }
 
     /// <summary>Returns a random integer within the specified range.</summary>
-    public int Next(int minValue, int maxValue) => minValue + Next(maxValue - minValue);
+    public int Next(int minValue, int maxValue)
+    {
+        if (minValue >= maxValue)
+        {
+            return minValue;
+        }
+
+        return minValue + Next(maxValue - minValue);
+    }
+
+    /// <summary>Fills a byte array with random values.</summary>
+    public void NextBytes(byte[] buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            buffer[i] = (byte)(NextUInt64() & 0xFF);
+        }
+    }
 }

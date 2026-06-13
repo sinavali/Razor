@@ -39,4 +39,68 @@ public sealed record SymbolProperties
     public required double MakerFeeRate { get; init; }
     /// <summary>Taker fee rate (fraction).</summary>
     public required double TakerFeeRate { get; init; }
+
+    /// <summary>Validates that all required properties are within acceptable ranges.</summary>
+    public void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(MarginCurrency))
+        {
+            throw new ConfigurationException("MarginCurrency must not be empty.");
+        }
+
+        if (ContractSize <= 0)
+        {
+            throw new ConfigurationException("ContractSize must be positive.");
+        }
+
+        if (TickSize <= 0)
+        {
+            throw new ConfigurationException("TickSize must be positive.");
+        }
+
+        if (TickValue <= 0)
+        {
+            throw new ConfigurationException("TickValue must be positive.");
+        }
+
+        if (MinVolume <= 0)
+        {
+            throw new ConfigurationException("MinVolume must be positive.");
+        }
+
+        if (MaxLeverage <= 0)
+        {
+            throw new ConfigurationException("MaxLeverage must be positive.");
+        }
+
+        if (SwapRolloverHourUtc < 0 || SwapRolloverHourUtc > 23)
+        {
+            throw new ConfigurationException("SwapRolloverHourUtc must be between 0 and 23.");
+        }
+
+        if (TripleSwapDayMultiplier < 0)
+        {
+            throw new ConfigurationException("TripleSwapDayMultiplier must be non‑negative.");
+        }
+
+        if (InitialMarginRate <= 0 || InitialMarginRate > 1)
+        {
+            throw new ConfigurationException("InitialMarginRate must be in (0, 1].");
+        }
+
+        if (MaintenanceMarginRate <= 0 || MaintenanceMarginRate > 1)
+        {
+            throw new ConfigurationException("MaintenanceMarginRate must be in (0, 1].");
+        }
+
+        if (MakerFeeRate < 0 || MakerFeeRate > 1)
+        {
+            throw new ConfigurationException("MakerFeeRate must be in [0, 1].");
+        }
+
+        if (TakerFeeRate < 0 || TakerFeeRate > 1)
+        {
+            throw new ConfigurationException("TakerFeeRate must be in [0, 1].");
+        }
+    }
 }

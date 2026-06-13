@@ -4,7 +4,7 @@ namespace Chronos.Core.Abstractions.Shared.Events;
 public sealed record OptimizationCycleCompletedEvent(int CycleIndex, double BestFitness, int GenerationCount) : IMessage
 {
     /// <inheritdoc/>
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public required DateTime Timestamp { get; init; }
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
     /// <inheritdoc/>

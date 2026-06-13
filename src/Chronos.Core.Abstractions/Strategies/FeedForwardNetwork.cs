@@ -3,6 +3,7 @@ namespace Chronos.Core.Abstractions.Strategies;
 /// <summary>
 /// A feed‑forward artificial neural network with configurable topology.
 /// Genes (flat double array) can be injected to set weights and biases.
+/// <para><b>This class is not thread‑safe.</b> For concurrent usage, create one instance per thread.</para>
 /// </summary>
 public sealed class FeedForwardNetwork : INeuralNetwork
 {
@@ -16,6 +17,8 @@ public sealed class FeedForwardNetwork : INeuralNetwork
 #pragma warning restore CA1819
 
     private readonly ActivationFunction _activation;
+    // Pre-allocated neuron buffers to avoid per-call allocations.
+    private readonly double[][] _neuronBuffer;
 
     /// <summary>Number of double values needed to represent all weights and biases.</summary>
     public int TotalGeneCount => GetTotalGeneCount(Topology);
@@ -27,7 +30,10 @@ public sealed class FeedForwardNetwork : INeuralNetwork
     public static int GetTotalGeneCount(int[] topology)
     {
         if (topology is null || topology.Length < 2)
+        {
             throw new ArgumentException("Topology must have at least an input and output layer.", nameof(topology));
+        }
+
         int count = 0;
         for (int i = 0; i < topology.Length - 1; i++)
         {
@@ -41,19 +47,31 @@ public sealed class FeedForwardNetwork : INeuralNetwork
     public FeedForwardNetwork(int[] topology, ActivationFunction activation = ActivationFunction.Tanh)
     {
         if (topology == null || topology.Length < 2)
+        {
             throw new ArgumentException("Network topology must have at least an input and output layer.", nameof(topology));
+        }
+
         Topology = (int[])topology.Clone();
         _activation = activation;
 
         Weights = new double[Topology.Length - 1][][];
         Biases = new double[Topology.Length - 1][];
-
         for (int i = 0; i < Topology.Length - 1; i++)
         {
             Weights[i] = new double[Topology[i]][];
             for (int j = 0; j < Topology[i]; j++)
+            {
                 Weights[i][j] = new double[Topology[i + 1]];
+            }
+
             Biases[i] = new double[Topology[i + 1]];
+        }
+
+        // Allocate neuron buffers once
+        _neuronBuffer = new double[Topology.Length][];
+        for (int i = 0; i < Topology.Length; i++)
+        {
+            _neuronBuffer[i] = new double[Topology[i]];
         }
     }
 
@@ -62,49 +80,67 @@ public sealed class FeedForwardNetwork : INeuralNetwork
     {
         ArgumentNullException.ThrowIfNull(dna);
         if (dna.Length != TotalGeneCount)
+        {
             throw new ArgumentException($"DNA length mismatch. Expected {TotalGeneCount}, got {dna.Length}.", nameof(dna));
+        }
+
         int ptr = 0;
         for (int i = 0; i < Topology.Length - 1; i++)
         {
             for (int j = 0; j < Topology[i + 1]; j++)
+            {
                 Biases[i][j] = dna[ptr++];
+            }
+
             for (int j = 0; j < Topology[i]; j++)
+            {
                 for (int k = 0; k < Topology[i + 1]; k++)
+                {
                     Weights[i][j][k] = dna[ptr++];
+                }
+            }
         }
     }
 
     /// <inheritdoc/>
     public void InjectGenes(double[] genes) => InjectWeights(genes);
 
-    /// <summary>Forward pass. Returns output layer values.</summary>
+    /// <summary>
+    /// Forward pass. Returns a <b>copy</b> of the output layer values.
+    /// The internal neuron buffer is reused; this method is not thread‑safe.
+    /// </summary>
     public double[] FeedForward(double[] inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         if (inputs.Length != Topology[0])
-            throw new ArgumentException($"Input size mismatch. Expected {Topology[0]}, got {inputs.Length}.", nameof(inputs));
-
-        // ARCH-07: Use stack-allocated/local arrays to ensure thread safety during parallel GA.
-        double[][] localNeurons = new double[Topology.Length][];
-        for (int i = 0; i < Topology.Length; i++)
         {
-            localNeurons[i] = new double[Topology[i]];
+            throw new ArgumentException($"Input size mismatch. Expected {Topology[0]}, got {inputs.Length}.", nameof(inputs));
         }
 
-        Array.Copy(inputs, localNeurons[0], inputs.Length);
+        // Copy inputs to the first layer of the pre‑allocated buffer
+        Array.Copy(inputs, _neuronBuffer[0], inputs.Length);
 
         for (int i = 1; i < Topology.Length; i++)
         {
+            double[] prevLayer = _neuronBuffer[i - 1];
+            double[] currLayer = _neuronBuffer[i];
+            double[] biases = Biases[i - 1];
+            double[][] weights = Weights[i - 1];
+
             for (int j = 0; j < Topology[i]; j++)
             {
-                double sum = Biases[i - 1][j];
+                double sum = biases[j];
                 for (int k = 0; k < Topology[i - 1]; k++)
-                    sum += localNeurons[i - 1][k] * Weights[i - 1][k][j];
+                {
+                    sum += prevLayer[k] * weights[k][j];
+                }
 
-                localNeurons[i][j] = Activate(sum);
+                currLayer[j] = Activate(sum);
             }
         }
-        return localNeurons[^1];
+
+        // Return a copy to preserve immutability from the caller's perspective
+        return (double[])_neuronBuffer[^1].Clone();
     }
 
     private double Activate(double x) =>

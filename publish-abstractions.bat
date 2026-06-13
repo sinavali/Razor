@@ -2,27 +2,14 @@
 setlocal enabledelayedexpansion
 
 REM ============================================================
-REM  Chronos.Core.Abstractions – Publisher
-REM  Reads GITHUB_TOKEN from .env file, bumps version, pushes to GitHub Packages
+REM  Chronos.Core.Abstractions – Local Publisher
+REM  Builds and packs to .\nupkgs (no push)
 REM ============================================================
 
-REM --- Load GitHub token from .env file ---
-set "GITHUB_TOKEN="
-if exist ".env" (
-    for /f "tokens=2 delims==" %%i in ('findstr /b "GITHUB_TOKEN=" .env') do set "GITHUB_TOKEN=%%i"
-)
-if "%GITHUB_TOKEN%"=="" (
-    echo ERROR: GITHUB_TOKEN not found in .env file.
-    echo Create a .env file with content: GITHUB_TOKEN=your_token
-    exit /b 1
-)
-
-set "FEED_URL=https://nuget.pkg.github.com/ChronosPlatform/index.json"
 set "VERSION_FILE=VERSION.txt"
 set "NUPKG_DIR=nupkgs"
 set "PROJ=src\Chronos.Core.Abstractions\Chronos.Core.Abstractions.csproj"
 
-REM --- Read current version ---
 if not exist "%VERSION_FILE%" (
     echo ERROR: %VERSION_FILE% not found.
     exit /b 1
@@ -53,12 +40,12 @@ if exist "%NUPKG_DIR%" rmdir /s /q "%NUPKG_DIR%"
 mkdir "%NUPKG_DIR%"
 
 echo.
-echo [1/3] Building Chronos.Core.Abstractions...
+echo [1/2] Building Abstractions...
 dotnet build "%PROJ%" --configuration Release
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo.
-echo [2/3] Packing Chronos.Core.Abstractions...
+echo [2/2] Packing Abstractions...
 dotnet build-server shutdown >nul 2>&1
 set MSBUILDNOINPROCNODE=1
 dotnet pack "%PROJ%" --no-build --configuration Release ^
@@ -66,17 +53,10 @@ dotnet pack "%PROJ%" --no-build --configuration Release ^
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo.
-echo [3/3] Pushing to GitHub Packages...
-dotnet nuget push "%NUPKG_DIR%\Chronos.Core.Abstractions.%NEW_VERSION%.nupkg" ^
-    --source "%FEED_URL%" ^
-    --api-key "%GITHUB_TOKEN%" ^
-    --skip-duplicate
-if %errorlevel% neq 0 exit /b %errorlevel%
-
-echo.
 echo ============================================================
-echo  Chronos.Core.Abstractions %NEW_VERSION% published successfully!
+echo  Abstractions %NEW_VERSION% packed locally to:
+echo  %CD%\%NUPKG_DIR%\Chronos.Core.Abstractions.%NEW_VERSION%.nupkg
+echo  No remote push performed.
 echo ============================================================
-
 endlocal
 exit /b 0

@@ -2,11 +2,12 @@ namespace Chronos.Core.Abstractions.Shared.Events;
 
 /// <summary>
 /// Published when an order is executed (open or close) in both simulated and live trading.
+/// The <see cref="Timestamp"/> must be set from the tick clock in backtests and from system time in live mode.
 /// </summary>
 public sealed record OrderExecutedEvent : IMessage
 {
     /// <inheritdoc/>
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public required DateTime Timestamp { get; init; }
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
     /// <inheritdoc/>

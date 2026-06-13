@@ -1,5 +1,6 @@
 using Chronos.Core.Abstractions.Adapters;
 using Chronos.Core.Abstractions.Shared;
+using System.Reflection;
 
 namespace Chronos.Core.Kernel.Plugins;
 
@@ -23,9 +24,9 @@ public sealed class AdapterFactory : IAdapterFactory
         {
             return _registry.Create(adapterName);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            throw new AdapterException(adapterName, $"No adapter found with name '{adapterName}'.");
+            throw new AdapterException(adapterName, ex.Message);
         }
     }
 }

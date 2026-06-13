@@ -4,7 +4,7 @@ namespace Chronos.Core.Abstractions.Shared.Events;
 public sealed record WalkForwardWindowCompletedEvent(int WindowIndex, DateTime TrainStart, DateTime TrainEnd, DateTime TestStart, DateTime TestEnd, double BestFitness) : IMessage
 {
     /// <inheritdoc/>
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public required DateTime Timestamp { get; init; }
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
     /// <inheritdoc/>
