@@ -11,16 +11,22 @@ public readonly struct Bar : IEquatable<Bar>
 {
     /// <summary>Opening time (inclusive).</summary>
     public long OpenTime { get; }
+
     /// <summary>Open price.</summary>
     public double Open { get; }
+
     /// <summary>High price.</summary>
     public double High { get; }
+
     /// <summary>Low price.</summary>
     public double Low { get; }
+
     /// <summary>Close price.</summary>
     public double Close { get; }
+
     /// <summary>Total volume.</summary>
     public double Volume { get; }
+
     /// <summary>Closing time (inclusive).</summary>
     public long CloseTime { get; }
 
@@ -38,16 +44,19 @@ public readonly struct Bar : IEquatable<Bar>
 
     /// <inheritdoc/>
     public override bool Equals(object? obj) => obj is Bar other && Equals(other);
+
     /// <inheritdoc/>
     public bool Equals(Bar other) =>
         OpenTime == other.OpenTime && Open == other.Open && High == other.High &&
         Low == other.Low && Close == other.Close && Volume == other.Volume && CloseTime == other.CloseTime;
+
     /// <inheritdoc/>
     public override int GetHashCode() =>
         HashCode.Combine(OpenTime, Open, High, Low, Close, Volume, CloseTime);
 
     /// <summary>Equality operator.</summary>
     public static bool operator ==(Bar left, Bar right) => left.Equals(right);
+
     /// <summary>Inequality operator.</summary>
     public static bool operator !=(Bar left, Bar right) => !left.Equals(right);
 }

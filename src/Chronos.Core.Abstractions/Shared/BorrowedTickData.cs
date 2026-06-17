@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Adapters;
+using Chronos.Core.Abstractions.Slots;
 
 namespace Chronos.Core.Abstractions.Shared;
 
@@ -9,12 +9,13 @@ namespace Chronos.Core.Abstractions.Shared;
 /// </summary>
 public sealed class BorrowedTickData : IAsyncDisposable
 {
-    private readonly IAdapter _adapter;
+    private readonly IAdapterCapability _adapter;
     private readonly IReadOnlyList<MemoryMappedTickList> _mappedLists;
     private readonly IReadOnlyList<string> _filePaths;
 
     /// <summary>The tick streams, one per symbol (aligned with Symbols).</summary>
     public IReadOnlyList<Tick>[] Streams { get; }
+
     /// <summary>Symbol names in the same order as Streams.</summary>
     public string[] Symbols { get; }
 
@@ -26,7 +27,7 @@ public sealed class BorrowedTickData : IAsyncDisposable
         string[] symbols,
         IReadOnlyList<MemoryMappedTickList> mappedLists,
         IReadOnlyList<string> filePaths,
-        IAdapter adapter)
+        IAdapterCapability adapter)
     {
         ArgumentNullException.ThrowIfNull(streams);
         ArgumentNullException.ThrowIfNull(symbols);

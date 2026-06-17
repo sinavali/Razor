@@ -16,7 +16,7 @@
     </ItemGroup>
 
     <PropertyGroup>
-        <Description>Public SDK for developing Chronos plugins (adapters, strategies). Contains only contracts and utilities; no runtime logic.</Description>
+        <Description>Public SDK for developing Chronos extensions. Contains hooks, slots, domain types, and utilities; no runtime logic.</Description>
         <PackageTags>trading;algorithmic;chronos;adapter;strategy;fx;crypto</PackageTags>
         <PackageProjectUrl>https://chronos.io</PackageProjectUrl>
         <RepositoryUrl>https://git.chronos.io/Chronos/core.git</RepositoryUrl>

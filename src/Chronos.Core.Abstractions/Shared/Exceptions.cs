@@ -4,11 +4,19 @@ namespace Chronos.Core.Abstractions.Shared;
 public abstract class AppException : Exception
 {
     /// <summary>Initializes a new instance of the <see cref="AppException"/> class.</summary>
-    protected AppException() { }
+    protected AppException()
+    {
+    }
+
     /// <summary>Initializes a new instance with a message.</summary>
-    protected AppException(string message) : base(message) { }
+    protected AppException(string message) : base(message)
+    {
+    }
+
     /// <summary>Initializes a new instance with a message and inner exception.</summary>
-    protected AppException(string message, Exception inner) : base(message, inner) { }
+    protected AppException(string message, Exception inner) : base(message, inner)
+    {
+    }
 }
 
 /// <summary>Exception originating from an adapter.</summary>
@@ -45,9 +53,33 @@ public class StrategyException : AppException
 public class OptimizationException : AppException
 {
     /// <summary>Initializes a new instance.</summary>
-    public OptimizationException() { }
+    public OptimizationException()
+    {
+    }
+
     /// <summary>Initializes a new instance with a message.</summary>
-    public OptimizationException(string message) : base(message) { }
+    public OptimizationException(string message) : base(message)
+    {
+    }
+
     /// <summary>Initializes a new instance with a message and inner exception.</summary>
-    public OptimizationException(string message, Exception inner) : base(message, inner) { }
+    public OptimizationException(string message, Exception inner) : base(message, inner)
+    {
+    }
+}
+
+/// <summary>
+/// Exception thrown when an immutable specification contains invalid values.
+/// </summary>
+public sealed class ConfigurationException : Exception
+{
+    /// <summary>Creates a new instance with a message.</summary>
+    public ConfigurationException(string message) : base(message)
+    {
+    }
+
+    /// <summary>Creates a new instance with a message and inner exception.</summary>
+    public ConfigurationException(string message, Exception inner) : base(message, inner)
+    {
+    }
 }

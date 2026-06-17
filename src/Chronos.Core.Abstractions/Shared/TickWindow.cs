@@ -9,8 +9,10 @@ public enum PriceType
 {
     /// <summary>Bid price</summary>
     Bid,
+
     /// <summary>Ask price</summary>
     Ask,
+
     /// <summary>Midpoint of bid and ask</summary>
     Mid
 }
@@ -18,26 +20,32 @@ public enum PriceType
 /// <summary>
 /// Sliding‑window helper for indicator and strategy developers.
 /// Maintains a ring buffer of recent ticks per symbol and provides
-/// on‑demand OHLC statistics without materialising bars.
+/// on‑demand OHLC statistics without materializing bars.
 /// Ticks are the sole source of truth; all calculations use raw tick data.
 /// </summary>
+/// <remarks>
+/// <para>This class is <b>not thread‑safe</b>. It must be used from a single thread,
+/// or externally synchronized. The engine guarantees that all tick processing
+/// (backtest loop, live tick handler) runs on a single thread, so no additional
+/// locking is required when used inside a strategy's <c>OnTick</c> method.</para>
+/// <para>If you need to access it from a background task, acquire the strategy's
+/// <see cref="StrategyBase.GeneLock"/> or another synchronization primitive first.</para>
+/// </remarks>
 public sealed class TickWindow : IDisposable
 {
     private readonly Dictionary<string, TickRingBuffer> _buffers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Dictionary<TimeFrame, long>> _lastCompleteTimes =
         new(StringComparer.OrdinalIgnoreCase);
+
     private readonly int _maxTicksPerSymbol;
 
-    /// <summary>
-    /// Stores the last completed bar’s OHLC for immediate retrieval after a window completion event.
-    /// </summary>
     private readonly Dictionary<(string Symbol, TimeFrame Timeframe), CompletedBar> _lastCompletedBar = new();
 
     /// <summary>
     /// Raised when a full timeframe window completes (i.e., a new candle would have closed).
     /// <para>
     /// <b>Note:</b> If multiple timeframes share the same boundary (e.g., M5 and M15 both complete on the same tick),
-    /// this event fires once per timeframe. Thus it can be raised multiple times for the same tick.
+    /// this event fires once per timeframe. Thus, it can be raised multiple times for the same tick.
     /// </para>
     /// </summary>
     public event Action<string, TimeFrame>? WindowCompleted;
@@ -79,25 +87,18 @@ public sealed class TickWindow : IDisposable
             return;
         }
 
-        // Fire completion events BEFORE adding the new tick so the buffer still
-        // represents the finished bar.
         foreach (var (tf, lastTime) in times)
         {
             long periodTicks = (long)tf * TimeSpan.TicksPerMinute;
             long currentWindowStart = tick.Time / periodTicks * periodTicks;
             if (currentWindowStart > lastTime)
             {
-                // Compute the completed bar’s OHLC while the buffer still holds its ticks
                 ComputeAndStoreCompletedBar(symbol, tf, buffer);
-
-                // Notify listeners
                 WindowCompleted?.Invoke(symbol, tf);
-
                 times[tf] = currentWindowStart;
             }
         }
 
-        // Now add the new tick (starts populating the next bar)
         buffer.Add(tick);
     }
 
@@ -120,6 +121,7 @@ public sealed class TickWindow : IDisposable
                 return true;
             }
         }
+
         return false;
     }
 
@@ -150,7 +152,6 @@ public sealed class TickWindow : IDisposable
 
     /// <summary>
     /// Retrieves OHLC statistics and indicates whether the window was complete.
-    /// (Kept for backward compatibility; prefer <see cref="TryGetLastCompletedBar"/> inside event handlers.)
     /// </summary>
     public void GetCurrentStats(string symbol, TimeFrame tf, PriceType priceType,
         out double open, out double high, out double low, out double close, out double volume, out bool isComplete)
@@ -234,7 +235,6 @@ public sealed class TickWindow : IDisposable
         _buffers.Clear();
     }
 
-    /// <summary>Computes the OHLC of the most recent completed bar and stores it.</summary>
     private void ComputeAndStoreCompletedBar(string symbol, TimeFrame tf, TickRingBuffer buffer)
     {
         long periodTicks = (long)tf * TimeSpan.TicksPerMinute;
@@ -249,7 +249,6 @@ public sealed class TickWindow : IDisposable
             return;
         }
 
-        // The last tick in the buffer belongs to the completed bar (since new tick not added yet)
         long lastTime = buffer[n - 1].Time;
         long windowStart = lastTime / periodTicks * periodTicks;
 
@@ -262,7 +261,7 @@ public sealed class TickWindow : IDisposable
             {
                 continue;
             }
-            // Use mid‑price for simplicity; easily changeable if needed.
+
             double price = (t.Bid + t.Ask) * 0.5;
             if (!found)
             {
@@ -283,6 +282,7 @@ public sealed class TickWindow : IDisposable
 
                 close = price;
             }
+
             volume += t.Volume;
         }
 
@@ -296,7 +296,6 @@ public sealed class TickWindow : IDisposable
         }
     }
 
-    /// <summary>Internal record for completed bar data.</summary>
     private sealed record CompletedBar(double Open, double High, double Low, double Close, double Volume, bool IsComplete);
 
     private sealed class TickRingBuffer : IDisposable
@@ -338,10 +337,6 @@ public sealed class TickWindow : IDisposable
             }
         }
 
-        /// <summary>
-        /// Copies up to <paramref name="maxCount"/> of the most recent ticks into
-        /// <paramref name="destination"/>. Returns the actual number copied.
-        /// </summary>
         public int CopyMostRecent(Span<Tick> destination, int maxCount)
         {
             if (_count == 0 || maxCount <= 0)

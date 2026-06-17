@@ -4,17 +4,6 @@ using Chronos.Core.Abstractions.Strategies;
 namespace Chronos.Core.Kernel.Configuration;
 
 /// <summary>
-/// Mode for walk‑forward analysis.
-/// </summary>
-public enum WalkForwardMode
-{
-    /// <summary>Anchored windows: train start is fixed at the beginning of the data.</summary>
-    Anchored,
-    /// <summary>Rolling windows: train window slides forward with each step.</summary>
-    Rolling
-}
-
-/// <summary>
 /// Immutable specification for a genetic optimisation run.
 /// </summary>
 public sealed record OptimizationSpecification
@@ -27,12 +16,6 @@ public sealed record OptimizationSpecification
 
     /// <summary>Population size.</summary>
     public required int PopulationSize { get; init; }
-
-    /// <summary>Number of walk‑forward windows (1 = simple optimisation).</summary>
-    public required int Windows { get; init; }
-
-    /// <summary>Fraction of data used for training (0.0–1.0).</summary>
-    public required double TrainSplit { get; init; }
 
     /// <summary>Base mutation rate.</summary>
     public required double MutationRate { get; init; }
@@ -49,9 +32,6 @@ public sealed record OptimizationSpecification
     /// <summary>Number of consecutive generations with unchanged best fitness before hyper‑mutation activates.</summary>
     public int StagnationGenerationsBeforeHyper { get; init; } = 3;
 
-    /// <summary>Walk‑forward mode (only used when Windows > 1).</summary>
-    public WalkForwardMode WalkForwardMode { get; init; } = WalkForwardMode.Anchored;
-
     /// <summary>Fitness model used to evaluate chromosome quality.</summary>
     public required IFitnessModel FitnessModel { get; init; }
 
@@ -66,22 +46,6 @@ public sealed record OptimizationSpecification
         if (PopulationSize < 4)
         {
             throw new ConfigurationException("PopulationSize must be at least 4.");
-        }
-
-        if (Windows <= 0)
-        {
-            throw new ConfigurationException("Windows must be 1 or more.");
-        }
-
-        if (TrainSplit <= 0 || TrainSplit >= 1)
-        {
-            throw new ConfigurationException("TrainSplit must be between 0 and 1 (exclusive).");
-        }
-
-        // K‑P2‑5: when multiple windows are used, the training split must be less than 1 so that a test window exists
-        if (Windows > 1 && TrainSplit >= 1)
-        {
-            throw new ConfigurationException("TrainSplit must be less than 1 when Windows > 1.");
         }
 
         if (MutationRate < 0 || MutationRate > 1)
@@ -120,29 +84,23 @@ public sealed record OptimizationSpecification
         int masterSeed,
         int generations,
         int populationSize,
-        int windows,
-        double trainSplit,
         double mutationRate,
         double crossoverRate,
         double elitismPct,
         int tournamentSize,
         IFitnessModel fitnessModel,
-        int stagnationGenerationsBeforeHyper = 3,
-        WalkForwardMode walkForwardMode = WalkForwardMode.Anchored)
+        int stagnationGenerationsBeforeHyper = 3)
     {
         var spec = new OptimizationSpecification
         {
             MasterSeed = masterSeed,
             Generations = generations,
             PopulationSize = populationSize,
-            Windows = windows,
-            TrainSplit = trainSplit,
             MutationRate = mutationRate,
             CrossoverRate = crossoverRate,
             ElitismPct = elitismPct,
             TournamentSize = tournamentSize,
             StagnationGenerationsBeforeHyper = stagnationGenerationsBeforeHyper,
-            WalkForwardMode = walkForwardMode,
             FitnessModel = fitnessModel
         };
         spec.Validate();

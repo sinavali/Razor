@@ -1,9 +1,9 @@
 ## Chronos Configuration Reference
 
 **Version:** 1.0.0 LTS
-**Audience:** Plugin developers & power users
+**Audience:** Extension developers & power users
 **Status:** Authoritative
-**Last Updated:** 2026-06-02
+**Last Updated:** 2026-06-15
 
 ---
 
@@ -16,7 +16,7 @@ This document catalogues every configuration object, enumeration, and data contr
 ## 1. Strategy Specification
 
 **Type:** `StrategySpecification` (immutable record)
-**Namespace:** `Chronos.Core.Abstractions.Strategies`
+**Namespace:** `Chronos.Core.Abstractions.Shared`
 
 ### Fields
 
@@ -24,9 +24,7 @@ This document catalogues every configuration object, enumeration, and data contr
 |-------|------|----------|-------------|
 | `InitialBalance` | `double` | Yes | Starting account balance in quote currency. |
 | `Leverage` | `double` | Yes | Account‑wide leverage multiplier (e.g., 10, 50). Must be `> 0`. |
-| `FrictionModel` | `ISimulationFriction?` | No | Custom slippage/commission model for backtesting. If `null`, adapter default is used. |
-| `FitnessModel` | `IFitnessModel?` | No | Scoring function for optimisation runs. Required for any GA operation. |
-| `RequestedSymbols` | `ImmutableArray<SymbolRequest>` | Yes | List of symbols and their timeframes the strategy needs. At least one element required. |
+| `RequestedSymbols` | `ImmutableArray<SymbolRequest>` | Yes | List of symbols and their timeframes the strategy needs. At least one element required. Symbols must be unique (case‑insensitive). |
 
 ### Nested Type: `SymbolRequest`
 
@@ -41,6 +39,7 @@ This document catalogues every configuration object, enumeration, and data contr
 - `Leverage` must be `> 0`.
 - `RequestedSymbols` must not be empty.
 - Each `SymbolRequest` must have a non‑empty `Symbol` and at least one `TimeFrame` (but `TimeFrame.Tick` alone is valid).
+- Duplicate `Symbol` values (case‑insensitive) are not allowed. A `ConfigurationException` is thrown if the same symbol appears more than once.
 
 ### Example (JSON, as Cloud might send)
 
@@ -82,15 +81,7 @@ Controls the backtest or optimisation run environment.
 | `MaxOpenPositions` | `int` | Yes | — | Hard limit on concurrent positions. Must be `> 0`. |
 | `StopOutLevel` | `double` | Yes | — | Stop‑out margin ratio (e.g., `0.5` = 50%). Must be `> 0` and `≤ 1`. |
 | `HistoricalDataPolicy` | `DataActionPolicy` | No | `DeleteAfterTask` | Defines how adapter should handle binary tick files after task completion. |
-| `GeneInitializationSeed` | `int` | Yes | — | Master seed for deterministic gene initialization when no explicit genes are provided. |
-
-### Enum: `DataActionPolicy`
-
-| Value | Meaning |
-|-------|---------|
-| `KeepUntilExit` | Keep the file until the engine process terminates. |
-| `DeleteAfterTask` | Delete the file immediately after the backtest/optimisation finishes. |
-| `PersistentCache` | Keep the file for potential reuse (adapter manages cleanup). |
+| `GeneInitializationSeed` | `int?` | No | `null` | Seed for deterministic gene initialization when no explicit genes are provided. `null` means no seed was explicitly supplied. |
 
 ### Validation
 
@@ -123,38 +114,28 @@ Controls the backtest or optimisation run environment.
 **Type:** `OptimizationSpecification` (immutable record)
 **Namespace:** `Chronos.Core.Kernel.Configuration`
 
+The optimisation pipeline uses the hook system for fitness evaluation. No `FitnessModel` field is present in the specification; instead, the engine invokes the `optimization.chromosome.evaluated` hook after each chromosome evaluation, and the Cloud or a hook plugin computes the fitness score.
+
 ### Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `MasterSeed` | `int` | Yes | — | Master seed for the entire GA run. Guarantees reproducibility. |
+| `MasterSeed` | `int` | Yes | — | Master seed for the entire GA run. Guarantees reproducibility. Must be non‑negative. |
 | `Generations` | `int` | Yes | — | Number of generations to evolve. Must be `> 0`. |
 | `PopulationSize` | `int` | Yes | — | Individuals per generation. Must be `≥ 4`. |
-| `Windows` | `int` | Yes | — | Number of walk‑forward windows. `1` = simple optimisation. |
-| `TrainSplit` | `double` | Yes | — | Fraction of data used for training (0‑1 exclusive). |
 | `MutationRate` | `double` | Yes | — | Base probability of gene mutation. `[0, 1]`. |
 | `CrossoverRate` | `double` | Yes | — | Probability that a gene comes from the first parent. `[0, 1]`. |
 | `ElitismPct` | `double` | Yes | — | Fraction of best individuals preserved unchanged. `[0, 1]`. |
 | `TournamentSize` | `int` | Yes | — | Number of individuals competing in selection. Must be `≥ 2`. |
 | `StagnationGenerationsBeforeHyper` | `int` | No | `3` | Generations without improvement before hyper‑mutation activates. `≥ 1`. |
-| `WalkForwardMode` | `WalkForwardMode` | No | `Anchored` | Walk‑forward window strategy. |
-| `FitnessModel` | `IFitnessModel?` | Yes | — | Fitness function (must not be `null`). |
-
-### Enum: `WalkForwardMode`
-
-| Value | Meaning |
-|-------|---------|
-| `Anchored` | Training window start fixed at beginning of data; test window slides forward. |
-| `Rolling` | Both training and test windows slide forward together. |
 
 ### Validation
 
-- `Generations > 0`, `PopulationSize ≥ 4`, `Windows > 0`.
-- `0 < TrainSplit < 1`.
+- `Generations > 0`, `PopulationSize ≥ 4`.
 - `0 ≤ MutationRate ≤ 1`, `0 ≤ CrossoverRate ≤ 1`, `0 ≤ ElitismPct ≤ 1`.
 - `TournamentSize ≥ 2`.
 - `StagnationGenerationsBeforeHyper ≥ 1`.
-- `FitnessModel` must not be `null`.
+- `MasterSeed` must be `≥ 0`. Negative seeds are rejected to guarantee deterministic and predictable sequences.
 
 ### Example
 
@@ -163,14 +144,11 @@ Controls the backtest or optimisation run environment.
     "MasterSeed": 42,
     "Generations": 50,
     "PopulationSize": 100,
-    "Windows": 3,
-    "TrainSplit": 0.7,
     "MutationRate": 0.1,
     "CrossoverRate": 0.5,
     "ElitismPct": 0.05,
     "TournamentSize": 3,
-    "StagnationGenerationsBeforeHyper": 3,
-    "WalkForwardMode": "Anchored"
+    "StagnationGenerationsBeforeHyper": 3
 }
 ```
 
@@ -181,73 +159,62 @@ Controls the backtest or optimisation run environment.
 **Type:** `LiveSpecification` (immutable record)
 **Namespace:** `Chronos.Core.Kernel.Configuration`
 
+The live trading specification defines the parameters for a live trading session. Continuous optimisation is orchestrated by Chronos Cloud; the Cloud sends the engine commands to start/stop optimisation runs based on the user’s profile settings.
+
 ### Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `MagicNumber` | `int` | Yes | — | Unique number to tag orders from this strategy instance. Must be `> 0`. |
 | `OrderGuardTimeoutSeconds` | `int` | No | `5` | Window (in seconds) during which duplicate orders are rejected. Must be `> 0`. |
-| `ContinuousOptimization` | `bool` | No | `false` | If `true`, the Cloud will schedule periodic optimisations. |
-| `LookbackDays` | `int` | Required if `ContinuousOptimization` is true | — | Days of historical data to use for optimisation. Must be `> 0`. |
-| `SkipRecentDays` | `int` | No | `0` | Excludes the most recent N days from optimisation data to avoid bias. |
-| `NotificationChannels` | `ImmutableArray<INotificationChannel>` | No | `[]` | List of user‑defined notification handlers (email, Telegram, etc.). |
-| `RotateOptimizationSeed` | `bool` | No | `false` | If `true`, the master seed is rotated for each optimisation cycle. |
-| `InitialDelayMinutes` | `int` | No | `1` | Minutes to wait before the first optimisation run. |
-| `OptimizationIntervalHours` | `int` | No | `24` | Hours between automated optimisations. Must be `> 0`. |
 
 ### Validation
 
 - `MagicNumber > 0`.
 - `OrderGuardTimeoutSeconds > 0`.
-- If `ContinuousOptimization` is `true`, `LookbackDays > 0`.
-- `SkipRecentDays ≥ 0`.
-- `InitialDelayMinutes ≥ 0`.
-- `OptimizationIntervalHours > 0`.
 
 ### Example
 
 ```json
 {
     "MagicNumber": 123456,
-    "OrderGuardTimeoutSeconds": 10,
-    "ContinuousOptimization": true,
-    "LookbackDays": 90,
-    "SkipRecentDays": 3,
-    "RotateOptimizationSeed": false,
-    "InitialDelayMinutes": 5,
-    "OptimizationIntervalHours": 24
+    "OrderGuardTimeoutSeconds": 10
 }
 ```
 
 ---
 
-## 5. Neural Network Specification
+## 5. Neural Network Model Interface
 
-**Type:** `NeuralNetworkSpecification` (immutable record)
-**Namespace:** `Chronos.Core.Abstractions.Strategies`
+**Type:** `INeuralNetworkModel` (interface)
+**Namespace:** `Chronos.Core.Abstractions.Slots`
 
-### Fields
+Neural networks are slot capabilities. The engine activates an `INeuralNetworkModel` instance from the `NeuralNetworks/` directory when the active strategy declares `RequiresNeuralNetwork = true`. The model supports feed‑forward, ONNX, LSTM, RL, and other architectures through a unified parameter‑vector interface compatible with the GA.
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `Topology` | `int[]` | Yes | — | Neuron counts per layer (input..output). At least two layers required. All sizes `> 0`. |
-| `Activation` | `ActivationFunction` | No | `Tanh` | Hidden layer activation function. |
-| `ModelType` | `string` | No | `"FeedForward"` | Type of network. Currently `"FeedForward"` or `"LSTM"` (future). |
+### Members
 
-### Enum: `ActivationFunction`
+| Member | Type | Description |
+|--------|------|-------------|
+| `ModelType` | `string` | Human‑readable model type identifier (e.g., `"FeedForward"`, `"ONNX"`, `"RL-DQN"`). |
+| `InputSize` | `int` | Number of input features the model expects. |
+| `OutputSize` | `int` | Number of output values the model produces. |
+| `ParameterCount` | `int` | Total number of double parameters (weights, biases, etc.) that the GA includes in the chromosome. |
+| `Predict` | `double[] Predict(double[] inputs)` | Performs a forward pass and returns predictions. |
+| `LoadParameters` | `void LoadParameters(double[] genes)` | Loads a flat parameter vector into the model's internal structure. |
+| `ExportParameters` | `double[] ExportParameters()` | Exports the current parameters as a flat array. |
+| `Reset` | `void Reset()` | Resets any internal state. Called before each backtest or evaluation run. |
+| `SerializeState` | `byte[] SerializeState()` | Serializes the full model state for save/restore. |
+| `DeserializeState` | `void DeserializeState(byte[] state)` | Deserializes the model state from a previously saved snapshot. |
 
-| Value | Equation |
-|-------|----------|
-| `Sigmoid` | `1 / (1 + e⁻ˣ)` |
-| `Tanh` | `tanh(x)` |
-| `ReLU` | `max(0, x)` |
-| `LeakyReLU` | `max(0.01x, x)` |
-| `Linear` | `x` |
+### Strategy Integration
 
-### Validation
+The `IStrategyCapability` interface (in `Chronos.Core.Abstractions.Slots`) exposes:
 
-- `Topology` must not be `null`, must have at least 2 elements, and all values `> 0`.
-- `ModelType` must be one of `"FeedForward"` or `"LSTM"` (case‑insensitive).
+| Member | Type | Description |
+|--------|------|-------------|
+| `RequiresNeuralNetwork` | `bool` | Whether this strategy requires a neural network model. |
+| `NeuralNetwork` | `INeuralNetworkModel?` | The neural network model, set by the engine before initialization. |
+| `TotalGeneCount` | `int` | Total genes including strategy properties and neural network parameters. |
 
 ---
 
@@ -320,7 +287,7 @@ The integer value equals the duration in minutes.
 ## 8. Gene Attributes
 
 **Type:** `GeneAttribute` (attribute)
-**Namespace:** `Chronos.Core.Abstractions.Strategies`
+**Namespace:** `Chronos.Core.Abstractions.Shared`
 
 Used to decorate strategy properties for GA optimisation.
 
@@ -330,7 +297,7 @@ Used to decorate strategy properties for GA optimisation.
 |-----------|------|-------------|
 | `min` | `double` | Minimum allowed value. |
 | `max` | `double` | Maximum allowed value. |
-| `step` | `double` | Discretisation step. `0` for continuous. |
+| `step` | `double` | Discretisation step. Must be `0` for `Continuous`, `Structural`, and `Parametric` gene types. Only `Discrete` and `Categorical` types allow a non‑zero step (minimum `1`). |
 | `type` | `GeneType` | `Continuous`, `Discrete`, `Categorical`, `Structural`, `Parametric`. |
 
 ### Properties
@@ -348,12 +315,14 @@ Used to decorate strategy properties for GA optimisation.
 - `Structural` – topology genes.
 - `Parametric` – neural network weights.
 
+**Note:** The `step` parameter is only applicable to `Discrete` and `Categorical`. For all other types it must be `0`. The constructor will throw `ArgumentException` if this rule is violated.
+
 ---
 
 ## 9. Data Action Policy
 
 **Type:** `DataActionPolicy` (enum)
-**Namespace:** `Chronos.Core.Abstractions.Adapters`
+**Namespace:** `Chronos.Core.Abstractions.Shared`
 
 | Value | Meaning |
 |-------|---------|
@@ -363,28 +332,158 @@ Used to decorate strategy properties for GA optimisation.
 
 ---
 
-## 10. Friction & Fitness Interfaces
+## 10. Adapter Capability Interface
 
-### `ISimulationFriction`
+**Type:** `IAdapterCapability` (interface)
+**Namespace:** `Chronos.Core.Abstractions.Slots`
 
-```csharp
-double CalculateSlippage(string symbol, OrderType type, double volume, double currentPrice);
-double CalculateCommission(string symbol, double volume);
-```
+Replaces the previous `IAdapter`, `IHistoricalDataProvider`, `ILiveDataProvider`, and `IExecutionProvider` interfaces. An adapter declares which sub‑capabilities it supports via boolean flags.
 
-### `IFitnessModel`
+### Capability Flags
 
-```csharp
-double Evaluate(double finalBalance, double initialBalance, double maxDrawdown,
-    double maxDailyDrawdown, int totalTrades, IReadOnlyList<Position> history);
-```
+| Flag | Type | Description |
+|------|------|-------------|
+| `SupportsHistoricalData` | `bool` | Whether this adapter can provide historical tick data. |
+| `SupportsLiveData` | `bool` | Whether this adapter can stream live tick data. |
+| `SupportsExecution` | `bool` | Whether this adapter can execute orders. |
 
-Higher return value = better fitness.
+### Core Members
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `Name` | `string` | Human‑readable adapter name. |
+| `Calculator` | `IMarketCalculator` | Exchange‑specific financial calculator. |
+| `IsConnected` | `bool` | Whether the adapter is currently connected. |
+
+### Connection
+
+| Member | Description |
+|--------|-------------|
+| `Task<bool> ConnectAsync(CancellationToken)` | Establishes the underlying connection. |
+| `Task DisconnectAsync()` | Gracefully disconnects. |
+
+### Historical Data
+
+| Member | Description |
+|--------|-------------|
+| `Task<HistoricalDataResponse> FetchHistoryToBinaryFileAsync(...)` | Fetches history and writes it to a binary file. |
+| `Task DeleteHistoryFileAsync(string)` | Deletes a previously cached binary file. |
+| `Task NotifyFileSafeToDeleteAsync(string)` | Called by Chronos after it has finished reading the binary file. |
+
+### Live Data
+
+| Member | Description |
+|--------|-------------|
+| `Task SubscribeAsync(string)` | Subscribes to tick updates for the given symbol. |
+| `Task UnsubscribeAsync(string)` | Unsubscribes from tick updates. |
+| `event Action<string, Tick> OnTickReceived` | Raised for every received tick. |
+
+### Execution
+
+| Member | Description |
+|--------|-------------|
+| `Task<AdapterOrderResponse> ExecuteOrderAsync(AdapterOrderRequest)` | Submits a new order. |
+| `Task<AdapterOrderResponse> ModifyOrderAsync(long, double?, double?, double?)` | Modifies an existing order. |
+| `Task<AdapterOrderResponse> ClosePositionAsync(long, double?)` | Closes a position (or partially closes it). |
+| `Task<AdapterOrderResponse> CancelAsync(long)` | Cancels a pending order. |
+| `Task<(double Balance, double Equity)> GetAccountInfoAsync(...)` | Returns current account balance and equity. |
+| `Task<IReadOnlyList<Position>> GetActivePositionsAsync()` | Returns all currently open positions. |
+| `Task<IReadOnlyList<Order>> GetPendingOrdersAsync()` | Returns all currently pending orders. |
+| `Task<SymbolProperties?> GetSymbolPropertiesAsync(string, ...)` | Fetches symbol properties from the exchange. |
+| `event Action<ExecutionReport> OnExecutionUpdate` | Raised when a dynamic execution update is received. |
+
+### Symbol Support
+
+| Member | Description |
+|--------|-------------|
+| `TimeFrame[]? GetSupportedTimeframes(string)` | Returns supported timeframes, or null if all are supported. |
 
 ---
 
-## 11. Validation Principles
+## 11. Strategy Capability Interface
+
+**Type:** `IStrategyCapability` (interface)
+**Namespace:** `Chronos.Core.Abstractions.Slots`
+
+Replaces the previous `IStrategy` interface. Strategies are slot capabilities discovered in the `Strategies/` directory.
+
+### Lifecycle
+
+| Member | Description |
+|--------|-------------|
+| `Task OnConfigureAsync(StrategySpecification)` | Called once before any data is processed. Receives immutable configuration. |
+| `Task OnStartAsync(IIndicatorRegistry)` | Called at the start of a run. The indicator registry is ready. |
+| `void OnTick(string symbol, Tick tick)` | Called for every tick in chronological order. The `symbol` identifies the instrument. Must be purely synchronous to guarantee determinism. |
+| `Task OnStopAsync()` | Called at the end of a run. |
+
+### Gene Support
+
+| Member | Description |
+|--------|-------------|
+| `int TotalGeneCount` | Total number of genes in the chromosome (property genes + neural network parameters). |
+| `void InjectGenes(double[])` | Injects a chromosome's gene values into the strategy. |
+| `double[] ExportGenes()` | Exports the current gene values from the strategy. |
+
+### Neural Network
+
+| Member | Description |
+|--------|-------------|
+| `bool RequiresNeuralNetwork` | Whether this strategy requires a neural network model. |
+| `INeuralNetworkModel? NeuralNetwork` | The neural network model, set by the engine before initialization. |
+
+---
+
+## 12. Hook System
+
+**Namespace:** `Chronos.Core.Abstractions.Hooks`
+
+Chronos uses a priority‑based hook system for extensibility. Hook plugins implement `IHookManifest` and register callbacks on named hook points.
+
+### Hook Registration Interfaces
+
+| Interface | Description |
+|-----------|-------------|
+| `IHookManifest` | Entry point for hook plugins. `void RegisterHooks(IHookRegistry registry)` |
+| `IHookRegistry` | Root registry with `Backtest`, `Live`, `Optimization`, `Report` sub‑registries. |
+| `IFilterRegistration<T>` | Registration point for a filter hook. `void Register(Func<T, IHookContext, FilterResult<T>>, int priority)` |
+| `IActionRegistration<T>` | Registration point for a typed action hook. Callbacks must be synchronous; `async void` is prohibited and will cause process crashes. |
+| `IActionRegistration` | Registration point for a parameterless action hook. Same synchronous requirement. |
+
+### Filter Results
+
+```csharp
+public static class FilterResult
+{
+    public static FilterResult<T> Allow<T>(T data);
+    public static FilterResult<T> Reject<T>(string reason);
+}
+
+public readonly struct FilterResult<T>
+{
+    public bool IsAllowed { get; }
+    public T? Data { get; }
+    public string? RejectionReason { get; }
+}
+```
+
+### Hook Contexts
+
+| Interface | Pipeline | Key Members |
+|-----------|----------|-------------|
+| `IHookContext` | Base | `HookName`, `UtcNow`, `CancellationToken` |
+| `IBacktestContext` | Backtesting | `CurrentTick`, `CurrentEquity`, `CurrentDrawdown`, `Broker`, `TickWindow`, `OpenPositions` |
+| `ILiveContext` | Live Trading | `CurrentTick`, `CurrentEquity`, `Broker`, `AdapterName`, `IsConnected` |
+| `IOptimizationContext` | Optimization | `CurrentGeneration`, `TotalGenerations`, `BestFitness`, `IsHyperMutation` |
+| `IReportContext` | Reports | `ReportFormat` |
+
+---
+
+## 13. Validation Principles
 
 - Every specification record has a `Validate()` method throwing `ConfigurationException`.
 - No critical parameter is silently defaulted (Principle 9).
 - All parsing uses `TryParse`‑style methods with clear error messages.
+- Fitness evaluation is performed by hook plugins via the `optimization.*` hooks, not by a built‑in `IFitnessModel`.
+- Slippage and commission are adapter‑internal concerns, handled through the adapter's `IMarketCalculator` and `SymbolProperties`, not through a user‑supplied `ISimulationFriction`.
+- All seeds used for deterministic randomness must be non‑negative; negative values are rejected.
+- Duplicate symbols in `RequestedSymbols` are forbidden and will cause validation failure.
