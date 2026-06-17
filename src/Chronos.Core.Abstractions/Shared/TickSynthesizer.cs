@@ -12,7 +12,11 @@ public static class TickSynthesizer
     /// <summary>Converts bars into four equidistant synthetic ticks per bar.</summary>
     public static Tick[] BarsToTicks(Bar[] bars)
     {
-        if (bars == null || bars.Length == 0) return [];
+        if (bars == null || bars.Length == 0)
+        {
+            return [];
+        }
+
         int barsCount = bars.Length;
         int totalTicks = barsCount * 4;
         var ticks = GC.AllocateUninitializedArray<Tick>(totalTicks);
@@ -24,7 +28,11 @@ public static class TickSynthesizer
             long openTime = bar.OpenTime;
             long closeTime = bar.CloseTime;
             long duration = closeTime - openTime;
-            if (duration <= 0) duration = 4;
+            if (duration <= 0)
+            {
+                duration = 4;
+            }
+
             long t2 = openTime + duration / 3;
             long t3 = openTime + duration * 2 / 3;
             long t4 = closeTime > openTime ? closeTime - 1 : openTime + 3;
@@ -51,8 +59,16 @@ public static class TickSynthesizer
     /// <summary>Converts bars into a configurable number of synthetic ticks per bar.</summary>
     public static Tick[] BarsToTicks(Bar[] bars, int ticksPerBar, int seed)
     {
-        if (bars == null || bars.Length == 0) return [];
-        if (ticksPerBar < 2) ticksPerBar = 2;
+        if (bars == null || bars.Length == 0)
+        {
+            return [];
+        }
+
+        if (ticksPerBar < 2)
+        {
+            ticksPerBar = 2;
+        }
+
         var rng = new ChronosRandom(seed);
         int totalTicks = bars.Length * ticksPerBar;
         var ticks = GC.AllocateUninitializedArray<Tick>(totalTicks);
@@ -64,7 +80,11 @@ public static class TickSynthesizer
             long openTime = bar.OpenTime;
             long closeTime = bar.CloseTime;
             long duration = closeTime - openTime;
-            if (duration <= 0) duration = ticksPerBar;
+            if (duration <= 0)
+            {
+                duration = ticksPerBar;
+            }
+
             double volumePerTick = bar.Volume / ticksPerBar;
             double open = bar.Open, close = bar.Close, high = bar.High, low = bar.Low;
             int tickIdx = i * ticksPerBar;
@@ -74,13 +94,25 @@ public static class TickSynthesizer
             for (int t = 1; t < ticksPerBar - 1; t++)
             {
                 long tickTime = openTime + (long)((double)t / (ticksPerBar - 1) * duration);
-                if (tickTime >= closeTime) tickTime = closeTime - 1;
+                if (tickTime >= closeTime)
+                {
+                    tickTime = closeTime - 1;
+                }
+
                 double progress = (double)t / (ticksPerBar - 1);
 #pragma warning disable CA5394 // Reason: Deterministic use for synthetic tick generation, not security.
                 double price = low + (high - low) * (rng.NextDouble() * 0.3 + progress * 0.8);
 #pragma warning restore CA5394
-                if (price < low) price = low;
-                if (price > high) price = high;
+                if (price < low)
+                {
+                    price = low;
+                }
+
+                if (price > high)
+                {
+                    price = high;
+                }
+
                 Unsafe.Add(ref tickRef, tickIdx + t) = new Tick(tickTime, price, price, volumePerTick, true);
             }
         }
@@ -96,12 +128,27 @@ public static class TickSynthesizer
         int maxTicks = 0;
         foreach (var s in streams)
         {
-            if (s is null) continue;
+            if (s is null)
+            {
+                continue;
+            }
+
             if (s.Count > 0)
             {
-                if (s[0].Time < minTime) minTime = s[0].Time;
-                if (s[^1].Time > maxTime) maxTime = s[^1].Time;
-                if (s.Count > maxTicks) maxTicks = s.Count;
+                if (s[0].Time < minTime)
+                {
+                    minTime = s[0].Time;
+                }
+
+                if (s[^1].Time > maxTime)
+                {
+                    maxTime = s[^1].Time;
+                }
+
+                if (s.Count > maxTicks)
+                {
+                    maxTicks = s.Count;
+                }
             }
         }
 

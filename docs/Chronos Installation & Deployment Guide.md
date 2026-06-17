@@ -3,26 +3,26 @@
 **Version:** 1.0.0 LTS
 **Audience:** End‑users (traders, quants, IT staff)
 **Status:** Authoritative
-**Last Updated:** 2026-06-02
+**Last Updated:** 2026-06-14
 
 ---
 
 ## 1. Introduction
 
-This guide explains how to install the Chronos Engine on Windows and Linux servers, connect it to Chronos Cloud, and verify correct operation. The engine is a lightweight, headless binary that runs your trading strategies and communicates with your chosen brokers through adapter plugins.
+This guide explains how to install the Chronos Engine on Windows and Linux servers, connect it to Chronos Cloud, and verify correct operation. The engine is a lightweight, headless binary that runs your trading strategies and communicates with your chosen brokers through adapter extensions.
 
 ### 1.1 Who Should Read This
 
 - Traders deploying Chronos for live or paper trading.
 - IT staff responsible for provisioning and maintaining trading servers.
-- Plugin developers testing their adapters/strategies locally.
+- Extension developers testing their adapters, strategies, indicators, hook plugins, and neural network models locally.
 
 ### 1.2 What You Need
 
 - A server or virtual machine meeting the minimum specifications.
 - A Chronos Cloud account (free or paid) with an API key for your engine instance.
 - The Chronos Engine binary archive for your operating system.
-- Outbound network access to Chronos Cloud and your broker’s API.
+- Outbound network access to Chronos Cloud and your broker's API.
 
 ---
 
@@ -47,7 +47,7 @@ This guide explains how to install the Chronos Engine on Windows and Linux serve
 
 ### 2.3 .NET Runtime
 
-The Chronos Engine targets .NET 10. The correct runtime is bundled with the engine archive; you do not need to install .NET separately unless you are building plugins from source.
+The Chronos Engine targets .NET 10. The correct runtime is bundled with the engine archive; you do not need to install .NET separately unless you are building extensions from source.
 
 ---
 
@@ -63,12 +63,17 @@ The Chronos Engine targets .NET 10. The correct runtime is bundled with the engi
 ### 3.2 Archive Contents
 
 The archive contains:
+
 ```
 chronos/
 ├── Chronos.Engine.exe       (Windows) / Chronos.Engine (Linux)
 ├── *.dll                    (engine dependencies)
 ├── chronos.bootstrap.json   (template – edit before running)
-├── plugins/                 (empty – place adapter/strategy DLLs here)
+├── Adapters/                (empty – place adapter DLLs here)
+├── Strategies/              (empty – place strategy DLLs here)
+├── Indicators/              (empty – place indicator DLLs here)
+├── Plugins/                 (empty – place hook plugin DLLs here)
+├── NeuralNetworks/          (empty – place NN model DLLs here)
 └── logs/                    (created on first run)
 ```
 
@@ -80,7 +85,7 @@ chronos/
 
 1. **Extract the archive** to a permanent location, e.g., `C:\Chronos\`.
 2. **Edit the bootstrap file** `chronos.bootstrap.json` (see §5).
-3. **Place plugins** – copy your adapter and strategy DLLs into the `plugins/` folder.
+3. **Place extensions** – copy your adapter, strategy, indicator, hook plugin, and NN model DLLs into the appropriate directories (see §8 for details).
 4. **Run the engine**:
    - Open a **Command Prompt** or **PowerShell** as Administrator.
    - Navigate to `C:\Chronos\`.
@@ -99,7 +104,7 @@ chronos/
    sudo chmod +x /opt/chronos/Chronos.Engine
    ```
 3. **Edit the bootstrap file** `/opt/chronos/chronos.bootstrap.json` (see §5).
-4. **Place plugins** in `/opt/chronos/plugins/`.
+4. **Place extensions** in the appropriate subdirectories under `/opt/chronos/`.
 5. **Run the engine**:
    ```bash
    cd /opt/chronos
@@ -152,8 +157,7 @@ The bootstrap file `chronos.bootstrap.json` contains the minimal settings the en
     "CloudEndpoint": "wss://cloud.chronos.io/engine",
     "InstanceApiKey": "ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "EncryptionSeed": "a 32-byte base64-encoded seed for AES key derivation",
-    "LogVerbosity": "Information",
-    "PluginDirectory": "plugins"
+    "LogVerbosity": "Information"
 }
 ```
 
@@ -163,7 +167,6 @@ The bootstrap file `chronos.bootstrap.json` contains the minimal settings the en
 | `InstanceApiKey` | Yes | API key from Chronos Cloud (Engine registration page). |
 | `EncryptionSeed` | Yes | A secret string used to derive session encryption keys. Keep it secret and identical across engine restarts. |
 | `LogVerbosity` | No | `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`. Default: `Information`. |
-| `PluginDirectory` | No | Relative or absolute path to the plugin folder. Default: `plugins`. |
 
 ### 5.2 Obtaining the API Key
 
@@ -183,7 +186,7 @@ Never share this key. If compromised, revoke it in the Cloud dashboard and gener
 The engine must be able to establish outbound WebSocket connections to:
 
 - **Chronos Cloud** – the endpoint in your bootstrap file (default `wss://cloud.chronos.io`).
-- **Your broker’s API** – whatever host/port your adapter requires.
+- **Your broker's API** – whatever host/port your adapter requires.
 
 The engine does **not** listen on any inbound port; it initiates all connections.
 
@@ -209,9 +212,11 @@ When the engine starts successfully, you will see log output similar to:
 
 ```
 [info] Chronos Engine v1.0.0 LTS starting...
-[info] Loaded 2 plugins (1 adapter, 1 strategy)
+[info] Discovered: 2 adapters, 3 strategies, 4 indicators, 1 NN model, 5 hook plugins
 [info] Connecting to Chronos Cloud...
 [info] Connected and authenticated. Engine ID: eng_abc123
+[info] Sending extension manifest to Cloud...
+[info] Cloud activated: adapter=BinanceAdapter, strategy=MACrossover, indicators=[SMA,RSI], plugins=[DrawdownGuard,TelegramNotifier], nnModel=none
 [info] Waiting for commands...
 ```
 
@@ -230,19 +235,59 @@ This confirms end‑to‑end connectivity and correct engine operation.
 
 ---
 
-## 8. Plugin Management
+## 8. Extension Management
 
-### 8.1 Placing Plugin DLLs
+### 8.1 Directory Structure
 
-For local testing, copy your compiled adapter and strategy DLLs into the engine’s `plugins/` folder. The engine scans this folder on startup and loads all compatible assemblies.
+Extensions are placed in subdirectories alongside the engine executable:
 
-### 8.2 Cloud‑Managed Deployment
+| Directory | Purpose | Implements |
+|-----------|---------|------------|
+| `Adapters/` | Broker/exchange connectivity | `IAdapterCapability` |
+| `Strategies/` | Trading logic | `IStrategyCapability` |
+| `Indicators/` | Technical analysis computations | `Indicator` (abstract base) |
+| `Plugins/` | Hook‑based extensions | `IHookManifest` |
+| `NeuralNetworks/` | Neural network models | `INeuralNetworkModel` |
 
-When you upload a plugin to Chronos Cloud (via the **Plugins** section), the Cloud automatically pushes the signed DLL to all engines that need it. No manual file copy is required for production deployments.
+A single DLL can be placed in any directory—the engine scans all of them. However, for organizational clarity, each extension type has its own directory.
 
-### 8.3 Plugin Isolation
+### 8.2 Single‑File vs Multi‑File Extensions
 
-Each plugin is loaded in its own isolated assembly context. Restart the engine to reload updated plugins.
+**Single‑file extensions:** Place the `.dll` directly in the appropriate directory.
+```
+Adapters/
+├── BinanceAdapter.dll
+└── NobitexAdapter.dll
+```
+
+**Multi‑file extensions:** Create a subfolder with the extension's name, containing all required DLLs. The engine scans for the DLL matching the folder name.
+```
+Adapters/
+└── NobitexAdapter/
+    ├── NobitexAdapter.dll      ← scanned
+    └── NobitexApiClient.dll    ← loaded as dependency
+```
+
+### 8.3 Discovery and Activation
+
+1. On startup, the engine scans all extension directories.
+2. It builds a manifest of discovered adapters, strategies, indicators, hook plugins, and NN models.
+3. The manifest is sent to Chronos Cloud.
+4. The user selects active items from their Cloud profile.
+5. The Cloud sends the active set back to the engine.
+6. The engine activates the selected adapter, strategy, indicators, and plugins. Inactive items are not loaded.
+
+### 8.4 Hot‑Reloading Extensions
+
+When the Cloud sends a `ReloadExtensions` command:
+
+1. The engine completes the current task (backtest/live/optimization) naturally.
+2. It unloads all extension assembly contexts.
+3. It rescans all directories and sends a new manifest to the Cloud.
+4. The Cloud responds with the new active set.
+5. The engine activates the new extensions and is ready for new commands.
+
+The engine process never stops—only the task pipeline pauses briefly.
 
 ---
 
@@ -254,7 +299,7 @@ Chronos Cloud notifies you when a new engine version is available. To update:
 2. The engine downloads the new binary, verifies its cryptographic signature, and schedules a restart.
 3. If the engine is live, it will close all positions (per your settings) before restarting.
 
-Manual update: download the new archive and replace the files, preserving your `chronos.bootstrap.json`.
+Manual update: download the new archive and replace the files, preserving your `chronos.bootstrap.json` and extension directories.
 
 ---
 
@@ -269,7 +314,7 @@ The bootstrap file contains your API key and encryption seed. Restrict file perm
 
 ### 10.2 Secrets Management
 
-Broker API keys are stored in Chronos Cloud, not in the bootstrap file. The engine fetches them securely over the encrypted channel. A local cache may be encrypted on disk.
+Broker API keys are stored in Chronos Cloud, not in the bootstrap file. The engine fetches them securely over the encrypted channel. A local encrypted secrets file may be used as a cache but is not the primary store.
 
 ---
 
@@ -279,8 +324,8 @@ Broker API keys are stored in Chronos Cloud, not in the bootstrap file. The engi
 
 Logs are written to the `logs/` directory with daily rotation:
 ```
-logs/chronos-20260602.log
-logs/chronos-20260601.log
+logs/chronos-20260614.log
+logs/chronos-20260613.log
 ...
 ```
 
@@ -291,7 +336,8 @@ logs/chronos-20260601.log
 | Engine exits immediately | Invalid bootstrap JSON | Validate JSON syntax. |
 | Engine cannot connect to Cloud | Firewall blocking outbound | Allow outbound TCP 443. |
 | Engine shows "Invalid API key" | Key revoked or mistyped | Regenerate key in Cloud, update bootstrap. |
-| Plugins not loaded | Missing SDK version attribute | Check assembly attributes. |
+| Extensions not loaded | Missing `ChronosSdkVersion` attribute or mismatched version | Check assembly attributes. |
+| Extension rejected – SDK major version mismatch | Extension compiled against a different SDK major | Recompile extension against the matching SDK. |
 | MT5 adapter fails on Linux | MT5 is Windows‑only | Deploy engine on Windows. |
 | High CPU on backtest | Normal (heavy workload) | Tune `MaxParallelThreads` in execution spec. |
 
@@ -305,5 +351,9 @@ Send the relevant log excerpts to Chronos support through the Cloud dashboard. D
 
 1. Stop the engine (Ctrl+C or `systemctl stop chronos`).
 2. Delete the engine directory.
-3. Revoke the engine’s API key in Chronos Cloud.
+3. Revoke the engine's API key in Chronos Cloud.
 4. Remove the engine from the Cloud dashboard.
+
+---
+
+*Ready for the next document.*

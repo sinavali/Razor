@@ -24,8 +24,14 @@ public sealed class MetricsCalculator : IMetricsCalculator
         var returns = new List<double>(totalTrades);
         foreach (var trade in result.History)
         {
-            if (trade.Profit > 0) grossProfit += trade.Profit;
-            else grossLoss += Math.Abs(trade.Profit);
+            if (trade.Profit > 0)
+            {
+                grossProfit += trade.Profit;
+            }
+            else
+            {
+                grossLoss += Math.Abs(trade.Profit);
+            }
 
             double tradeReturn = trade.AccountEquityAtOpen > 1e-8
                 ? trade.Profit / trade.AccountEquityAtOpen
@@ -33,7 +39,9 @@ public sealed class MetricsCalculator : IMetricsCalculator
             returns.Add(tradeReturn);
         }
         if (totalTrades > 0)
+        {
             winRate = (double)result.History.Count(t => t.Profit > 0) / totalTrades * 100.0;
+        }
 
         double profitFactor = grossLoss > 0 ? grossProfit / grossLoss
             : grossProfit > 0 ? double.PositiveInfinity : 0.0;
@@ -49,7 +57,10 @@ public sealed class MetricsCalculator : IMetricsCalculator
         double sortino = CalculateSortinoRatio(returns, years, annualize);
         double calmar = annualize ? (Math.Pow(1 + returnPct / 100.0, 1.0 / years) - 1) * 100.0 / result.Drawdown
             : returnPct / result.Drawdown;
-        if (result.Drawdown <= 0) calmar = returnPct > 0 ? double.PositiveInfinity : 0.0;
+        if (result.Drawdown <= 0)
+        {
+            calmar = returnPct > 0 ? double.PositiveInfinity : 0.0;
+        }
 
         return new SummaryMetrics
         {
@@ -68,11 +79,19 @@ public sealed class MetricsCalculator : IMetricsCalculator
 
     private static double CalculateSharpeRatio(List<double> returns, double years, bool annualize, double riskFreeRate = 0.0)
     {
-        if (returns.Count < 2) return 0.0;
+        if (returns.Count < 2)
+        {
+            return 0.0;
+        }
+
         double avg = returns.Average();
         double variance = returns.Sum(r => Math.Pow(r - avg, 2)) / (returns.Count - 1);
         double stdDev = Math.Sqrt(variance);
-        if (stdDev == 0) return 0.0;
+        if (stdDev == 0)
+        {
+            return 0.0;
+        }
+
         double tradesPerYear = returns.Count / years;
         double sharpe = (avg * tradesPerYear - riskFreeRate) / (stdDev * Math.Sqrt(tradesPerYear));
         return annualize ? sharpe : (avg / stdDev);
@@ -80,13 +99,25 @@ public sealed class MetricsCalculator : IMetricsCalculator
 
     private static double CalculateSortinoRatio(List<double> returns, double years, bool annualize, double riskFreeRate = 0.0)
     {
-        if (returns.Count < 2) return 0.0;
+        if (returns.Count < 2)
+        {
+            return 0.0;
+        }
+
         double avg = returns.Average();
         var negative = returns.Where(r => r < 0).ToList();
-        if (negative.Count == 0) return avg > 0 ? double.PositiveInfinity : 0.0;
+        if (negative.Count == 0)
+        {
+            return avg > 0 ? double.PositiveInfinity : 0.0;
+        }
+
         double downsideVar = negative.Sum(r => r * r) / returns.Count;
         double downsideDev = Math.Sqrt(downsideVar);
-        if (downsideDev == 0) return 0.0;
+        if (downsideDev == 0)
+        {
+            return 0.0;
+        }
+
         double tradesPerYear = returns.Count / years;
         double sortino = (avg * tradesPerYear - riskFreeRate) / (downsideDev * Math.Sqrt(tradesPerYear));
         return annualize ? sortino : (avg / downsideDev);

@@ -38,11 +38,30 @@ public sealed record ExecutionSpecification
     /// <summary>Validates this specification.</summary>
     public void Validate()
     {
-        if (EndDate <= StartDate) throw new ConfigurationException("EndDate must be after StartDate.");
-        if (WarmupWindowCount < 0) throw new ConfigurationException("WarmupWindowCount cannot be negative.");
-        if (MaxOpenPositions <= 0) throw new ConfigurationException("MaxOpenPositions must be positive.");
-        if (StopOutLevel <= 0 || StopOutLevel > 1) throw new ConfigurationException("StopOutLevel must be between 0 and 1.");
-        if (MaxParallelThreads < 0) throw new ConfigurationException("MaxParallelThreads cannot be negative.");
+        if (EndDate <= StartDate)
+        {
+            throw new ConfigurationException("EndDate must be after StartDate.");
+        }
+
+        if (WarmupWindowCount < 0)
+        {
+            throw new ConfigurationException("WarmupWindowCount cannot be negative.");
+        }
+
+        if (MaxOpenPositions <= 0)
+        {
+            throw new ConfigurationException("MaxOpenPositions must be positive.");
+        }
+
+        if (StopOutLevel <= 0 || StopOutLevel > 1)
+        {
+            throw new ConfigurationException("StopOutLevel must be between 0 and 1.");
+        }
+
+        if (MaxParallelThreads < 0)
+        {
+            throw new ConfigurationException("MaxParallelThreads cannot be negative.");
+        }
     }
 
     /// <summary>Creates a validated instance.</summary>

@@ -4,8 +4,8 @@ using System.Runtime.Loader;
 namespace Chronos.Core.Kernel.Plugins;
 
 /// <summary>
-/// ARCH-01 Implementation: Provides isolated ALC loading for third-party Chronos Plugins.
-/// Enables version collision avoidance and runtime hot-unloading capabilities.
+/// ARCH‑01 Implementation: Provides isolated ALC loading for third‑party Chronos Plugins.
+/// Enables version collision avoidance and runtime hot‑unloading capabilities.
 /// </summary>
 internal sealed class PluginLoadContext : AssemblyLoadContext
 {
@@ -25,5 +25,14 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
 
         string? path = _resolver.ResolveAssemblyToPath(assemblyName);
         return path != null ? LoadFromAssemblyPath(path) : null;
+    }
+
+    /// <summary>
+    /// Unloads this context and releases all loaded assemblies.
+    /// Must be called to avoid memory leaks when plugins are reloaded.
+    /// </summary>
+    public void UnloadContext()
+    {
+        Unload();
     }
 }

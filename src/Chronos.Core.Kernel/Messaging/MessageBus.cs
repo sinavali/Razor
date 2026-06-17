@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Kernel.Messaging;
 
@@ -11,39 +10,68 @@ public sealed class MessageBus : IMessageBus, IDisposable
 {
     private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
     private readonly Lock _subscriptionLock = new();
-    private readonly ConcurrentDictionary<string, DateTime> _recentEventIds = new();
+    private readonly ConcurrentDictionary<string, long> _recentEventIds = new();
     private readonly Timer _cleanupTimer;
+    private readonly long _dedupWindowMilliseconds;
+    private readonly long _cleanupIntervalMilliseconds;
 
-    /// <inheritdoc/>
-    public MessageBus()
+    /// <summary>
+    /// Creates a new message bus.
+    /// </summary>
+    /// <param name="dedupWindowSeconds">Maximum age of an EventId to consider it a duplicate (default 60 s).</param>
+    /// <param name="cleanupIntervalSeconds">Interval between internal cleanup scans (default 60 s).</param>
+    public MessageBus(int dedupWindowSeconds = 60, int cleanupIntervalSeconds = 60)
     {
+        _dedupWindowMilliseconds = (long)dedupWindowSeconds * 1000;
+        _cleanupIntervalMilliseconds = (long)cleanupIntervalSeconds * 1000;
+
+        // Start with infinite dueTime to prevent callback from running before
+        // the constructor completes. Change will be called after construction.
         _cleanupTimer = new Timer(_ =>
         {
-            var cutoff = DateTime.UtcNow.AddSeconds(-120);
+            long cutoff = Environment.TickCount64 - _dedupWindowMilliseconds;
             foreach (var key in _recentEventIds.Where(kvp => kvp.Value < cutoff).Select(kvp => kvp.Key).ToList())
-                _recentEventIds.TryRemove(key, out DateTime _);
-        }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            {
+                _recentEventIds.TryRemove(key, out long _);
+            }
+        }, null, Timeout.Infinite, Timeout.Infinite);
+
+        _cleanupTimer.Change(
+            TimeSpan.FromMilliseconds(_cleanupIntervalMilliseconds),
+            TimeSpan.FromMilliseconds(_cleanupIntervalMilliseconds));
     }
 
     /// <inheritdoc/>
     public void Publish<T>(T message) where T : IMessage
     {
         ArgumentNullException.ThrowIfNull(message);
-        if (message.EventId != null && _recentEventIds.TryGetValue(message.EventId, out var last) && (DateTime.UtcNow - last).TotalSeconds < 60)
-            return;
-
         if (message.EventId != null)
-            _recentEventIds[message.EventId] = DateTime.UtcNow;
+        {
+            long now = Environment.TickCount64;
+            if (_recentEventIds.TryGetValue(message.EventId, out long lastSeen) &&
+                (now - lastSeen) < _dedupWindowMilliseconds)
+            {
+                return;
+            }
+
+            _recentEventIds[message.EventId] = now;
+        }
 
         if (!_handlers.TryGetValue(typeof(T), out var handlers))
+        {
             return;
+        }
 
         Delegate[] snapshot;
         lock (_subscriptionLock)
+        {
             snapshot = [.. handlers];
+        }
 
         foreach (var handler in snapshot)
+        {
             ((Action<T>)handler)(message);
+        }
     }
 
     /// <inheritdoc/>
@@ -64,7 +92,9 @@ public sealed class MessageBus : IMessageBus, IDisposable
                 {
                     list.Remove(handler);
                     if (list.Count == 0)
+                    {
                         _handlers.TryRemove(type, out _);
+                    }
                 }
             }
         });

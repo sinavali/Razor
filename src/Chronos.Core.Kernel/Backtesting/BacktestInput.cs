@@ -1,7 +1,7 @@
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Abstractions.Telemetry;
 using Chronos.Core.Kernel.Configuration;
+using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
 
 namespace Chronos.Core.Kernel.Backtesting;
@@ -25,12 +25,15 @@ public sealed record BacktestInput
     public required IMarketCalculator MarketCalculator { get; init; }
     /// <summary>Symbol properties for all requested symbols.</summary>
     public required Dictionary<string, SymbolProperties> SymbolProperties { get; init; }
-    /// <summary>Optional pre‑set genes. If null, genes are initialised deterministically.</summary>
+    /// <summary>Optional pre‑set genes. If null, genes are initialized deterministically.</summary>
     public double[]? Genes { get; init; }
     /// <summary>Optional neural network whose weights are part of the chromosome.</summary>
     public FeedForwardNetwork? NeuralNetwork { get; init; }
-    /// <summary>Seed used for deterministic gene initialization when <see cref="Genes"/> is null.</summary>
-    public required int GeneInitializationSeed { get; init; }
+    /// <summary>
+    /// Seed used for deterministic gene initialization when <see cref="Genes"/> is null.
+    /// Use <see langword="null"/> to indicate no explicit seed was provided.
+    /// </summary>
+    public int? GeneInitializationSeed { get; init; }
     /// <summary>Optional progress reporter.</summary>
     public IProgress<BacktestProgress>? Progress { get; init; }
     /// <summary>Optional message bus for event publication.</summary>
@@ -41,10 +44,15 @@ public sealed record BacktestInput
     /// <summary>Validates the inputs prior to execution.</summary>
     public void Validate()
     {
-        if (Genes is null && GeneInitializationSeed == 0)
-            throw new ConfigurationException("GeneInitializationSeed must be non-zero when Genes is not pre-supplied.");
+        if (Genes is null && GeneInitializationSeed is null)
+        {
+            throw new ConfigurationException(
+                "GeneInitializationSeed must be provided when Genes is not pre-supplied.");
+        }
 
         if (StrategySpecification.FrictionModel == null)
+        {
             throw new ConfigurationException("FrictionModel is required for backtesting contexts.");
+        }
     }
 }

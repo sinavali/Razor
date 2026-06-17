@@ -61,7 +61,10 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
 
     public bool Unregister(Indicator indicator)
     {
-        if (indicator == null) return false;
+        if (indicator == null)
+        {
+            return false;
+        }
 
         if (_cache.TryRemove(indicator.Signature, out _) &&
             _active.TryRemove(indicator.Signature, out _))

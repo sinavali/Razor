@@ -10,11 +10,9 @@ namespace Chronos.Core.Abstractions.Shared;
 /// </summary>
 public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
 {
-    private readonly FileStream _fileStream;
     private readonly MemoryMappedFile _mmf;
     private readonly MemoryMappedViewAccessor _accessor;
     private readonly int _count;
-    private readonly bool _ownsStream;
     private unsafe byte* _basePointer;
     private bool _disposed;
 
@@ -39,7 +37,6 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
         if (!fileInfo.Exists || fileInfo.Length == 0)
         {
             _count = 0;
-            _fileStream = null!;
             _mmf = null!;
             _accessor = null!;
             _basePointer = null;
@@ -51,7 +48,6 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
 
         long dataOffset = 0;
 
-        // ── read & validate header using a temporary stream ────────────
         using (var headerStream = new FileStream(
                    filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
                    4096, FileOptions.SequentialScan))
@@ -75,36 +71,30 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
         const long maxTicks = int.MaxValue;
         long maxDataLength = maxTicks * tickSize;
         if (dataLength > maxDataLength)
+        {
             throw new NotSupportedException(
                 $"File contains more than {maxTicks:N0} ticks, which exceeds the maximum supported per file.");
+        }
 
         _count = (int)(dataLength / tickSize);
 
         if (_count == 0)
         {
-            _fileStream = null!;
             _mmf = null!;
             _accessor = null!;
             _basePointer = null;
             return;
         }
 
-        // ── map the entire file, then skip the header manually ────────
         _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open);
 
-        // Create a view that starts at offset 0 and covers the whole file.
         _accessor = _mmf.CreateViewAccessor(0, fileLength,
             MemoryMappedFileAccess.Read);
 
         byte* ptr = null;
         _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
 
-        // Skip the header by moving the base pointer forward.
         _basePointer = ptr + dataOffset;
-
-        // We no longer own a FileStream.
-        _ownsStream = false;
-        _fileStream = null!;
     }
 
     /// <inheritdoc/>
@@ -116,7 +106,11 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if ((uint)index >= (uint)_count) throw new ArgumentOutOfRangeException(nameof(index));
+            if ((uint)index >= (uint)_count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
             return Unsafe.Read<Tick>(_basePointer + index * Unsafe.SizeOf<Tick>());
         }
     }
@@ -124,13 +118,16 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
     /// <inheritdoc/>
     public IEnumerator<Tick> GetEnumerator()
     {
-        for (int i = 0; i < _count; i++) yield return this[i];
+        for (int i = 0; i < _count; i++)
+        {
+            yield return this[i];
+        }
     }
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>
-    /// Releases the memory‑mapped view and file stream.
+    /// Releases the memory‑mapped view.
     /// </summary>
     public void Dispose()
     {
@@ -141,22 +138,30 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
     /// <summary>
     /// Finalizer to release unmanaged resources if <see cref="Dispose()"/> was not called.
     /// </summary>
+    /// <remarks>
+    /// Only the raw pointer is released here; the <see cref="_accessor"/> and <see cref="_mmf"/>
+    /// objects are allowed to finalize naturally because they hold their own managed handles.
+    /// </remarks>
     ~MemoryMappedTickList() => Dispose(false);
 
     private void Dispose(bool disposing)
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
 
         if (_accessor != null)
+        {
             _accessor.SafeMemoryMappedViewHandle.ReleasePointer();
+        }
 
         if (disposing)
         {
             _accessor?.Dispose();
             _mmf?.Dispose();
-            if (_ownsStream)
-                _fileStream?.Dispose();
         }
     }
 }

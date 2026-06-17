@@ -6,9 +6,10 @@ namespace Chronos.Core.Kernel.Plugins;
 /// <summary>
 /// Discover adapter implementations in a directory and creates instances by name.
 /// </summary>
-public sealed class AdapterFactory : IAdapterFactory
+public sealed class AdapterFactory : IAdapterFactory, IDisposable
 {
     private readonly PluginRegistry<IAdapter> _registry;
+    private bool _disposed;
 
     /// <summary>Initializes a new factory by querying available adapters.</summary>
     public AdapterFactory(string pluginsPath)
@@ -23,9 +24,21 @@ public sealed class AdapterFactory : IAdapterFactory
         {
             return _registry.Create(adapterName);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            throw new AdapterException(adapterName, $"No adapter found with name '{adapterName}'.");
+            throw new AdapterException(adapterName, ex.Message);
         }
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _registry.Dispose();
     }
 }

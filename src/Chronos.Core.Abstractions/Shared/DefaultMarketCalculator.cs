@@ -12,7 +12,11 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     {
         ArgumentNullException.ThrowIfNull(symbolProps);
         double step = symbolProps.MinVolume;
-        if (step <= 0) step = 0.0001;
+        if (step <= 0)
+        {
+            throw new ConfigurationException("SymbolProperties.MinVolume must be positive.");
+        }
+
         double steps = Math.Round(requestedVolume / step, MidpointRounding.AwayFromZero);
         return steps * step;
     }
@@ -22,7 +26,11 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     {
         ArgumentNullException.ThrowIfNull(symbolProps);
         double tick = symbolProps.TickSize;
-        if (tick <= 0) tick = 0.01;
+        if (tick <= 0)
+        {
+            throw new ConfigurationException("SymbolProperties.TickSize must be positive.");
+        }
+
         double ticks = Math.Round(requestedPrice / tick, MidpointRounding.AwayFromZero);
         return ticks * tick;
     }
@@ -31,7 +39,11 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     public virtual double CalculateRequiredMargin(SymbolProperties symbolProps, double price, double volume, double leverage)
     {
         ArgumentNullException.ThrowIfNull(symbolProps);
-        if (leverage <= 0) leverage = 1;
+        if (leverage <= 0)
+        {
+            leverage = 1;
+        }
+
         return (price * volume * symbolProps.ContractSize) / leverage * symbolProps.InitialMarginRate;
     }
 
@@ -54,9 +66,12 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     public virtual double CalculateSwap(SymbolProperties symbolProps, double volume, OrderType type, long openTime, long closeTime)
     {
         ArgumentNullException.ThrowIfNull(symbolProps);
-        // Simplified: daily swap * days held
         double dailyRate = type == OrderType.Buy ? symbolProps.SwapLong : symbolProps.SwapShort;
-        if (Math.Abs(dailyRate) < 1e-12) return 0;
+        if (Math.Abs(dailyRate) < 1e-12)
+        {
+            return 0;
+        }
+
         double days = (closeTime - openTime) / (double)TimeSpan.TicksPerDay;
         return volume * dailyRate * days;
     }
@@ -67,8 +82,12 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     {
         ArgumentNullException.ThrowIfNull(props);
         double fundingRate = props.FundingRate;
-        if (Math.Abs(fundingRate) < 1e-12 || lastFundingTime >= currentTime) return 0;
-        double periods = (currentTime - lastFundingTime) / (double)TimeSpan.TicksPerHour; // funding assumed per hour
+        if (Math.Abs(fundingRate) < 1e-12 || lastFundingTime >= currentTime)
+        {
+            return 0;
+        }
+
+        double periods = (currentTime - lastFundingTime) / (double)TimeSpan.TicksPerHour;
         double positionValue = openPrice * volume * props.ContractSize;
         double payment = positionValue * fundingRate * periods;
         return type == OrderType.Buy ? -payment : payment;
@@ -79,12 +98,28 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
                                                double bid, double ask, double orderPrice)
     {
         ArgumentNullException.ThrowIfNull(props);
+        double triggerPrice = props.PendingTrigger switch
+        {
+            PendingOrderTriggerMode.UseBidForBuy => bid,
+            PendingOrderTriggerMode.UseAskForBuy => ask,
+            PendingOrderTriggerMode.UseMidPrice => (bid + ask) * 0.5,
+            _ => ask
+        };
+
+        double sellTrigger = props.PendingTrigger switch
+        {
+            PendingOrderTriggerMode.UseBidForBuy => bid,
+            PendingOrderTriggerMode.UseAskForBuy => ask,
+            PendingOrderTriggerMode.UseMidPrice => (bid + ask) * 0.5,
+            _ => bid
+        };
+
         return pendingType switch
         {
-            OrderType.BuyLimit => ask <= orderPrice,
-            OrderType.SellLimit => bid >= orderPrice,
-            OrderType.BuyStop => ask >= orderPrice,
-            OrderType.SellStop => bid <= orderPrice,
+            OrderType.BuyLimit => triggerPrice <= orderPrice,
+            OrderType.SellLimit => sellTrigger >= orderPrice,
+            OrderType.BuyStop => triggerPrice >= orderPrice,
+            OrderType.SellStop => sellTrigger <= orderPrice,
             _ => false
         };
     }

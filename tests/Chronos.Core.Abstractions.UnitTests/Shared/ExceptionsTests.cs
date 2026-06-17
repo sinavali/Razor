@@ -59,8 +59,5 @@ public class ExceptionsTests
     }
 
     [Fact]
-    public void AppException_Is_Abstract()
-    {
-        Assert.True(typeof(AppException).IsAbstract);
-    }
+    public void AppException_Is_Abstract() => Assert.True(typeof(AppException).IsAbstract);
 }

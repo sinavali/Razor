@@ -1,5 +1,4 @@
 using System.Diagnostics.Metrics;
-using Chronos.Core.Abstractions.Telemetry;
 
 namespace Chronos.Core.Kernel.Telemetry;
 
@@ -8,7 +7,7 @@ namespace Chronos.Core.Kernel.Telemetry;
 /// Provides histograms and counters for GA, backtesting, and live trading.
 /// Instance-based tracking for multi-engine deployments.
 /// </summary>
-public sealed class ChronosMetrics : IChronosMetrics
+public sealed class ChronosMetrics : IChronosMetrics, IDisposable
 {
     private static readonly Meter Meter = new("Chronos.Metrics", "1.0");
 
@@ -30,6 +29,11 @@ public sealed class ChronosMetrics : IChronosMetrics
     private static readonly Histogram<double> LiveTickLatencyHistogram =
         Meter.CreateHistogram<double>("chronos.live.tick_latency_ticks", "ticks", "Tick arrival latency");
 
+    // Thread‑safe list of weak references to allow garbage collection of unused instances.
+    private static readonly List<WeakReference<ChronosMetrics>> _instances = [];
+    private static readonly Lock _instancesLock = new();
+    private static bool _gaugeRegistered;
+
     private bool _isConnected;
     private string _adapterName = "unknown";
     private readonly KeyValuePair<string, object?> _instanceTag;
@@ -45,10 +49,39 @@ public sealed class ChronosMetrics : IChronosMetrics
     {
         _instanceTag = new KeyValuePair<string, object?>("instance_id", instanceId);
 
-        Meter.CreateObservableGauge(
-            "chronos.live.connection_state",
-            () => new Measurement<int>(_isConnected ? 1 : 0, _instanceTag),
-            description: "1 if connected, 0 if disconnected");
+        lock (_instancesLock)
+        {
+            _instances.Add(new WeakReference<ChronosMetrics>(this));
+            if (!_gaugeRegistered)
+            {
+                Meter.CreateObservableGauge(
+                    "chronos.live.connection_state",
+                    () =>
+                    {
+                        List<Measurement<int>> measurements = [];
+                        lock (_instancesLock)
+                        {
+                            for (int i = _instances.Count - 1; i >= 0; i--)
+                            {
+                                if (_instances[i].TryGetTarget(out var inst))
+                                {
+                                    measurements.Add(new Measurement<int>(
+                                        inst._isConnected ? 1 : 0,
+                                        inst._instanceTag));
+                                }
+                                else
+                                {
+                                    // Prune dead references
+                                    _instances.RemoveAt(i);
+                                }
+                            }
+                        }
+                        return measurements;
+                    },
+                    description: "1 if connected, 0 if disconnected");
+                _gaugeRegistered = true;
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -75,4 +108,20 @@ public sealed class ChronosMetrics : IChronosMetrics
 
     /// <inheritdoc />
     public void RecordOptimizationDuration(double seconds) => OptimizationDurationHistogram.Record(seconds, _instanceTag);
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        lock (_instancesLock)
+        {
+            // Remove all weak references that belong to this instance.
+            for (int i = _instances.Count - 1; i >= 0; i--)
+            {
+                if (_instances[i].TryGetTarget(out var inst) && ReferenceEquals(inst, this))
+                {
+                    _instances.RemoveAt(i);
+                }
+            }
+        }
+    }
 }

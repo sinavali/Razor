@@ -1,6 +1,5 @@
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Abstractions.Telemetry;
 using Chronos.Core.Kernel.Telemetry;
 using System.Diagnostics;
 
@@ -30,7 +29,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     private int _stagnationCount;
     private bool _hyperMutation;
     private readonly int _stagnationGenerationsBeforeHyper;
-    private readonly double _fitnessEpsilon = 1e-9;
+    private const double RelativeFitnessTolerance = 1e-6;   // K‑P1‑4: relative tolerance for stagnation detection
 
     /// <inheritdoc/>
     public int CurrentGeneration => _currentGeneration;
@@ -71,7 +70,9 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _mainRng = new ChronosRandom(masterSeed);
         _population = new Chromosome[_populationSize];
         for (int i = 0; i < _populationSize; i++)
+        {
             _population[i] = new Chromosome(_schema.Count);
+        }
 
         MaxDegreeOfParallelism = maxDegreeOfParallelism > 0 ? maxDegreeOfParallelism : Math.Max(1, Environment.ProcessorCount - 1);
     }
@@ -104,11 +105,15 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _evaluated = false;
     }
 
+    /// <inheritdoc/>
     public async Task EvaluateAsync(Func<Chromosome, CancellationToken, Task<double>> evaluator, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
         var unevaluated = _population.Where(c => c.Fitness <= Chromosome.NotEvaluated).ToList();
-        if (unevaluated.Count == 0) return;
+        if (unevaluated.Count == 0)
+        {
+            return;
+        }
 
         var parallelOptions = new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = MaxDegreeOfParallelism };
         var sw = Stopwatch.StartNew();
@@ -117,9 +122,10 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
                 async (c, innerCt) => { c.Fitness = await evaluator(c, innerCt).ConfigureAwait(false); })
             .ConfigureAwait(false);
 
-        // Ensure no chromosome still has the NotEvaluated sentinel (catches evaluator returning it maliciously)
         if (_population.Any(c => c.Fitness <= Chromosome.NotEvaluated))
+        {
             throw new OptimizationException("One or more chromosomes were not evaluated.");
+        }
 
         sw.Stop();
         _metrics.RecordOptimizationDuration(sw.Elapsed.TotalSeconds);
@@ -131,7 +137,11 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     /// <inheritdoc/>
     public void Evolve()
     {
-        if (!_evaluated) throw new InvalidOperationException("Population must be evaluated before evolving.");
+        if (!_evaluated)
+        {
+            throw new InvalidOperationException("Population must be evaluated before evolving.");
+        }
+
         Sort();
         double genBest = _population[0].Fitness;
 
@@ -141,8 +151,12 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             _metrics.RecordGaFitnessImprovement(improvement);
         }
 
-        if (Math.Abs(genBest - _bestOverallFitness) < _fitnessEpsilon)
+        // K‑P1‑4: relative tolerance for stagnation detection
+        double tolerance = RelativeFitnessTolerance * Math.Max(1.0, Math.Abs(genBest));
+        if (Math.Abs(genBest - _bestOverallFitness) < tolerance)
+        {
             _stagnationCount++;
+        }
         else
         {
             _bestOverallFitness = genBest;
@@ -160,7 +174,11 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         int elitismCount = Math.Max(1, (int)(_populationSize * _elitismPct));
 
         var nextPop = new Chromosome[_populationSize];
-        for (int i = 0; i < _populationSize; i++) nextPop[i] = new Chromosome(_schema.Count);
+        for (int i = 0; i < _populationSize; i++)
+        {
+            nextPop[i] = new Chromosome(_schema.Count);
+        }
+
         for (int i = 0; i < elitismCount; i++)
         {
             nextPop[i].CopyFrom(_population[i]);
@@ -175,7 +193,9 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             var child = nextPop[i];
 
             for (int j = 0; j < _schema.Count; j++)
+            {
                 child.Genes[j] = _mainRng.NextDouble() < _crossoverRate ? parent1.Genes[j] : parent2.Genes[j];
+            }
 
             for (int j = 0; j < _schema.Count; j++)
             {
@@ -223,7 +243,11 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     /// <summary>Marks fitness as dirty.</summary>
     public void InvalidateFitness()
     {
-        foreach (var c in _population) c.Fitness = Chromosome.NotEvaluated;
+        foreach (var c in _population)
+        {
+            c.Fitness = Chromosome.NotEvaluated;
+        }
+
         _evaluated = false;
     }
 
@@ -236,7 +260,10 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         for (int i = 1; i < _tournamentSize; i++)
         {
             var competitor = _population[_mainRng.Next(_populationSize)];
-            if (competitor.Fitness > best.Fitness) best = competitor;
+            if (competitor.Fitness > best.Fitness)
+            {
+                best = competitor;
+            }
         }
         return best;
     }

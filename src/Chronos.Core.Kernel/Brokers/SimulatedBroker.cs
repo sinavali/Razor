@@ -1,7 +1,8 @@
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Abstractions.Shared.Events;
+using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Clock;
+using Chronos.Core.Kernel.Messaging;
 
 namespace Chronos.Core.Kernel.Brokers;
 
@@ -25,7 +26,7 @@ public sealed class SimulatedBroker : IBroker
     private readonly Lock _stateLock = new();
 
     private long _ticketCounter = 1;
-    private int _closeSequenceCounter = 1; // Used to identify unique partial close actions on a trade
+    private int _closeSequenceCounter = 1;
 
     private double _balance;
     private double _equity;
@@ -53,7 +54,7 @@ public sealed class SimulatedBroker : IBroker
     /// <inheritdoc/>
     public double MaxDailyDrawdown { get; private set; }
 
-    /// <summary>GAP-01/ARCH-04: True if the engine is currently processing warm-up data.</summary>
+    /// <summary>GAP‑01/ARCH‑04: True if the engine is currently processing warm‑up data.</summary>
     public bool IsWarmup { get; internal set; }
 
     /// <summary>Constructs the simulated broker for backtest environments.</summary>
@@ -92,16 +93,30 @@ public sealed class SimulatedBroker : IBroker
     /// <summary>Processes a tick.</summary>
     public Task OnTickAsync(string symbol, Tick tick)
     {
-        if (tick.Time < 0 || tick.Time > DateTime.MaxValue.Ticks) return Task.CompletedTask;
+        if (tick.Time < 0 || tick.Time > DateTime.MaxValue.Ticks)
+        {
+            return Task.CompletedTask;
+        }
         _clock.SetTickTime(tick.Time);
         lock (_stateLock)
         {
             _marketPrices[symbol] = (tick.Bid, tick.Ask);
             ProcessHoldingCosts();
 
-            if (_executionQueue.Count > 0) ProcessExecutionQueue();
-            if (_pendingOrders.Count > 0) CheckPendingOrders(symbol, tick.Bid, tick.Ask);
-            if (_positions.Count > 0) UpdatePositions(symbol, tick.Bid, tick.Ask);
+            if (_executionQueue.Count > 0)
+            {
+                ProcessExecutionQueue();
+            }
+
+            if (_pendingOrders.Count > 0)
+            {
+                CheckPendingOrders(symbol, tick.Bid, tick.Ask);
+            }
+
+            if (_positions.Count > 0)
+            {
+                UpdatePositions(symbol, tick.Bid, tick.Ask);
+            }
         }
         return Task.CompletedTask;
     }
@@ -109,12 +124,17 @@ public sealed class SimulatedBroker : IBroker
     /// <inheritdoc/>
     public Task<AdapterOrderResponse> ExecuteMarketOrderAsync(string symbol, OrderType type, double volume, double sl = 0, double tp = 0, string comment = "")
     {
-        if (IsWarmup) return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Orders not allowed during warmup." });
+        if (IsWarmup)
+        {
+            return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Orders not allowed during warmup." });
+        }
 
         lock (_stateLock)
         {
             if (_positions.Count >= _maxOpenPositions)
+            {
                 return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Max open positions reached" });
+            }
 
             if (_latencyTicks > 0 && _clock.GetTimestamp() > 0)
             {
@@ -137,16 +157,25 @@ public sealed class SimulatedBroker : IBroker
     /// <inheritdoc/>
     public Task<AdapterOrderResponse> PlacePendingOrderAsync(string symbol, OrderType type, double volume, double price, double sl, double tp, string comment = "")
     {
-        if (IsWarmup) return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Orders not allowed during warmup." });
+        if (IsWarmup)
+        {
+            return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Orders not allowed during warmup." });
+        }
 
         lock (_stateLock)
         {
             if (!_symbolSpecs.TryGetValue(symbol, out var spec))
+            {
                 return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Symbol properties not available" });
+            }
 
             double requiredMargin = _calculator.CalculateRequiredMargin(spec, price, volume, _leverage);
             if (FreeMargin < requiredMargin - 1e-8)
+            {
                 return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" });
+            }
+
+            _marginUsed += requiredMargin;
 
             var ticket = _ticketCounter++;
             _pendingOrders.Add(new Order { Ticket = ticket, Symbol = symbol, Type = type, Volume = volume, Price = price, SL = sl, TP = tp, Comment = comment });
@@ -163,9 +192,21 @@ public sealed class SimulatedBroker : IBroker
             {
                 if (_positions[i].Ticket == ticket)
                 {
-                    if (price.HasValue) return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Cannot modify price of an open position" });
-                    if (sl.HasValue) _positions[i].SL = sl.Value;
-                    if (tp.HasValue) _positions[i].TP = tp.Value;
+                    if (price.HasValue)
+                    {
+                        return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Cannot modify price of an open position" });
+                    }
+
+                    if (sl.HasValue)
+                    {
+                        _positions[i].SL = sl.Value;
+                    }
+
+                    if (tp.HasValue)
+                    {
+                        _positions[i].TP = tp.Value;
+                    }
+
                     return Task.FromResult(new AdapterOrderResponse { Success = true });
                 }
             }
@@ -174,9 +215,21 @@ public sealed class SimulatedBroker : IBroker
                 if (_pendingOrders[i].Ticket == ticket)
                 {
                     var o = _pendingOrders[i];
-                    if (price.HasValue) o = o with { Price = price.Value };
-                    if (sl.HasValue) o = o with { SL = sl.Value };
-                    if (tp.HasValue) o = o with { TP = tp.Value };
+                    if (price.HasValue)
+                    {
+                        o = o with { Price = price.Value };
+                    }
+
+                    if (sl.HasValue)
+                    {
+                        o = o with { SL = sl.Value };
+                    }
+
+                    if (tp.HasValue)
+                    {
+                        o = o with { TP = tp.Value };
+                    }
+
                     _pendingOrders[i] = o;
                     return Task.FromResult(new AdapterOrderResponse { Success = true });
                 }
@@ -190,6 +243,13 @@ public sealed class SimulatedBroker : IBroker
     {
         lock (_stateLock)
         {
+            var order = _pendingOrders.FirstOrDefault(o => o.Ticket == ticket);
+            if (order != null && _symbolSpecs.TryGetValue(order.Symbol, out var spec))
+            {
+                double margin = _calculator.CalculateRequiredMargin(spec, order.Price, order.Volume, _leverage);
+                _marginUsed = Math.Max(0, _marginUsed - margin);
+            }
+
             int removed = _pendingOrders.RemoveAll(o => o.Ticket == ticket);
             return Task.FromResult(new AdapterOrderResponse { Success = removed > 0, ErrorMessage = removed > 0 ? string.Empty : "Ticket not found among pending orders" });
         }
@@ -205,7 +265,10 @@ public sealed class SimulatedBroker : IBroker
                 if (_positions[i].Ticket == ticket)
                 {
                     if (!_marketPrices.TryGetValue(_positions[i].Symbol, out _))
+                    {
                         return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Price not available" });
+                    }
+
                     var px = _marketPrices[_positions[i].Symbol];
                     double closePx = _positions[i].Type == OrderType.Buy ? px.Bid : px.Ask;
                     double closeVol = volume > 0 ? volume : _positions[i].Volume;
@@ -223,9 +286,25 @@ public sealed class SimulatedBroker : IBroker
         var responses = new List<AdapterOrderResponse>();
         lock (_stateLock)
         {
-            _pendingOrders.RemoveAll(o => o.Symbol == symbol);
+            for (int i = _pendingOrders.Count - 1; i >= 0; i--)
+            {
+                if (_pendingOrders[i].Symbol == symbol)
+                {
+                    var o = _pendingOrders[i];
+                    if (_symbolSpecs.TryGetValue(o.Symbol, out var spec))
+                    {
+                        double margin = _calculator.CalculateRequiredMargin(spec, o.Price, o.Volume, _leverage);
+                        _marginUsed = Math.Max(0, _marginUsed - margin);
+                    }
+                    _pendingOrders.RemoveAt(i);
+                }
+            }
+
             if (!_marketPrices.TryGetValue(symbol, out var px))
+            {
                 return Task.FromResult<IReadOnlyList<AdapterOrderResponse>>(responses);
+            }
+
             for (int i = _positions.Count - 1; i >= 0; i--)
             {
                 if (_positions[i].Symbol == symbol && (type == null || _positions[i].Type == type))
@@ -242,7 +321,10 @@ public sealed class SimulatedBroker : IBroker
     /// <inheritdoc/>
     public Task<bool> HasOpenPositionAsync(string symbol, OrderType? type = null, CancellationToken cancellationToken = default)
     {
-        lock (_stateLock) return Task.FromResult(_positions.Any(p => p.Symbol == symbol && (type == null || p.Type == type)));
+        lock (_stateLock)
+        {
+            return Task.FromResult(_positions.Any(p => p.Symbol == symbol && (type == null || p.Type == type)));
+        }
     }
 
     /// <inheritdoc/>
@@ -258,18 +340,28 @@ public sealed class SimulatedBroker : IBroker
     /// <inheritdoc/>
     public Task<IReadOnlyList<Position>> GetHistoryAsync(CancellationToken cancellationToken = default)
     {
-        lock (_stateLock) return Task.FromResult<IReadOnlyList<Position>>([.. _history.Select(ToImmutable)]);
+        lock (_stateLock)
+        {
+            return Task.FromResult<IReadOnlyList<Position>>([.. _history.Select(ToImmutable)]);
+        }
     }
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Order>> GetPendingOrdersAsync(CancellationToken cancellationToken = default)
     {
-        lock (_stateLock) return Task.FromResult<IReadOnlyList<Order>>(_pendingOrders.ToList());
+        lock (_stateLock)
+        {
+            return Task.FromResult<IReadOnlyList<Order>>(_pendingOrders.ToList());
+        }
     }
 
     private AdapterOrderResponse ExecuteInstantly(string symbol, OrderType type, double volume, double sl, double tp, string comment)
     {
-        if (!_marketPrices.TryGetValue(symbol, out _)) return new AdapterOrderResponse { Success = false, ErrorMessage = "Price not available" };
+        if (!_marketPrices.TryGetValue(symbol, out _))
+        {
+            return new AdapterOrderResponse { Success = false, ErrorMessage = "Price not available" };
+        }
+
         var px = _marketPrices[symbol];
         var spec = _symbolSpecs[symbol];
         double refPrice = type == OrderType.Buy ? px.Ask : px.Bid;
@@ -278,7 +370,10 @@ public sealed class SimulatedBroker : IBroker
         execPrice = _calculator.NormalizePrice(spec, execPrice);
 
         double requiredMargin = _calculator.CalculateRequiredMargin(spec, execPrice, volume, _leverage);
-        if (FreeMargin < requiredMargin - 1e-8) return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
+        if (FreeMargin < requiredMargin - 1e-8)
+        {
+            return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
+        }
 
         double commission = _friction.CalculateCommission(symbol, volume);
         long ticket = _ticketCounter++;
@@ -310,7 +405,8 @@ public sealed class SimulatedBroker : IBroker
             Volume = volume,
             Price = execPrice,
             IsOpen = true,
-            EventId = $"sim-{Interlocked.Increment(ref _eventCounter)}"
+            EventId = $"sim-{Interlocked.Increment(ref _eventCounter)}",
+            Timestamp = _clock.GetUtcNow()
         });
         return new AdapterOrderResponse { Success = true, Ticket = ticket, ExecutedPrice = execPrice, ExecutedVolume = volume };
     }
@@ -329,9 +425,18 @@ public sealed class SimulatedBroker : IBroker
         for (int i = _pendingOrders.Count - 1; i >= 0; i--)
         {
             var o = _pendingOrders[i];
-            if (o.Symbol != symbol) continue;
+            if (o.Symbol != symbol)
+            {
+                continue;
+            }
+
             if (_calculator.IsPendingOrderTriggered(_symbolSpecs[symbol], o.Type, bid, ask, o.Price))
             {
+                if (_symbolSpecs.TryGetValue(o.Symbol, out var spec))
+                {
+                    double pendingMargin = _calculator.CalculateRequiredMargin(spec, o.Price, o.Volume, _leverage);
+                    _marginUsed = Math.Max(0, _marginUsed - pendingMargin);
+                }
                 ConvertPendingToPosition(o, o.Price);
                 _pendingOrders.RemoveAt(i);
             }
@@ -345,7 +450,11 @@ public sealed class SimulatedBroker : IBroker
         {
             var p = _positions[i];
             double currentBid = bid, currentAsk = ask;
-            if (p.Symbol != symbol && _marketPrices.TryGetValue(p.Symbol, out var px)) (currentBid, currentAsk) = px;
+            if (p.Symbol != symbol && _marketPrices.TryGetValue(p.Symbol, out var px))
+            {
+                (currentBid, currentAsk) = px;
+            }
+
             var spec = _symbolSpecs[p.Symbol];
             double currentPrice = p.Type == OrderType.Buy ? currentBid : currentAsk;
             double rawPnl = _calculator.CalculatePnL(spec, p.OpenPrice, currentPrice, p.Volume, p.Type);
@@ -356,17 +465,32 @@ public sealed class SimulatedBroker : IBroker
             {
                 if (p.Type == OrderType.Buy)
                 {
-                    if (p.TP > 0 && currentBid >= p.TP) closed = true;
-                    else if (p.SL > 0 && currentBid <= p.SL) closed = true;
+                    if (p.TP > 0 && currentBid >= p.TP)
+                    {
+                        closed = true;
+                    }
+                    else if (p.SL > 0 && currentBid <= p.SL)
+                    {
+                        closed = true;
+                    }
                 }
                 else
                 {
-                    if (p.TP > 0 && currentAsk <= p.TP) closed = true;
-                    else if (p.SL > 0 && currentAsk >= p.SL) closed = true;
+                    if (p.TP > 0 && currentAsk <= p.TP)
+                    {
+                        closed = true;
+                    }
+                    else if (p.SL > 0 && currentAsk >= p.SL)
+                    {
+                        closed = true;
+                    }
                 }
             }
 
-            if (closed) ClosePositionInternal(i, p.Type == OrderType.Buy ? currentBid : currentAsk, _clock.GetTimestamp(), p.Volume);
+            if (closed)
+            {
+                ClosePositionInternal(i, p.Type == OrderType.Buy ? currentBid : currentAsk, _clock.GetTimestamp(), p.Volume);
+            }
             else
             {
                 totalFloatPl += p.Profit;
@@ -377,7 +501,11 @@ public sealed class SimulatedBroker : IBroker
         _marginUsed = totalUsedMargin;
         _equity = _balance + totalFloatPl;
 
-        if (_marginUsed > 0 && (_equity / _marginUsed) <= _stopOutLevel) ApplyStopOut(bid, ask);
+        if (_marginUsed > 0 && (_equity / _marginUsed) <= _stopOutLevel)
+        {
+            ApplyStopOut(bid, ask);
+        }
+
         UpdateDrawdowns();
     }
 
@@ -419,7 +547,7 @@ public sealed class SimulatedBroker : IBroker
                 TP = p.TP,
                 Comment = p.Comment,
                 AccountEquityAtOpen = p.AccountEquityAtOpen,
-                CloseSequence = _closeSequenceCounter++ // ARCH-12
+                CloseSequence = _closeSequenceCounter++
             };
             p.Volume -= closeVolume;
             p.Commission -= closeComm;
@@ -431,7 +559,7 @@ public sealed class SimulatedBroker : IBroker
             p.CloseTime = time;
             p.Commission += closeComm;
             p.Profit = realizedProfit;
-            p.CloseSequence = _closeSequenceCounter++; // ARCH-12
+            p.CloseSequence = _closeSequenceCounter++;
             historyRecord = p;
             _positions.RemoveAt(index);
         }
@@ -447,7 +575,8 @@ public sealed class SimulatedBroker : IBroker
             Volume = closeVolume,
             Price = closePx,
             IsOpen = false,
-            CorrelationId = Guid.NewGuid()
+            CorrelationId = Guid.NewGuid(),
+            Timestamp = _clock.GetUtcNow()
         });
     }
 
@@ -456,7 +585,10 @@ public sealed class SimulatedBroker : IBroker
         var spec = _symbolSpecs[o.Symbol];
         OrderType execDir = (o.Type == OrderType.BuyLimit || o.Type == OrderType.BuyStop) ? OrderType.Buy : OrderType.Sell;
         double reqMargin = _calculator.CalculateRequiredMargin(spec, price, o.Volume, _leverage);
-        if (FreeMargin < reqMargin - 1e-8) return;
+        if (FreeMargin < reqMargin - 1e-8)
+        {
+            return;
+        }
 
         double slippage = _friction.CalculateSlippage(o.Symbol, execDir, o.Volume, price);
         double execPx = execDir == OrderType.Buy ? price + slippage : price - slippage;
@@ -489,7 +621,8 @@ public sealed class SimulatedBroker : IBroker
             Volume = o.Volume,
             Price = execPx,
             IsOpen = true,
-            CorrelationId = Guid.NewGuid()
+            CorrelationId = Guid.NewGuid(),
+            Timestamp = _clock.GetUtcNow()
         });
     }
 
@@ -508,7 +641,11 @@ public sealed class SimulatedBroker : IBroker
         }
 
         var worstPos = _positions[worstIdx];
-        if (!_marketPrices.TryGetValue(worstPos.Symbol, out _)) return;
+        if (!_marketPrices.TryGetValue(worstPos.Symbol, out _))
+        {
+            return;
+        }
+
         var px = _marketPrices[worstPos.Symbol];
         double closePx = worstPos.Type == OrderType.Buy ? px.Bid : px.Ask;
         ClosePositionInternal(worstIdx, closePx, _clock.GetTimestamp(), worstPos.Volume);
@@ -535,42 +672,58 @@ public sealed class SimulatedBroker : IBroker
             return;
         }
 
-        if (currentTime >= _nextHoldingCostTime)
+        while (currentTime >= _nextHoldingCostTime)
         {
-            if (currentTime > 0)
+            long prevBoundary = _nextHoldingCostTime - TimeSpan.TicksPerDay;
+
+            foreach (var p in _positions)
             {
-                foreach (var p in _positions)
+                if (_symbolSpecs.TryGetValue(p.Symbol, out var spec))
                 {
-                    if (_symbolSpecs.TryGetValue(p.Symbol, out var spec))
-                    {
-                        long prevBoundary = _nextHoldingCostTime - TimeSpan.TicksPerDay;
-                        double cost = _calculator.CalculateHoldingCost(spec, p.Volume, p.OpenPrice, p.Type, prevBoundary, _nextHoldingCostTime);
-                        p.Swap += cost;
-                    }
+                    double cost = _calculator.CalculateHoldingCost(spec, p.Volume, p.OpenPrice, p.Type, prevBoundary, _nextHoldingCostTime);
+                    p.Swap += cost;
                 }
             }
 
-            DateTime utcCurrent = new DateTime(currentTime, DateTimeKind.Utc).Date;
-            DateTime utcLast = new DateTime(currentTime - TimeSpan.TicksPerDay, DateTimeKind.Utc).Date;
-            if (utcCurrent != utcLast) _peakDailyEquity = _equity;
-            _nextHoldingCostTime = (currentTime / TimeSpan.TicksPerDay + 1) * TimeSpan.TicksPerDay;
+            DateTime utcCurrent = new DateTime(_nextHoldingCostTime, DateTimeKind.Utc).Date;
+            DateTime utcLast = new DateTime(prevBoundary, DateTimeKind.Utc).Date;
+            if (utcCurrent != utcLast)
+            {
+                _peakDailyEquity = _equity;
+            }
+
+            _nextHoldingCostTime += TimeSpan.TicksPerDay;
         }
     }
 
     private void UpdateDrawdowns()
     {
-        if (_equity > _peakEquity) _peakEquity = _equity;
+        if (_equity > _peakEquity)
+        {
+            _peakEquity = _equity;
+        }
+
         if (_peakEquity > 1e-8)
         {
             double dd = (_peakEquity - _equity) / _peakEquity * 100.0;
-            if (dd > MaxDrawdown) MaxDrawdown = dd;
+            if (dd > MaxDrawdown)
+            {
+                MaxDrawdown = dd;
+            }
         }
 
-        if (_equity > _peakDailyEquity) _peakDailyEquity = _equity;
+        if (_equity > _peakDailyEquity)
+        {
+            _peakDailyEquity = _equity;
+        }
+
         if (_peakDailyEquity > 1e-8)
         {
             double dailyDd = (_peakDailyEquity - _equity) / _peakDailyEquity * 100.0;
-            if (dailyDd > MaxDailyDrawdown) MaxDailyDrawdown = dailyDd;
+            if (dailyDd > MaxDailyDrawdown)
+            {
+                MaxDailyDrawdown = dailyDd;
+            }
         }
     }
 
@@ -594,7 +747,7 @@ public sealed class SimulatedBroker : IBroker
         Leverage = mp.Leverage,
         IsMargin = mp.Leverage > 0,
         AccountEquityAtOpen = mp.AccountEquityAtOpen,
-        CloseSequence = mp.CloseSequence // ARCH-12 Fix Applied
+        CloseSequence = mp.CloseSequence
     };
 
     private sealed class MutablePosition
