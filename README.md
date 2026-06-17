@@ -2,9 +2,7 @@
 
 **Institutional‑grade algorithmic trading engine – v1.0.0 LTS**
 
-`core` is the heart of the Chronos ecosystem. It contains the public SDK for plugin developers and the closed‑source core engine that executes backtests, optimisations, and live trading. This repository is the single source of truth for all Chronos trading logic.
-
----
+The `core` repository contains the heart of the Chronos ecosystem: the public SDK for extension developers, the closed‑source engine that executes backtests, optimizations, and live trading, and the headless engine executable that connects to Chronos Cloud.
 
 ## Architecture
 
@@ -12,156 +10,67 @@
 ┌──────────────────────────────────────────────┐
 │                  Chronos Cloud               │  (SaaS – management & monitoring)
 └──────────────────┬───────────────────────────┘
-                   │ encrypted WebSocket
+│ encrypted WebSocket
 ┌──────────────────▼───────────────────────────┐
-│              Chronos Engine                   │  (headless binary – future)
+│              Chronos Engine                   │  (headless binary)
 └──────────────────┬───────────────────────────┘
-                   │
+│
 ┌──────────────────▼───────────────────────────┐
 │          Chronos.Core.Kernel                  │  (closed‑source core)
 │  backtesting • optimisation • live trading    │
-│  genetic algorithm • telemetry • plugins      │
+│  genetic algorithm • telemetry • hooks        │
 └──────────────────┬───────────────────────────┘
-                   │ references
+│ references
 ┌──────────────────▼───────────────────────────┐
 │       Chronos.Core.Abstractions               │  (public NuGet SDK)
-│  interfaces • records • enums • utilities     │
+│  hooks • slots • domain types • utilities     │
 └──────────────────────────────────────────────┘
 ```
 
-- **`Chronos.Core.Abstractions`** – The only dependency for plugin developers. Contains zero runtime logic.
-- **`Chronos.Core.Kernel`** – Closed‑source implementation of all trading and optimisation algorithms.
-- **`Chronos.Engine`** *(future)* – The production executable that hosts the Kernel and communicates with Chronos Cloud.
+## Projects
 
----
+| Project | Description | Visibility |
+|---------|-------------|------------|
+| `Chronos.Core.Abstractions` | Public SDK for building extensions (adapters, strategies, indicators, hook plugins, NN models) | NuGet package |
+| `Chronos.Core.Kernel` | Closed‑source engine implementing all trading logic | Private |
+| `Chronos.Engine` | Headless executable that hosts the Kernel and communicates with Chronos Cloud | Private |
 
-## Supported Plugin Types (v1.0.0 LTS)
+## Quick Start – Extension Developers
 
-Developers can create and distribute the following plugin types:
+1. Install the `Chronos.Core.Abstractions` NuGet package.
+2. Implement one or more contracts (`IHookManifest`, `IStrategyCapability`, `IAdapterCapability`, `INeuralNetworkModel`, or `Indicator`).
+3. Add the SDK version attribute to your assembly:
+   ```csharp
+   [assembly: ChronosSdkVersion("1.0.0")]
+   ```
+4. Build your DLL and place it in the appropriate engine directory (`Adapters/`, `Strategies/`, `Indicators/`, `Plugins/`, or `NeuralNetworks/`).
+5. Manage activation via Chronos Cloud.
 
-| Plugin Type | Interface | Discovery Attribute |
-|-------------|-----------|---------------------|
-| Adapter | `IAdapter` | `[AdapterName]` |
-| Strategy | `IStrategy` / `StrategyBase` | `[StrategyName]` |
-| Indicator | `Indicator` | *(via registry)* |
-| Risk Manager | `IRiskManager` | `[RiskManagerName]` |
-| Position Sizer | `IPositionSizer` | `[PositionSizerName]` |
-| Market Regime Detector | `IMarketRegimeDetector` | `[MarketRegimeDetectorName]` |
-| Execution Algorithm | `IExecutionAlgorithm` | `[ExecutionAlgoName]` |
-| Fitness Model | `IFitnessModel` | `[FitnessModelName]` |
-| Simulation Friction | `ISimulationFriction` | *(via spec)* |
-| Notification Channel | `INotificationChannel` | `[NotificationChannelName]` |
-| Metrics Provider | `IMetricsProvider` | `[MetricsProviderName]` |
-| Report Generator | `IReportGenerator` | `[ReportGeneratorName]` |
-| Market Data Provider | `IMarketDataProvider` | `[MarketDataProviderName]` |
-
-All plugins share a common versioning and isolation model via `AssemblyLoadContext`.
-
----
-
-## Repository Structure
-
-```
-core/
-├── src/
-│   ├── Chronos.Core.Abstractions/     ← Public SDK (NuGet package)
-│   └── Chronos.Core.Kernel/           ← Closed‑source engine
-├── tests/
-│   ├── Chronos.Core.Abstractions.UnitTests/
-│   ├── Chronos.Core.Abstractions.IntegrationTests/
-│   ├── Chronos.Core.Kernel.UnitTests/          (future)
-│   ├── Chronos.Core.Kernel.IntegrationTests/   (future)
-│   └── Chronos.Determinism.Tests/              (future – golden determinism gate)
-├── docs/                              ← Repository‑level documentation
-├── Directory.Build.props
-├── global.json
-├── nuget.config
-├── VERSION.txt
-└── README.md
-```
-
----
-
-## Documentation
-
-- **[Chronos Principles](./docs/Chronos%20Principles.md)** – Immutable architectural rules for all Chronos projects.
-- **[Product Model](./docs/Chronos%20Product%20Model.md)** – Business and product definition.
-- **[Glossary](./docs/Chronos%20Glossary%20.md)** – All domain terms defined.
-- **[Configuration Reference](./docs/Chronos%20Configuration%20Reference%20.md)** – Every configuration object, field, and validation rule.
-- **[Plugin Developer Guide](./docs/Chronos%20Plugin%20Developer%20Guide%20.md)** – How to build adapters, strategies, indicators, and all other plugin types.
-- **[Installation & Deployment Guide](./docs/Chronos%20Installation%20%26%20Deployment%20Guide%20.md)** – How to install the Chronos Engine on Windows/Linux.
-- **[Internal Architecture](./docs/Chronos%20Internal%20Technical%20Architecture%20Document%20.md)** – Closed‑source engine internals (for core developers only).
-
----
-
-## Quick Start – Plugin Developers
-
-1. Install the `Chronos.Core.Abstractions` NuGet package (version `1.0.0`).
-2. Follow the [Plugin Developer Guide](docs/Chronos%20Plugin%20Developer%20Guide%20(v1.0.0%20LTS).md).
-3. Test your plugin locally by placing the DLL in the engine’s `plugins/` folder.
-4. Upload finished plugins to Chronos Cloud for distribution.
-
----
-
-## Quick Start – Core Developers (Internal)
+## Quick Start – Core Developers
 
 ### Prerequisites
-
 - .NET 10 SDK (`10.0.300` or later, see `global.json`)
-- A local Gitea instance (or access to the Chronos package feed)
 
 ### Build
-
 ```bash
-git clone http://localhost:300/Chronos/core.git
 cd core
 dotnet restore
 dotnet build --configuration Release
 ```
 
 ### Test
-
 ```bash
-dotnet test --configuration Release --verbosity normal
+dotnet test --configuration Release
 ```
 
-The determinism golden test suite (`tests/Chronos.Determinism.Tests`) runs separately and is a mandatory CI gate.
+## Documentation
 
-### Pack (local development)
-
-```bash
-# Build and pack Abstractions
-dotnet pack src/Chronos.Core.Abstractions/Chronos.Core.Abstractions.csproj --configuration Release --output ./nupkgs
-
-# Build and pack Kernel (use local Abstractions reference)
-dotnet pack src/Chronos.Core.Kernel/Chronos.Core.Kernel.csproj --configuration Release -p:UseLocalAbstractions=true --output ./nupkgs
-```
-
-For publishing to a NuGet feed, set `UseLocalAbstractions=false` so the Kernel package declares a proper dependency on the Abstractions package.
-
----
-
-## Long‑Term Support (LTS)
-
-Version `1.0.0` is an **LTS release**. It will receive critical bug fixes and security patches until the next LTS major version is released. Breaking changes are reserved for major version boundaries (`2.0.0`, `3.0.0`, etc.).
-
-- **Major (X.0.0):** May break public APIs and alter backtest determinism.
-- **Minor (X.Y.0):** Adds features without breaking changes or determinism.
-- **Patch (X.Y.Z):** Critical fixes only.
-
-See [Chronos Principles – Principle 17](docs/Chronos%20Principles.md#17-versioning--longterm-support) for the full versioning policy.
-
----
+- [Chronos Principles](./docs/Chronos%20Principles.md)
+- [Configuration Reference](./docs/Chronos%20Configuration%20Reference.md)
+- [Plugin Developer Guide](./docs/Chronos%20Plugin%20Developer%20Guide.md)
 
 ## Licensing
 
-- **`Chronos.Core.Abstractions`** – Proprietary, freely redistributable. May be open‑sourced in the future.
-- **`Chronos.Core.Kernel`** – Closed‑source, all rights reserved. Distributed only as part of the Chronos Engine binary.
-
----
-
-## Community & Support
-
-- **Plugin developers:** Use the [Plugin Developer Guide](docs/Chronos%20Plugin%20Developer%20Guide%20(v1.0.0%20LTS).md) and the `Chronos.Samples` repository.
-- **Engine users:** All support is handled through Chronos Cloud.
-- **Core contributors:** See the internal architecture document and contact the Chronos architecture board for design decisions.
+- `Chronos.Core.Abstractions` – Proprietary, freely redistributable.
+- `Chronos.Core.Kernel` – Closed‑source, all rights reserved.
+- `Chronos.Engine` – Closed‑source, distributed as part of the Chronos Engine binary.

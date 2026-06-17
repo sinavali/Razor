@@ -5,7 +5,7 @@ namespace Chronos.Core.Abstractions.Shared;
 /// Guarantees identical sequences across .NET versions and platforms.
 /// <para><b>This class is not thread‑safe.</b> For concurrent usage, create one instance per thread.</para>
 /// </summary>
-public class ChronosRandom
+public sealed class ChronosRandom
 {
     private ulong _s0, _s1;
 
@@ -16,12 +16,25 @@ public class ChronosRandom
         _s1 = SplitMix64(_s0);
     }
 
-    /// <summary>Creates a new generator from a 32‑bit seed.</summary>
-    /// <remarks>
-    /// Negative seeds are cast to <see cref="ulong"/> before use, so seed -1 produces
-    /// a different sequence than seed 1. Use consistent seed conventions.
-    /// </remarks>
-    public ChronosRandom(int seed) : this((ulong)seed) { }
+    /// <summary>
+    /// Creates a new generator from a 32‑bit seed.
+    /// </summary>
+    /// <param name="seed">
+    /// A non‑negative seed value. Negative values are rejected because their direct
+    /// conversion to <see cref="ulong"/> would produce unpredictable sequences.
+    /// Use the <see cref="ChronosRandom(ulong)"/> constructor if a full 64‑bit seed is needed.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="seed"/> is negative.</exception>
+    public ChronosRandom(int seed) : this((ulong)seed)
+    {
+        // Validate after the call to ensure clarity: the cast itself would work,
+        // but we want to catch negative seeds early with a meaningful message.
+        if (seed < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(seed), seed,
+                "Seed must be non‑negative. Use the ChronosRandom(ulong) constructor for arbitrary 64‑bit seeds.");
+        }
+    }
 
     private static ulong SplitMix64(ulong state)
     {

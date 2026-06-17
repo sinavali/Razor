@@ -1,7 +1,8 @@
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Abstractions.Shared.Events;
+using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Clock;
+using Chronos.Core.Kernel.Messaging;
 
 namespace Chronos.Core.Kernel.Brokers;
 

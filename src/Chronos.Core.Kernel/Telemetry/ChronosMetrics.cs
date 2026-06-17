@@ -1,5 +1,4 @@
 using System.Diagnostics.Metrics;
-using Chronos.Core.Abstractions.Telemetry;
 
 namespace Chronos.Core.Kernel.Telemetry;
 

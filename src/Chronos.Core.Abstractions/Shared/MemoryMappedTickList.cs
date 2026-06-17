@@ -48,7 +48,6 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
 
         long dataOffset = 0;
 
-        // ── read & validate header using a temporary stream ────────────
         using (var headerStream = new FileStream(
                    filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
                    4096, FileOptions.SequentialScan))
@@ -87,17 +86,14 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
             return;
         }
 
-        // ── map the entire file, then skip the header manually ────────
         _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open);
 
-        // Create a view that starts at offset 0 and covers the whole file.
         _accessor = _mmf.CreateViewAccessor(0, fileLength,
             MemoryMappedFileAccess.Read);
 
         byte* ptr = null;
         _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref ptr);
 
-        // Skip the header by moving the base pointer forward.
         _basePointer = ptr + dataOffset;
     }
 
@@ -142,6 +138,10 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
     /// <summary>
     /// Finalizer to release unmanaged resources if <see cref="Dispose()"/> was not called.
     /// </summary>
+    /// <remarks>
+    /// Only the raw pointer is released here; the <see cref="_accessor"/> and <see cref="_mmf"/>
+    /// objects are allowed to finalize naturally because they hold their own managed handles.
+    /// </remarks>
     ~MemoryMappedTickList() => Dispose(false);
 
     private void Dispose(bool disposing)

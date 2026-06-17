@@ -19,7 +19,6 @@ public static class BinaryDataMapper
     {
         ArgumentNullException.ThrowIfNull(ticks);
 
-        // Verify sortedness (Principle 8)
         for (int i = 0; i < ticks.Length - 1; i++)
         {
             if (ticks[i].Time > ticks[i + 1].Time)

@@ -1,6 +1,4 @@
-using Chronos.Core.Abstractions.Adapters;
 using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Strategies;
 
 namespace Chronos.Core.Abstractions.UnitTests.Shared;
 
@@ -13,10 +11,7 @@ public class EnumTests
     [InlineData(ExecutionState.Canceled, 3)]
     [InlineData(ExecutionState.Rejected, 4)]
     [InlineData(ExecutionState.Expired, 5)]
-    public void ExecutionState_Values(ExecutionState state, int expected)
-    {
-        Assert.Equal(expected, (int)state);
-    }
+    public void ExecutionState_Values(ExecutionState state, int expected) => Assert.Equal(expected, (int)state);
 
     [Theory]
     [InlineData(OrderType.Buy, 0)]
@@ -25,10 +20,7 @@ public class EnumTests
     [InlineData(OrderType.SellLimit, 3)]
     [InlineData(OrderType.BuyStop, 4)]
     [InlineData(OrderType.SellStop, 5)]
-    public void OrderType_Values(OrderType type, int expected)
-    {
-        Assert.Equal(expected, (int)type);
-    }
+    public void OrderType_Values(OrderType type, int expected) => Assert.Equal(expected, (int)type);
 
     [Fact]
     public void DataActionPolicy_Values()
@@ -55,10 +47,7 @@ public class EnumTests
     [InlineData(TimeFrame.D3, 4320)]
     [InlineData(TimeFrame.W1, 10080)]
     [InlineData(TimeFrame.MN1, 43200)]
-    public void TimeFrame_Minute_Values(TimeFrame tf, int minutes)
-    {
-        Assert.Equal(minutes, (int)tf);
-    }
+    public void TimeFrame_Minute_Values(TimeFrame tf, int minutes) => Assert.Equal(minutes, (int)tf);
 
     [Theory]
     [InlineData(AssetClass.Forex, 0)]
@@ -67,10 +56,7 @@ public class EnumTests
     [InlineData(AssetClass.Equity, 3)]
     [InlineData(AssetClass.Future, 4)]
     [InlineData(AssetClass.CFD, 5)]
-    public void AssetClass_Values(AssetClass ac, int expected)
-    {
-        Assert.Equal(expected, (int)ac);
-    }
+    public void AssetClass_Values(AssetClass ac, int expected) => Assert.Equal(expected, (int)ac);
 
     [Fact]
     public void MarginMode_Values()
@@ -93,16 +79,6 @@ public class EnumTests
         Assert.Equal(0, (int)PriceType.Bid);
         Assert.Equal(1, (int)PriceType.Ask);
         Assert.Equal(2, (int)PriceType.Mid);
-    }
-
-    [Fact]
-    public void ActivationFunction_Values()
-    {
-        Assert.Equal(0, (int)ActivationFunction.Sigmoid);
-        Assert.Equal(1, (int)ActivationFunction.Tanh);
-        Assert.Equal(2, (int)ActivationFunction.ReLU);
-        Assert.Equal(3, (int)ActivationFunction.LeakyReLU);
-        Assert.Equal(4, (int)ActivationFunction.Linear);
     }
 
     [Fact]

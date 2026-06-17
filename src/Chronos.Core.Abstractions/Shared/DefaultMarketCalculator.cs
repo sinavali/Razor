@@ -66,7 +66,6 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     public virtual double CalculateSwap(SymbolProperties symbolProps, double volume, OrderType type, long openTime, long closeTime)
     {
         ArgumentNullException.ThrowIfNull(symbolProps);
-        // Simplified: daily swap * days held
         double dailyRate = type == OrderType.Buy ? symbolProps.SwapLong : symbolProps.SwapShort;
         if (Math.Abs(dailyRate) < 1e-12)
         {
@@ -88,7 +87,7 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
             return 0;
         }
 
-        double periods = (currentTime - lastFundingTime) / (double)TimeSpan.TicksPerHour; // funding assumed per hour
+        double periods = (currentTime - lastFundingTime) / (double)TimeSpan.TicksPerHour;
         double positionValue = openPrice * volume * props.ContractSize;
         double payment = positionValue * fundingRate * periods;
         return type == OrderType.Buy ? -payment : payment;
@@ -99,16 +98,14 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
                                                double bid, double ask, double orderPrice)
     {
         ArgumentNullException.ThrowIfNull(props);
-        // Choose trigger price based on exchange preference
         double triggerPrice = props.PendingTrigger switch
         {
             PendingOrderTriggerMode.UseBidForBuy => bid,
             PendingOrderTriggerMode.UseAskForBuy => ask,
             PendingOrderTriggerMode.UseMidPrice => (bid + ask) * 0.5,
-            _ => ask // fallback
+            _ => ask
         };
 
-        // For sell orders, the logic is symmetric: use bid for sell-type orders
         double sellTrigger = props.PendingTrigger switch
         {
             PendingOrderTriggerMode.UseBidForBuy => bid,

@@ -3,12 +3,11 @@
 
 using Chronos.Core.Abstractions.Adapters;
 using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Shared.Events;
 using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Abstractions.Telemetry;
+using Chronos.Core.Kernel.Events;
+using Chronos.Core.Kernel.Telemetry;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Messaging;
-using Chronos.Core.Kernel.Telemetry;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
@@ -40,6 +39,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private CancellationTokenSource? _lifecycleCts;
     private long _orderSequence;
+    private bool _isDisposing;
 
     // ── mutable state (all access protected by _stateLock) ────────
     private readonly List<Position> _openPositions = [];
@@ -50,6 +50,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
 
     private readonly Dictionary<string, SymbolProperties> _symbolSpecs =
         new(StringComparer.OrdinalIgnoreCase);
+
     private readonly Dictionary<string, (double Bid, double Ask)> _lastPrices =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -64,18 +65,61 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     // ── IBroker properties ────────────────────────────────────────
 
     /// <inheritdoc/>
-    public double Balance => _balance;
+    public double Balance
+    {
+        get
+        {
+            _stateLock.Wait();
+            try
+            {
+                return _balance;
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+    }
+
     /// <inheritdoc/>
-    public double Equity => _equity;
+    public double Equity
+    {
+        get
+        {
+            _stateLock.Wait();
+            try
+            {
+                return _equity;
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+    }
+
     /// <inheritdoc/>
-    public double MarginUsed => _marginUsed;
+    public double MarginUsed
+    {
+        get
+        {
+            _stateLock.Wait();
+            try
+            {
+                return _marginUsed;
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+    }
 
     /// <inheritdoc/>
     public double FreeMargin
     {
         get
         {
-            // Thread‑safe read: briefly acquire the lock to get a consistent view.
             _stateLock.Wait();
             try
             {
@@ -90,8 +134,10 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
 
     /// <inheritdoc/>
     public double MaxDrawdown { get; private set; }
+
     /// <inheritdoc/>
     public double MaxDailyDrawdown { get; private set; }
+
     /// <inheritdoc/>
     public bool IsWarmup => false;
 
@@ -307,6 +353,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         {
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Price not available" };
         }
+
         if (!_symbolSpecs.TryGetValue(symbol, out var spec))
         {
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Symbol properties not available" };
@@ -315,8 +362,19 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         double refPrice = type == OrderType.Buy ? px.Ask : px.Bid;
         double requiredMargin = _adapter.Calculator.CalculateRequiredMargin(spec, refPrice, volume, _leverage);
 
-        // Use thread‑safe access to FreeMargin
-        if (FreeMargin < requiredMargin - 1e-8)
+        // Perform margin check under lock for a consistent snapshot
+        bool marginOk;
+        await _stateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            marginOk = (_equity - _marginUsed) >= requiredMargin - 1e-8;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        if (!marginOk)
         {
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
         }
@@ -351,6 +409,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 _stateLock.Release();
             }
         }
+
         return response;
     }
 
@@ -370,7 +429,20 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
 
         double requiredMargin = _adapter.Calculator.CalculateRequiredMargin(spec, price, volume, _leverage);
-        if (FreeMargin < requiredMargin - 1e-8)
+
+        // Perform margin check under lock for a consistent snapshot
+        bool marginOk;
+        await _stateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            marginOk = (_equity - _marginUsed) >= requiredMargin - 1e-8;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        if (!marginOk)
         {
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
         }
@@ -406,11 +478,13 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 _stateLock.Release();
             }
         }
+
         return response;
     }
 
     /// <inheritdoc/>
-    public async Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null, double? price = null)
+    public async Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null,
+        double? price = null)
     {
         var response = await _adapter.ModifyOrderAsync(ticket, sl, tp, price).ConfigureAwait(false);
         if (!response.Success)
@@ -445,6 +519,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                     break;
                 }
             }
+
             if (_positionMap.TryGetValue(ticket, out var pos))
             {
                 if (sl.HasValue)
@@ -471,6 +546,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         {
             _stateLock.Release();
         }
+
         return response;
     }
 
@@ -493,6 +569,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         {
             _stateLock.Release();
         }
+
         return response;
     }
 
@@ -526,13 +603,15 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         {
             _stateLock.Release();
         }
+
         await Task.WhenAll(tasks).ConfigureAwait(false);
         return [.. tasks.Select(t => t.Result)];
     }
 
     // ── position queries ──────────────────────────────────────────
     /// <inheritdoc/>
-    public async Task<bool> HasOpenPositionAsync(string symbol, OrderType? type = null, CancellationToken cancellationToken = default)
+    public async Task<bool> HasOpenPositionAsync(string symbol, OrderType? type = null,
+        CancellationToken cancellationToken = default)
     {
         await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -546,7 +625,8 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<Position>> GetOpenPositionsAsync(string? symbol = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Position>> GetOpenPositionsAsync(string? symbol = null,
+        CancellationToken cancellationToken = default)
     {
         await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -595,7 +675,8 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         _marketClock.SetTickTime(tick.Time);
         long now = _marketClock.GetTimestamp();
 
-        long latencyTicks = DateTime.UtcNow.Ticks - now;
+        // Use wall clock via SystemClock, not DateTime.UtcNow directly (Principle 3)
+        long latencyTicks = _wallClock.GetUtcNow().Ticks - now;
         _metrics.RecordLiveTickLatency(latencyTicks);
 
         if (_syncIntervalTicks > 0 && (now - _lastSyncTime) >= _syncIntervalTicks)
@@ -732,6 +813,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                     spec, pos.OpenPrice, pos.Volume, _leverage);
             }
         }
+
         return used;
     }
 
@@ -747,6 +829,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                     spec, o.Price, o.Volume, _leverage);
             }
         }
+
         return used;
     }
 
@@ -755,6 +838,11 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (_isDisposing)
+            {
+                return;
+            }
+
             if (report.State is not (ExecutionState.Filled or ExecutionState.PartiallyFilled))
             {
                 return;
@@ -802,7 +890,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                     }
                 }
             }
-            else
+            else if (!_isDisposing)
             {
                 var newPos = new Position
                 {
@@ -846,6 +934,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            _isDisposing = true;
             positionsToClose = _openPositions.ToList();
         }
         finally
@@ -859,8 +948,20 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            _openPositions.Clear();
-            _positionMap.Clear();
+            // Only clear positions that were in the snapshot; new positions added
+            // during close (e.g., from execution reports) are handled by the guard.
+            for (int i = _openPositions.Count - 1; i >= 0; i--)
+            {
+                if (positionsToClose.Any(p => p.Ticket == _openPositions[i].Ticket))
+                {
+                    _openPositions.RemoveAt(i);
+                }
+            }
+
+            foreach (var p in positionsToClose)
+            {
+                _positionMap.Remove(p.Ticket);
+            }
         }
         finally
         {
@@ -893,7 +994,9 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         return true;
     }
 
-    private void Broadcast(string message) { foreach (var n in _notifiers)
+    private void Broadcast(string message)
+    {
+        foreach (var n in _notifiers)
         {
             _ = n.SendAsync(message);
         }
@@ -914,6 +1017,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 MaxDrawdown = dd;
             }
         }
+
         if (_equity > _peakDailyEquity)
         {
             _peakDailyEquity = _equity;
@@ -1026,6 +1130,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             await _lifecycleCts.CancelAsync().ConfigureAwait(false);
             _lifecycleCts.Dispose();
         }
+
         await _adapter.DisconnectAsync().ConfigureAwait(false);
         _stateLock.Dispose();
         _syncGate.Dispose();

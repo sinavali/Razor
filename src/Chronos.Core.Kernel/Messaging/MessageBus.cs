@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Kernel.Messaging;
 
@@ -11,7 +10,7 @@ public sealed class MessageBus : IMessageBus, IDisposable
 {
     private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
     private readonly Lock _subscriptionLock = new();
-    private readonly ConcurrentDictionary<string, long> _recentEventIds = new();  // stored as Environment.TickCount64
+    private readonly ConcurrentDictionary<string, long> _recentEventIds = new();
     private readonly Timer _cleanupTimer;
     private readonly long _dedupWindowMilliseconds;
     private readonly long _cleanupIntervalMilliseconds;
@@ -26,6 +25,8 @@ public sealed class MessageBus : IMessageBus, IDisposable
         _dedupWindowMilliseconds = (long)dedupWindowSeconds * 1000;
         _cleanupIntervalMilliseconds = (long)cleanupIntervalSeconds * 1000;
 
+        // Start with infinite dueTime to prevent callback from running before
+        // the constructor completes. Change will be called after construction.
         _cleanupTimer = new Timer(_ =>
         {
             long cutoff = Environment.TickCount64 - _dedupWindowMilliseconds;
@@ -33,7 +34,11 @@ public sealed class MessageBus : IMessageBus, IDisposable
             {
                 _recentEventIds.TryRemove(key, out long _);
             }
-        }, null, TimeSpan.FromMilliseconds(_cleanupIntervalMilliseconds), TimeSpan.FromMilliseconds(_cleanupIntervalMilliseconds));
+        }, null, Timeout.Infinite, Timeout.Infinite);
+
+        _cleanupTimer.Change(
+            TimeSpan.FromMilliseconds(_cleanupIntervalMilliseconds),
+            TimeSpan.FromMilliseconds(_cleanupIntervalMilliseconds));
     }
 
     /// <inheritdoc/>

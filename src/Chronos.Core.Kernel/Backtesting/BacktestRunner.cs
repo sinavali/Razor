@@ -1,13 +1,12 @@
 using System.Diagnostics;
 using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Shared.Events;
 using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Abstractions.Telemetry;
+using Chronos.Core.Kernel.Events;
+using Chronos.Core.Kernel.Telemetry;
 using Chronos.Core.Kernel.Brokers;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Indicators;
 using Chronos.Core.Kernel.Metrics;
-using Chronos.Core.Kernel.Telemetry;
 
 namespace Chronos.Core.Kernel.Backtesting;
 
@@ -35,8 +34,12 @@ public sealed class BacktestRunner : IBacktestRunner
 
         // Handle metrics ownership: if not provided, create and dispose locally.
         ChronosMetrics? ownedMetrics = null;
-        IChronosMetrics? metrics = input.Metrics;
-        if (metrics == null)
+        IChronosMetrics metrics;
+        if (input.Metrics is not null)
+        {
+            metrics = input.Metrics;
+        }
+        else
         {
             ownedMetrics = new ChronosMetrics("backtest-runner-internal");
             metrics = ownedMetrics;
@@ -63,7 +66,7 @@ public sealed class BacktestRunner : IBacktestRunner
                 .Where(tf => tf != TimeFrame.Tick)
                 .ToList();
 
-            using var tickWindow = new TickWindow(symbols, timeframes);
+            var tickWindow = new TickWindow(symbols, timeframes);
 
             int warmupRemaining = input.ExecutionSpecification.WarmupWindowCount;
             broker.IsWarmup = warmupRemaining > 0;
@@ -71,7 +74,7 @@ public sealed class BacktestRunner : IBacktestRunner
             Action<string, TimeFrame>? warmupHandler = null;
             if (warmupRemaining > 0)
             {
-                warmupHandler = (sym, tf) =>
+                warmupHandler = (_, _) =>
                 {
                     if (broker.IsWarmup)
                     {
@@ -79,7 +82,6 @@ public sealed class BacktestRunner : IBacktestRunner
                         if (warmupRemaining <= 0)
                         {
                             broker.IsWarmup = false;
-                            // Detach handler to avoid unnecessary calls
                             tickWindow.WindowCompleted -= warmupHandler;
                         }
                     }
@@ -87,40 +89,40 @@ public sealed class BacktestRunner : IBacktestRunner
                 tickWindow.WindowCompleted += warmupHandler;
             }
 
-            if (input.Strategy is StrategyBase sb)
-            {
-                sb.WireUp(broker, tickWindow);
-            }
-
-            double[] genes = input.Genes ??
-                GeneInjector.ExtractAndInitializeGenes(
-                    input.Strategy,
-                    input.NeuralNetwork,
-                    input.GeneInitializationSeed);
-
-            input.Strategy.InjectGenes(genes);
-
-            // ---------- initialise strategy ----------
-            input.Strategy.OnConfigureAsync(input.StrategySpecification).GetAwaiter().GetResult();
-            var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
-            input.Strategy.OnStartAsync(indicatorRegistry).GetAwaiter().GetResult();
-
-            // ---------- publish started event ----------
-            input.MessageBus?.Publish(new BacktestStartedEvent
-            {
-                Timestamp = clock.GetUtcNow()
-            });
-
-            // ---------- main merge & processing loop ----------
-            var merged = MergedTickTimeline.EnumerateEvents(input.TickStreams, symbols);
-            long processed = 0;
-            long totalEvents = input.TickStreams.Sum(s => (long)(s?.Count ?? 0));
-            var lastProgress = -1;
-            var wallClock = Stopwatch.StartNew();
-
             try
             {
-                foreach (var (time, streamIdx, tick) in merged)
+                if (input.Strategy is StrategyBase sb)
+                {
+                    sb.WireUp(broker, tickWindow);
+                }
+
+                double[] genes = input.Genes ??
+                    GeneInjector.ExtractAndInitializeGenes(
+                        input.Strategy,
+                        input.NeuralNetwork,
+                        input.GeneInitializationSeed ?? 0);
+
+                input.Strategy.InjectGenes(genes);
+
+                // ---------- initialise strategy ----------
+                input.Strategy.OnConfigureAsync(input.StrategySpecification).GetAwaiter().GetResult();
+                var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
+                input.Strategy.OnStartAsync(indicatorRegistry).GetAwaiter().GetResult();
+
+                // ---------- publish started event ----------
+                input.MessageBus?.Publish(new BacktestStartedEvent
+                {
+                    Timestamp = clock.GetUtcNow()
+                });
+
+                // ---------- main merge & processing loop ----------
+                var merged = MergedTickTimeline.EnumerateEvents(input.TickStreams, symbols);
+                long processed = 0;
+                long totalEvents = input.TickStreams.Sum(s => (long)(s?.Count ?? 0));
+                var lastProgress = -1;
+                var wallClock = Stopwatch.StartNew();
+
+                foreach (var (_, streamIdx, tick) in merged)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     string sym = symbols[streamIdx];
@@ -137,9 +139,13 @@ public sealed class BacktestRunner : IBacktestRunner
                         input.Progress?.Report(new BacktestProgress(pct, $"Processing tick {processed}/{totalEvents}"));
                     }
                 }
-            }
-            finally
-            {
+
+                wallClock.Stop();
+
+                // ---------- final progress ----------
+                input.Progress?.Report(new BacktestProgress(100, "Done"));
+
+                // ---------- close positions & teardown ----------
                 foreach (var sym in symbols)
                 {
                     broker.CloseAllAsync(sym).GetAwaiter().GetResult();
@@ -147,55 +153,60 @@ public sealed class BacktestRunner : IBacktestRunner
 
                 indicatorRegistry.DisposeAll();
                 input.Strategy.OnStopAsync().GetAwaiter().GetResult();
+
+                // ---------- assemble result ----------
+                var history = broker.GetHistoryAsync(CancellationToken.None).GetAwaiter().GetResult();
+                var result = new BacktestResult
+                {
+                    Balance = broker.Balance,
+                    Equity = broker.Equity,
+                    Drawdown = broker.MaxDrawdown,
+                    DailyDrawdown = broker.MaxDailyDrawdown,
+                    TotalTrades = history.Count,
+                    History = history
+                };
+
+                // ---------- publish completed event with full metrics ----------
+                var metricsCalc = new MetricsCalculator();
+                var summary = metricsCalc.Calculate(result, input.StrategySpecification.InitialBalance,
+                    input.ExecutionSpecification.StartDate, input.ExecutionSpecification.EndDate);
+
+                input.MessageBus?.Publish(new BacktestCompletedEvent
+                {
+                    Timestamp = clock.GetUtcNow(),
+                    NetProfit = summary.NetProfit,
+                    ReturnPct = summary.ReturnPct,
+                    MaxDrawdownPct = summary.MaxDrawdownPct,
+                    MaxDailyDrawdownPct = summary.MaxDailyDrawdownPct,
+                    TotalTrades = summary.TotalTrades,
+                    WinRatePct = summary.WinRatePct,
+                    ProfitFactor = summary.ProfitFactor,
+                    SharpeRatio = summary.SharpeRatio,
+                    SortinoRatio = summary.SortinoRatio,
+                    EventId = $"bt-{Interlocked.Increment(ref _eventCounter)}",
+                    CorrelationId = null
+                });
+
+                // ---------- record throughput telemetry ----------
+                double elapsedSeconds = wallClock.Elapsed.TotalSeconds;
+                if (elapsedSeconds > 0.0)
+                {
+                    double ticksPerSec = totalEvents / elapsedSeconds;
+                    metrics.RecordBacktestTicksPerSecond(ticksPerSec);
+                }
+
+                return result;
+            }
+            finally
+            {
+                // Detach warm‑up handler before disposal to avoid captured‑variable warnings
+                if (warmupHandler is not null)
+                {
+                    tickWindow.WindowCompleted -= warmupHandler;
+                }
+
                 tickWindow.Dispose();
             }
-
-            wallClock.Stop();
-
-            // ---------- final progress ----------
-            input.Progress?.Report(new BacktestProgress(100, "Done"));
-
-            // ---------- assemble result ----------
-            var history = broker.GetHistoryAsync(CancellationToken.None).GetAwaiter().GetResult();
-            var result = new BacktestResult
-            {
-                Balance = broker.Balance,
-                Equity = broker.Equity,
-                Drawdown = broker.MaxDrawdown,
-                DailyDrawdown = broker.MaxDailyDrawdown,
-                TotalTrades = history.Count,
-                History = history
-            };
-
-            // ---------- publish completed event with full metrics ----------
-            var metricsCalc = new MetricsCalculator();
-            var summary = metricsCalc.Calculate(result, input.StrategySpecification.InitialBalance, input.ExecutionSpecification.StartDate, input.ExecutionSpecification.EndDate);
-
-            input.MessageBus?.Publish(new BacktestCompletedEvent
-            {
-                Timestamp = clock.GetUtcNow(),
-                NetProfit = summary.NetProfit,
-                ReturnPct = summary.ReturnPct,
-                MaxDrawdownPct = summary.MaxDrawdownPct,
-                MaxDailyDrawdownPct = summary.MaxDailyDrawdownPct,
-                TotalTrades = summary.TotalTrades,
-                WinRatePct = summary.WinRatePct,
-                ProfitFactor = summary.ProfitFactor,
-                SharpeRatio = summary.SharpeRatio,
-                SortinoRatio = summary.SortinoRatio,
-                EventId = $"bt-{Interlocked.Increment(ref _eventCounter)}",
-                CorrelationId = null
-            });
-
-            // ---------- record throughput telemetry ----------
-            double elapsedSeconds = wallClock.Elapsed.TotalSeconds;
-            if (elapsedSeconds > 0.0)
-            {
-                double ticksPerSec = totalEvents / elapsedSeconds;
-                metrics.RecordBacktestTicksPerSecond(ticksPerSec);
-            }
-
-            return result;
         }
         finally
         {

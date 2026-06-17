@@ -1,3 +1,4 @@
+using System.Reflection;
 using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Abstractions.UnitTests.Shared;
@@ -37,6 +38,13 @@ public class BarTests
         var b2 = b1;
         Assert.True(b1 == b2);
         Assert.False(b1 != b2);
+    }
+
+    [Fact]
+    public void Equals_With_Non_Bar_Returns_False()
+    {
+        var bar = new Bar(1, 2, 3, 4, 5, 6, 7);
+        Assert.False(bar.Equals("not a bar"));
     }
 }
 
@@ -98,7 +106,7 @@ public class PositionTests
         Assert.Equal(0.0, p.Leverage);
         Assert.False(p.IsMargin);
         Assert.Equal(string.Empty, p.Comment);
-        Assert.False(p.IsClosed); // CloseTime == 0
+        Assert.False(p.IsClosed);
     }
 
     [Fact]
@@ -148,14 +156,15 @@ public class TickTests
     [Fact]
     public void HashCode_Stable()
     {
-        var t = new Tick(100, 1.5, 1.6, 10, true);
-        Assert.Equal(HashCode.Combine(100L, 1.5, 1.6, 10.0, true), t.GetHashCode());
+        Assert.Equal(
+            HashCode.Combine(100L, 1.5, 1.6, 10.0, true),
+            new Tick(100, 1.5, 1.6, 10, true).GetHashCode());
     }
 }
 
 public class SymbolPropertiesTests
 {
-    private SymbolProperties CreateDefault() => new SymbolProperties
+    private SymbolProperties CreateDefault() => new()
     {
         AssetClass = AssetClass.Forex,
         MarginMode = MarginMode.Cross,
@@ -180,8 +189,7 @@ public class SymbolPropertiesTests
     [Fact]
     public void Can_Create_With_Required_Properties()
     {
-        var props = CreateDefault();
-        Assert.Equal("USD", props.MarginCurrency);
+        Assert.Equal("USD", CreateDefault().MarginCurrency);
     }
 
     [Fact]
@@ -198,5 +206,21 @@ public class SymbolPropertiesTests
         var a = CreateDefault();
         var b = a with { TickSize = 0.05 };
         Assert.NotEqual(a, b);
+    }
+
+    [Fact]
+    public void All_Required_Fields_Are_Present()
+    {
+        var props = CreateDefault();
+        var type = typeof(SymbolProperties);
+        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var value = prop.GetValue(props);
+            Assert.NotNull(value);
+            if (prop.PropertyType == typeof(string))
+            {
+                Assert.NotEqual(string.Empty, value);
+            }
+        }
     }
 }

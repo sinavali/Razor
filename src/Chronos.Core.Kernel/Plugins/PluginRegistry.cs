@@ -5,10 +5,12 @@ namespace Chronos.Core.Kernel.Plugins;
 /// <summary>
 /// Generic registry that discovers and loads plugin implementations via ALC isolation.
 /// </summary>
-public sealed class PluginRegistry<TPlugin> where TPlugin : class
+public sealed class PluginRegistry<TPlugin> : IDisposable where TPlugin : class
 {
     private readonly Dictionary<string, Type> _pluginTypes;
     private readonly string _pluginTypeIdentifier;
+    private readonly List<PluginLoadContext> _contexts = [];
+    private bool _disposed;
 
     /// <summary>List of available discovered plugin names.</summary>
     public IReadOnlyList<string> AvailableNames => _pluginTypes.Keys.ToList();
@@ -52,6 +54,33 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
         return (TPlugin)Activator.CreateInstance(type)!;
     }
 
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        foreach (var context in _contexts)
+        {
+            try
+            {
+                context.UnloadContext();
+            }
+#pragma warning disable CA1031 // Do not catch general exception types
+            catch
+#pragma warning restore CA1031 // Do not catch general exception types
+            {
+                // Best effort; unloading may fail if assemblies are still in use.
+            }
+        }
+
+        _contexts.Clear();
+    }
+
     private Dictionary<string, Type> LoadPlugins(string pluginsPath, Type attributeType)
     {
         var result = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
@@ -62,6 +91,7 @@ public sealed class PluginRegistry<TPlugin> where TPlugin : class
             try
             {
                 var context = new PluginLoadContext(dll);
+                _contexts.Add(context);
                 var asm = context.LoadFromAssemblyPath(dll);
 
                 var validationErrors = PluginValidator.ValidateAssembly(asm, expectedMajor: 1);

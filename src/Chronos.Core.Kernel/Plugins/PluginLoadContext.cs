@@ -26,4 +26,13 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
         string? path = _resolver.ResolveAssemblyToPath(assemblyName);
         return path != null ? LoadFromAssemblyPath(path) : null;
     }
+
+    /// <summary>
+    /// Unloads this context and releases all loaded assemblies.
+    /// Must be called to avoid memory leaks when plugins are reloaded.
+    /// </summary>
+    public void UnloadContext()
+    {
+        Unload();
+    }
 }

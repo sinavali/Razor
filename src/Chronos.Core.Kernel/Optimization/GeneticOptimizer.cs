@@ -1,6 +1,5 @@
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Abstractions.Telemetry;
 using Chronos.Core.Kernel.Telemetry;
 using System.Diagnostics;
 
