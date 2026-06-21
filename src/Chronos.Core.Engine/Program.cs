@@ -47,17 +47,6 @@ internal sealed class Program
     private static readonly Action<ILogger, Exception?> _logShutdownBehaviorError =
         LoggerMessage.Define(LogLevel.Error, 3, "Error flushing behavior records during shutdown.");
 
-    // Win32 API for maximising console window (Windows only).
-    [SuppressMessage("Security", "CA5392:Use DefaultDllImportSearchPaths attribute for P/Invokes", Justification = "System DLLs are loaded from known safe paths.")]
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr GetConsoleWindow();
-
-    [SuppressMessage("Security", "CA5392:Use DefaultDllImportSearchPaths attribute for P/Invokes", Justification = "System DLLs are loaded from known safe paths.")]
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    private const int SW_MAXIMIZE = 3;
-
     /// <summary>
     /// The main method.
     /// </summary>
@@ -114,9 +103,6 @@ internal sealed class Program
         _shutdownCts = new CancellationTokenSource();
         Console.CancelKeyPress += OnCancelKeyPress;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-
-        // Maximise console window (Windows only; Linux uses default size).
-        MaximizeConsole();
 
         int exitCode = 0;
         try
@@ -352,27 +338,5 @@ internal sealed class Program
         Console.WriteLine($"Chronos Engine v{AppConstants.EngineVersion} LTS");
         Console.WriteLine($"Target SDK: v{AppConstants.SdkVersion}");
         Console.WriteLine($"Runtime: {Environment.Version}");
-    }
-
-    [SuppressMessage("Interoperability", "CA1416:Validate platform compatibility", Justification = "Platform-specific calls are guarded by RuntimeInformation checks.")]
-    private static void MaximizeConsole()
-    {
-        try
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                IntPtr handle = GetConsoleWindow();
-                if (handle != IntPtr.Zero)
-                {
-                    ShowWindow(handle, SW_MAXIMIZE);
-                }
-            }
-            // On Linux, we do nothing to avoid any cursor or mouse issues.
-            // The terminal will use its default size, which is fine.
-        }
-        catch
-        {
-            // Ignore if console manipulation fails.
-        }
     }
 }
