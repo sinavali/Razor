@@ -5,7 +5,6 @@ namespace Chronos.Core.Kernel.Metrics;
 /// <summary>
 /// Default implementation of <see cref="IMetricsCalculator"/>.
 /// Sharpe and Sortino ratios are calculated on a trade‑by‑trade return basis.
-/// This is an approximation; for more precise metrics, use equity‑curve‑based calculations.
 /// </summary>
 public sealed class MetricsCalculator : IMetricsCalculator
 {
@@ -38,6 +37,7 @@ public sealed class MetricsCalculator : IMetricsCalculator
                 : trade.ReturnPct;
             returns.Add(tradeReturn);
         }
+
         if (totalTrades > 0)
         {
             winRate = (double)result.History.Count(t => t.Profit > 0) / totalTrades * 100.0;
@@ -51,6 +51,7 @@ public sealed class MetricsCalculator : IMetricsCalculator
         {
             years = (endDate - startDate).TotalDays / 365.25;
         }
+
         bool annualize = years >= 1.0 / 12.0;
 
         double sharpe = CalculateSharpeRatio(returns, years, annualize);

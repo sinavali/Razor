@@ -5,7 +5,7 @@ namespace Chronos.Core.Abstractions.Shared;
 
 /// <summary>
 /// Pure, I/O‑free conversion utilities for bars and tick metrics.
-/// Part of the Chronos domain kernel.
+/// Part of the domain kernel.
 /// </summary>
 public static class TickSynthesizer
 {
@@ -69,7 +69,7 @@ public static class TickSynthesizer
             ticksPerBar = 2;
         }
 
-        var rng = new ChronosRandom(seed);
+        var rng = new CustomizedRandom(seed);
         int totalTicks = bars.Length * ticksPerBar;
         var ticks = GC.AllocateUninitializedArray<Tick>(totalTicks);
         ref Bar barRef = ref MemoryMarshal.GetArrayDataReference(bars);

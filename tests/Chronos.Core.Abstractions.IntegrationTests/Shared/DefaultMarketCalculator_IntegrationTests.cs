@@ -316,7 +316,10 @@ public class DefaultMarketCalculator_IntegrationTests
     {
         var props = MakeProps();
         // Set SwapLong to extremely small value so the Math.Abs check triggers zero
-        var props2 = props with { SwapLong = 1e-13 };
+        var props2 = props with
+        {
+            SwapLong = 1e-13
+        };
         double swap = _calc.CalculateSwap(props2, 1.0, OrderType.Buy, 0, TimeSpan.TicksPerDay);
         Assert.Equal(0.0, swap);
     }
@@ -324,7 +327,10 @@ public class DefaultMarketCalculator_IntegrationTests
     [Fact]
     public void CalculateFunding_Zero_FundingRate_Returns_Zero()
     {
-        var props = MakeProps() with { FundingRate = 0 };
+        var props = MakeProps() with
+        {
+            FundingRate = 0
+        };
         double f = _calc.CalculateFunding(props, 1.0, 100.0, OrderType.Buy, TimeSpan.TicksPerHour, 0);
         Assert.Equal(0.0, f);
     }
@@ -350,7 +356,11 @@ public class DefaultMarketCalculator_IntegrationTests
     [Fact]
     public void CalculateSwap_Extremely_Small_Rate_Returns_Zero()
     {
-        var props = MakeProps() with { SwapLong = 1e-13, SwapShort = 1e-13 };
+        var props = MakeProps() with
+        {
+            SwapLong = 1e-13,
+            SwapShort = 1e-13
+        };
         double swap = _calc.CalculateSwap(props, 1.0, OrderType.Buy, 0, TimeSpan.TicksPerDay);
         Assert.Equal(0.0, swap);
     }
@@ -373,7 +383,11 @@ public class DefaultMarketCalculator_IntegrationTests
     [Fact]
     public void CalculateSwap_Long_Rate_Near_Zero_Returns_Zero()
     {
-        var props = MakeProps() with { SwapLong = 5e-14, SwapShort = 0 };
+        var props = MakeProps() with
+        {
+            SwapLong = 5e-14,
+            SwapShort = 0
+        };
         double swap = _calc.CalculateSwap(props, 1.0, OrderType.Buy, 0, TimeSpan.TicksPerDay);
         Assert.Equal(0.0, swap);
     }

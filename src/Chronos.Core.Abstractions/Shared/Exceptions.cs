@@ -1,6 +1,6 @@
 namespace Chronos.Core.Abstractions.Shared;
 
-/// <summary>Base exception for all Chronos errors.</summary>
+/// <summary>Base exception for all errors.</summary>
 public abstract class AppException : Exception
 {
     /// <summary>Initializes a new instance of the <see cref="AppException"/> class.</summary>

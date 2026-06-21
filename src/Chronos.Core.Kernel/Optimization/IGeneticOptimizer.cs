@@ -8,12 +8,16 @@ public interface IGeneticOptimizer : IOptimizer
 {
     /// <summary>Current generation index (0‑based).</summary>
     int CurrentGeneration { get; }
+
     /// <summary>Population size.</summary>
     int PopulationSize { get; }
+
     /// <summary>Whether hyper‑mutation is currently active.</summary>
     bool IsHyperMutation { get; }
+
     /// <summary>Best solution found so far.</summary>
     Chromosome BestSolution { get; }
+
     /// <summary>Current population snapshot (sorted).</summary>
     IReadOnlyList<Chromosome> Population { get; }
 

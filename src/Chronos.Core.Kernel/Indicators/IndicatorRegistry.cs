@@ -2,15 +2,13 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Strategies;
 
 namespace Chronos.Core.Kernel.Indicators;
 
-/// <summary>Default implementation of <see cref="IIndicatorRegistry"/> with compiled constructor cache.</summary>
+/// <summary>Default implementation of <see cref="IIndicatorRegistry"/> with compiled constructor cache and reference counting.</summary>
 internal sealed class IndicatorRegistry : IIndicatorRegistry
 {
-    private readonly ConcurrentDictionary<string, Indicator> _cache = new();
-    private readonly ConcurrentDictionary<string, Indicator> _active = new();
+    private readonly ConcurrentDictionary<string, IndicatorRef> _cache = new();
     private readonly TickWindow _tickWindow;
 
     private static readonly ConcurrentDictionary<(Type, int), Func<object[], object>> _ctorCache = new();
@@ -20,15 +18,16 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
         _tickWindow = tickWindow ?? throw new ArgumentNullException(nameof(tickWindow));
     }
 
-    public IReadOnlyList<Indicator> ActiveIndicators => _active.Values.ToArray();
+    public IReadOnlyList<Indicator> ActiveIndicators => _cache.Values.Select(r => r.Instance).ToArray();
 
     public T Get<T>(params object[] args) where T : Indicator
     {
         string sig = typeof(T).FullName + ":" + string.Join(",", args.Select(a => a?.ToString() ?? "null"));
 
-        if (_cache.TryGetValue(sig, out var existing) && existing is T typed)
+        if (_cache.TryGetValue(sig, out var existing))
         {
-            return typed;
+            existing.RefCount++;
+            return (T)existing.Instance;
         }
 
         T instance;
@@ -43,8 +42,8 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
         }
 
         instance.Signature = sig;
-        _cache[sig] = instance;
-        _active[sig] = instance;
+        var refObj = new IndicatorRef(instance);
+        _cache[sig] = refObj;
 
         if (instance is IRegistryAwareIndicator aware)
         {
@@ -66,22 +65,31 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
             return false;
         }
 
-        if (_cache.TryRemove(indicator.Signature, out _) &&
-            _active.TryRemove(indicator.Signature, out _))
+        if (_cache.TryGetValue(indicator.Signature, out var refObj))
         {
-            indicator.Dispose();
+            refObj.RefCount--;
+            if (refObj.RefCount <= 0)
+            {
+                if (_cache.TryRemove(indicator.Signature, out _))
+                {
+                    indicator.Dispose();
+                    return true;
+                }
+            }
+
             return true;
         }
+
         return false;
     }
 
     public void DisposeAll()
     {
-        foreach (var ind in _active.Values)
+        foreach (var refObj in _cache.Values)
         {
-            ind.Dispose();
+            refObj.Instance.Dispose();
         }
-        _active.Clear();
+
         _cache.Clear();
     }
 
@@ -92,7 +100,8 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
             var (t, n) = key;
             var ctor = t.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
                 .FirstOrDefault(c => c.GetParameters().Length == n)
-                ?? throw new InvalidOperationException($"No public constructor with {n} parameters found for {t.FullName}.");
+                ?? throw new InvalidOperationException(
+                    $"No public constructor with {n} parameters found for {t.FullName}.");
 
             var argsParam = Expression.Parameter(typeof(object[]), "args");
             var parameters = ctor.GetParameters();
@@ -102,7 +111,9 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
             {
                 var paramType = parameters[i].ParameterType;
                 var indexExpr = Expression.ArrayIndex(argsParam, Expression.Constant(i));
-                var convertCall = Expression.Call(typeof(Convert), nameof(Convert.ChangeType), null, indexExpr, Expression.Constant(paramType));
+                var convertCall = Expression.Call(
+                    typeof(Convert), nameof(Convert.ChangeType), null,
+                    indexExpr, Expression.Constant(paramType));
                 argExprs[i] = Expression.Convert(convertCall, paramType);
             }
 
@@ -110,5 +121,17 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
             var lambda = Expression.Lambda<Func<object[], object>>(newExpr, argsParam);
             return lambda.Compile();
         });
+    }
+
+    private sealed class IndicatorRef
+    {
+        public Indicator Instance { get; }
+        public int RefCount { get; set; }
+
+        public IndicatorRef(Indicator instance)
+        {
+            Instance = instance;
+            RefCount = 1;
+        }
     }
 }

@@ -28,7 +28,10 @@ public class DomainRecords_IntegrationTests
         Assert.Equal(1.2500, req.TakeProfit);
         Assert.Equal("test order", req.Comment);
 
-        var copy = req with { Volume = 1.0 };
+        var copy = req with
+        {
+            Volume = 1.0
+        };
         Assert.Equal(1.0, copy.Volume);
         Assert.Equal(0.5, req.Volume);
         Assert.Equal(req, req);
@@ -85,7 +88,10 @@ public class DomainRecords_IntegrationTests
         Assert.Equal(0.75, report.Commission);
         Assert.Equal(150, report.RealizedPnL);
 
-        var copy = report with { State = ExecutionState.New };
+        var copy = report with
+        {
+            State = ExecutionState.New
+        };
         Assert.Equal(ExecutionState.Filled, report.State);
         Assert.Equal(ExecutionState.New, copy.State);
     }
@@ -137,7 +143,10 @@ public class DomainRecords_IntegrationTests
         Assert.Equal(OrderType.SellStop, order.Type);
         Assert.Equal(1.2800, order.Price);
 
-        var copy = order with { Volume = 0.5 };
+        var copy = order with
+        {
+            Volume = 0.5
+        };
         Assert.Equal(0.5, copy.Volume);
         Assert.Equal(0.3, order.Volume);
     }
@@ -169,7 +178,11 @@ public class DomainRecords_IntegrationTests
         Assert.Equal(150.00, openPos.OpenPrice);
         Assert.Equal(10.0, openPos.Profit);
 
-        var closedPos = openPos with { CloseTime = 2000, ClosePrice = 151.00 };
+        var closedPos = openPos with
+        {
+            CloseTime = 2000,
+            ClosePrice = 151.00
+        };
         Assert.True(closedPos.IsClosed);
         Assert.Equal(151.00, closedPos.ClosePrice);
     }

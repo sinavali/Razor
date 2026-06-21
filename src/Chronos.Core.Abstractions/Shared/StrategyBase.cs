@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Chronos.Core.Abstractions.Slots;
 
 namespace Chronos.Core.Abstractions.Shared;

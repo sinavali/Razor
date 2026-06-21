@@ -45,6 +45,12 @@ public sealed record SymbolProperties
     /// <summary>Funding rate for perpetual contracts.</summary>
     public required double FundingRate { get; init; }
 
+    /// <summary>
+    /// Interval in 100‑ns ticks between holding cost calculations (e.g., funding).
+    /// Default is 24 hours if not specified by adapter.
+    /// </summary>
+    public long HoldingCostIntervalTicks { get; init; } = TimeSpan.TicksPerDay;
+
     /// <summary>Initial margin rate (fraction).</summary>
     public required double InitialMarginRate { get; init; }
 
@@ -118,6 +124,11 @@ public sealed record SymbolProperties
         if (TakerFeeRate < 0 || TakerFeeRate > 1)
         {
             throw new ConfigurationException("TakerFeeRate must be in [0, 1].");
+        }
+
+        if (HoldingCostIntervalTicks <= 0)
+        {
+            throw new ConfigurationException("HoldingCostIntervalTicks must be positive.");
         }
     }
 }

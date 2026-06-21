@@ -4,7 +4,7 @@ namespace Chronos.Core.Kernel.Messaging;
 
 /// <summary>
 /// Default implementation of <see cref="IMessageBus"/>.
-/// Thread‑safe and suitable for production use.
+/// Thread‑safe, with deduplication and clean‑up.
 /// </summary>
 public sealed class MessageBus : IMessageBus, IDisposable
 {
@@ -18,15 +18,11 @@ public sealed class MessageBus : IMessageBus, IDisposable
     /// <summary>
     /// Creates a new message bus.
     /// </summary>
-    /// <param name="dedupWindowSeconds">Maximum age of an EventId to consider it a duplicate (default 60 s).</param>
-    /// <param name="cleanupIntervalSeconds">Interval between internal cleanup scans (default 60 s).</param>
     public MessageBus(int dedupWindowSeconds = 60, int cleanupIntervalSeconds = 60)
     {
         _dedupWindowMilliseconds = (long)dedupWindowSeconds * 1000;
         _cleanupIntervalMilliseconds = (long)cleanupIntervalSeconds * 1000;
 
-        // Start with infinite dueTime to prevent callback from running before
-        // the constructor completes. Change will be called after construction.
         _cleanupTimer = new Timer(_ =>
         {
             long cutoff = Environment.TickCount64 - _dedupWindowMilliseconds;
@@ -45,6 +41,7 @@ public sealed class MessageBus : IMessageBus, IDisposable
     public void Publish<T>(T message) where T : IMessage
     {
         ArgumentNullException.ThrowIfNull(message);
+
         if (message.EventId != null)
         {
             long now = Environment.TickCount64;
@@ -70,7 +67,16 @@ public sealed class MessageBus : IMessageBus, IDisposable
 
         foreach (var handler in snapshot)
         {
-            ((Action<T>)handler)(message);
+            try
+            {
+                ((Action<T>)handler)(message);
+            }
+#pragma warning disable CA1031 // Reason: Subscribers must not crash the bus.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                System.Diagnostics.Trace.TraceError($"MessageBus subscriber error: {ex}");
+            }
         }
     }
 
@@ -79,11 +85,13 @@ public sealed class MessageBus : IMessageBus, IDisposable
     {
         ArgumentNullException.ThrowIfNull(handler);
         var type = typeof(T);
+
         lock (_subscriptionLock)
         {
             var handlers = _handlers.GetOrAdd(type, _ => []);
             handlers.Add(handler);
         }
+
         return new Unsubscriber(() =>
         {
             lock (_subscriptionLock)
@@ -101,7 +109,10 @@ public sealed class MessageBus : IMessageBus, IDisposable
     }
 
     /// <inheritdoc/>
-    public void Dispose() => _cleanupTimer.Dispose();
+    public void Dispose()
+    {
+        _cleanupTimer.Dispose();
+    }
 
     private sealed class Unsubscriber(Action action) : IDisposable
     {

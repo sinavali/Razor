@@ -2,7 +2,7 @@ namespace Chronos.Core.Kernel.Clock;
 
 /// <summary>
 /// Wall‑clock time for scheduling, health checks, and order guards.
-/// Never used for market calculations.
+/// Never used for market calculations (Principle 3).
 /// </summary>
 public sealed class SystemClock : IClock
 {

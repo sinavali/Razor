@@ -1,4 +1,5 @@
-#pragma warning disable IDE0290 // Reason: Primary constructor not used here to keep explicit constructor for clarity.
+#pragma warning disable IDE0290 // Reason: Primary constructor not used here for clarity.
+
 namespace Chronos.Core.Kernel.Optimization;
 
 /// <summary>
@@ -8,7 +9,6 @@ public sealed class Chromosome
 {
     /// <summary>
     /// Fitness value that indicates a chromosome has not yet been evaluated.
-    /// Fitness evaluation functions must never return this value.
     /// </summary>
     public const double NotEvaluated = double.NegativeInfinity;
 
@@ -33,7 +33,7 @@ public sealed class Chromosome
         Genes = new double[geneCount];
     }
 
-    /// <summary>Deep Clones the current chromosome.</summary>
+    /// <summary>Deep clones the current chromosome.</summary>
     public Chromosome Clone()
     {
         var clone = new Chromosome(Genes.Length);
@@ -46,8 +46,12 @@ public sealed class Chromosome
     }
 }
 
+/// <summary>
+/// Extension methods for <see cref="Chromosome"/>.
+/// </summary>
 internal static class ChromosomeExtensions
 {
+    /// <summary>Copies genes, fitness, and seed from another chromosome.</summary>
     public static void CopyFrom(this Chromosome target, Chromosome source)
     {
         Array.Copy(source.Genes, target.Genes, target.Genes.Length);

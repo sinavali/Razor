@@ -1,28 +1,20 @@
-using Chronos.Core.Abstractions.Strategies;
 using Chronos.Core.Kernel.Backtesting;
 
 namespace Chronos.Core.Kernel.Metrics;
 
 /// <summary>
-/// Static helper for computing fitness from a backtest result.
+/// Static helper for computing a default fitness from a backtest result.
+/// (Fitness is normally provided by hook plugins; this is a fallback.)
 /// </summary>
 public static class FitnessCalculator
 {
     /// <summary>
-    /// Calculates fitness using the provided <see cref="IFitnessModel"/>.
-    /// If the model is null, returns net profit.
+    /// Computes a default fitness score (net profit). For advanced fitness,
+    /// use the <c>optimization.chromosome.evaluated</c> hook.
     /// </summary>
-    public static double Calculate(BacktestResult result, IFitnessModel? fitnessModel, double initialBalance)
+    public static double Calculate(BacktestResult result, double initialBalance)
     {
         ArgumentNullException.ThrowIfNull(result);
-
-        return fitnessModel?.Evaluate(
-                   result.Balance,
-                   initialBalance,
-                   result.Drawdown,
-                   result.DailyDrawdown,
-                   result.TotalTrades,
-                   result.History)
-               ?? result.Balance - initialBalance;
+        return result.Balance - initialBalance;
     }
 }

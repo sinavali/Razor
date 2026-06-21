@@ -51,7 +51,7 @@ See the `Chronos.Core.Abstractions.Hooks` namespace for the full catalog.
    ```
 3. Add the SDK version attribute:
    ```csharp
-   [assembly: ChronosSdkVersion("1.0.0")]
+   [assembly: SdkVersion("1.0.0")]
    ```
 4. Implement one or more contracts (`IHookManifest`, `IStrategyCapability`, etc.).
 5. Build and place the DLL in the appropriate engine directory.

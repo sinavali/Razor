@@ -42,7 +42,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(null)]
     public void Validate_Invalid_MarginCurrency_Throws(string? currency)
     {
-        var props = CreateValid() with { MarginCurrency = currency! };
+        var props = CreateValid() with
+        {
+            MarginCurrency = currency!
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -51,7 +54,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(-1)]
     public void Validate_ContractSize_Not_Positive_Throws(double contractSize)
     {
-        var props = CreateValid() with { ContractSize = contractSize };
+        var props = CreateValid() with
+        {
+            ContractSize = contractSize
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -60,7 +66,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(-0.001)]
     public void Validate_TickSize_Not_Positive_Throws(double tickSize)
     {
-        var props = CreateValid() with { TickSize = tickSize };
+        var props = CreateValid() with
+        {
+            TickSize = tickSize
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -69,7 +78,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(-1)]
     public void Validate_TickValue_Not_Positive_Throws(double tickValue)
     {
-        var props = CreateValid() with { TickValue = tickValue };
+        var props = CreateValid() with
+        {
+            TickValue = tickValue
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -78,7 +90,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(-0.5)]
     public void Validate_MinVolume_Not_Positive_Throws(double minVolume)
     {
-        var props = CreateValid() with { MinVolume = minVolume };
+        var props = CreateValid() with
+        {
+            MinVolume = minVolume
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -87,7 +102,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(-10)]
     public void Validate_MaxLeverage_Not_Positive_Throws(double maxLeverage)
     {
-        var props = CreateValid() with { MaxLeverage = maxLeverage };
+        var props = CreateValid() with
+        {
+            MaxLeverage = maxLeverage
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -96,21 +114,33 @@ public class SymbolPropertiesValidationTests
     [InlineData(24)]
     public void Validate_SwapRolloverHourUtc_Out_Of_Range_Throws(int hour)
     {
-        var props = CreateValid() with { SwapRolloverHourUtc = hour };
+        var props = CreateValid() with
+        {
+            SwapRolloverHourUtc = hour
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
     [Fact]
     public void Validate_SwapRolloverHourUtc_Boundaries_Acceptable()
     {
-        (CreateValid() with { SwapRolloverHourUtc = 0 }).Validate();
-        (CreateValid() with { SwapRolloverHourUtc = 23 }).Validate();
+        (CreateValid() with
+        {
+            SwapRolloverHourUtc = 0
+        }).Validate();
+        (CreateValid() with
+        {
+            SwapRolloverHourUtc = 23
+        }).Validate();
     }
 
     [Fact]
     public void Validate_TripleSwapDayMultiplier_Negative_Throws()
     {
-        var props = CreateValid() with { TripleSwapDayMultiplier = -0.1 };
+        var props = CreateValid() with
+        {
+            TripleSwapDayMultiplier = -0.1
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -120,7 +150,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(1.1)]
     public void Validate_InitialMarginRate_Out_Of_Range_Throws(double rate)
     {
-        var props = CreateValid() with { InitialMarginRate = rate };
+        var props = CreateValid() with
+        {
+            InitialMarginRate = rate
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -130,7 +163,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(1.1)]
     public void Validate_MaintenanceMarginRate_Out_Of_Range_Throws(double rate)
     {
-        var props = CreateValid() with { MaintenanceMarginRate = rate };
+        var props = CreateValid() with
+        {
+            MaintenanceMarginRate = rate
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -139,7 +175,10 @@ public class SymbolPropertiesValidationTests
     [InlineData(1.1)]
     public void Validate_MakerFeeRate_Out_Of_Range_Throws(double rate)
     {
-        var props = CreateValid() with { MakerFeeRate = rate };
+        var props = CreateValid() with
+        {
+            MakerFeeRate = rate
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
@@ -148,16 +187,31 @@ public class SymbolPropertiesValidationTests
     [InlineData(1.1)]
     public void Validate_TakerFeeRate_Out_Of_Range_Throws(double rate)
     {
-        var props = CreateValid() with { TakerFeeRate = rate };
+        var props = CreateValid() with
+        {
+            TakerFeeRate = rate
+        };
         Assert.Throws<ConfigurationException>(() => props.Validate());
     }
 
     [Fact]
     public void Validate_FeeRates_At_Boundaries_Acceptable()
     {
-        (CreateValid() with { MakerFeeRate = 0 }).Validate();
-        (CreateValid() with { MakerFeeRate = 1 }).Validate();
-        (CreateValid() with { TakerFeeRate = 0 }).Validate();
-        (CreateValid() with { TakerFeeRate = 1 }).Validate();
+        (CreateValid() with
+        {
+            MakerFeeRate = 0
+        }).Validate();
+        (CreateValid() with
+        {
+            MakerFeeRate = 1
+        }).Validate();
+        (CreateValid() with
+        {
+            TakerFeeRate = 0
+        }).Validate();
+        (CreateValid() with
+        {
+            TakerFeeRate = 1
+        }).Validate();
     }
 }

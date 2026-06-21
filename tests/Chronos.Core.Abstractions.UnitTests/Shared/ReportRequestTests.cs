@@ -69,7 +69,11 @@ public class ReportRequestTests
             EndDate = DateTime.UtcNow
         };
 
-        var modified = original with { ReportTitle = "Modified", MaxDrawdown = 10 };
+        var modified = original with
+        {
+            ReportTitle = "Modified",
+            MaxDrawdown = 10
+        };
 
         Assert.Equal("Original", original.ReportTitle);
         Assert.Equal("Modified", modified.ReportTitle);
@@ -90,7 +94,9 @@ public class ReportRequestTests
             EndDate = new DateTime(2024, 6, 30)
         };
 
-        var b = a with { };
+        var b = a with
+        {
+        };
 
         Assert.Equal(a, b);
     }
@@ -109,7 +115,10 @@ public class ReportRequestTests
             EndDate = new DateTime(2024, 6, 30)
         };
 
-        var b = a with { ReportTitle = "R2" };
+        var b = a with
+        {
+            ReportTitle = "R2"
+        };
 
         Assert.NotEqual(a, b);
     }

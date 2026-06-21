@@ -19,24 +19,45 @@ public class GeneInjectorTests
     private sealed class MultiTypeStrategy
     {
         [Gene(0, 100, 1, GeneType.Discrete)]
-        public int IntVal { get; set; }
+        public int IntVal
+        {
+            get; set;
+        }
 
         [Gene(0, 200, 1, GeneType.Discrete)]
-        public long LongVal { get; set; }
+        public long LongVal
+        {
+            get; set;
+        }
 
         [Gene(0, 10, 0, GeneType.Continuous)]
-        public float FloatVal { get; set; }
+        public float FloatVal
+        {
+            get; set;
+        }
 
         [Gene(0, 10, 0, GeneType.Continuous)]
-        public decimal DecimalVal { get; set; }
+        public decimal DecimalVal
+        {
+            get; set;
+        }
     }
 
-    private sealed class NoGenes { public int NotGene { get; set; } }
+    private sealed class NoGenes
+    {
+        public int NotGene
+        {
+            get; set;
+        }
+    }
 
     private sealed class SingleGeneStrategy
     {
         [Gene(0, 100, 0, GeneType.Continuous)]
-        public double Value { get; set; }
+        public double Value
+        {
+            get; set;
+        }
     }
 
     private sealed class ParametricStrategy
@@ -67,9 +88,13 @@ public class GeneInjectorTests
         public double[] Predict(double[] inputs) => [0];
         public void LoadParameters(double[] genes) => _params = (double[])genes.Clone();
         public double[] ExportParameters() => (double[])_params.Clone();
-        public void Reset() { }
+        public void Reset()
+        {
+        }
         public byte[] SerializeState() => [];
-        public void DeserializeState(byte[] state) { }
+        public void DeserializeState(byte[] state)
+        {
+        }
     }
 
     private sealed class ZeroParamNetwork : INeuralNetworkModel
@@ -79,11 +104,17 @@ public class GeneInjectorTests
         public int OutputSize => 1;
         public int ParameterCount => 0;
         public double[] Predict(double[] inputs) => [0];
-        public void LoadParameters(double[] genes) { }
+        public void LoadParameters(double[] genes)
+        {
+        }
         public double[] ExportParameters() => [];
-        public void Reset() { }
+        public void Reset()
+        {
+        }
         public byte[] SerializeState() => [];
-        public void DeserializeState(byte[] state) { }
+        public void DeserializeState(byte[] state)
+        {
+        }
     }
 
     private static readonly double[] ClampGenes = { 99.0, 2.09 };
@@ -289,7 +320,7 @@ public class GeneInjectorTests
     [Fact]
     public void GenerateRandomGene_Continuous()
     {
-        var rng = new ChronosRandom(42);
+        var rng = new CustomizedRandom(42);
         double val = GeneInjector.GenerateRandomGene(rng, 10, 20, 0);
         Assert.InRange(val, 10, 20);
     }
@@ -297,7 +328,7 @@ public class GeneInjectorTests
     [Fact]
     public void GenerateRandomGene_Discrete_Step()
     {
-        var rng = new ChronosRandom(42);
+        var rng = new CustomizedRandom(42);
         double val = GeneInjector.GenerateRandomGene(rng, 0, 100, 10);
         Assert.True(val % 10 == 0);
     }

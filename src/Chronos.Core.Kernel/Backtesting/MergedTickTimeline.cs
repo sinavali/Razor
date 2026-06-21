@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Kernel.Backtesting;
@@ -9,15 +8,18 @@ namespace Chronos.Core.Kernel.Backtesting;
 public static class MergedTickTimeline
 {
     /// <summary>Yields ticks in chronological order across all streams.</summary>
-    public static IEnumerable<(long Time, int StreamIndex, Tick Tick)> EnumerateEvents(IReadOnlyList<Tick>[] streams, string[] symbols)
+    public static IEnumerable<(long Time, int StreamIndex, Tick Tick)> EnumerateEvents(
+        IReadOnlyList<Tick>[] streams, string[] symbols)
     {
         ArgumentNullException.ThrowIfNull(streams);
         ArgumentNullException.ThrowIfNull(symbols);
 
         if (streams.Length != symbols.Length)
         {
-            throw new ArgumentException($"Streams count ({streams.Length}) must equal symbols count ({symbols.Length}).");
+            throw new ArgumentException(
+                $"Streams count ({streams.Length}) must equal symbols count ({symbols.Length}).");
         }
+
         int streamCount = streams.Length;
         if (streamCount == 0)
         {
@@ -32,13 +34,13 @@ public static class MergedTickTimeline
         });
 
         var queue = new PriorityQueue<int, (long, int)>(comparer);
-        long[] lastTimePerStream = new long[streamCount];
+        var lastTimePerStream = new long[streamCount];
 
         for (int i = 0; i < streamCount; i++)
         {
             lastTimePerStream[i] = long.MinValue;
 
-            if (streams[i] == null)
+            if (streams[i] is null)
             {
                 continue;
             }
@@ -56,14 +58,18 @@ public static class MergedTickTimeline
             var e = enumerators[idx];
             var currentTick = e.Current;
 
-            // ARCH-08 Fix: Hard strict validation for sorted invariants per Principle 8.
+            // Enforce sorted invariant per Principle 8
             if (currentTick.Time < lastTimePerStream[idx])
             {
-                throw new InvalidOperationException($"Stream {idx} ({symbols[idx]}) contains unsorted ticks: {currentTick.Time} < {lastTimePerStream[idx]}");
+                throw new InvalidOperationException(
+                    $"Stream {idx} ({symbols[idx]}) contains unsorted ticks: " +
+                    $"{currentTick.Time} < {lastTimePerStream[idx]}");
             }
+
             lastTimePerStream[idx] = currentTick.Time;
 
             yield return (currentTick.Time, idx, currentTick);
+
             if (e.MoveNext())
             {
                 queue.Enqueue(idx, (e.Current.Time, idx));

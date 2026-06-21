@@ -5,38 +5,23 @@ namespace Chronos.Core.Kernel.Backtesting;
 /// <summary>
 /// Immutable result of a completed backtest.
 /// </summary>
-public sealed record BacktestResult
+public sealed record BacktestResult : IBacktestResult
 {
-    /// <summary>Final account balance.</summary>
-    public double Balance
-    {
-        get; init;
-    }
+    /// <inheritdoc/>
+    public double Balance { get; init; }
 
-    /// <summary>Final equity (balance + floating PnL).</summary>
-    public double Equity
-    {
-        get; init;
-    }
+    /// <inheritdoc/>
+    public double Equity { get; init; }
 
-    /// <summary>Maximum drawdown percentage observed.</summary>
-    public double Drawdown
-    {
-        get; init;
-    }
+    /// <inheritdoc/>
+    public double Drawdown { get; init; }
 
-    /// <summary>Maximum daily drawdown percentage observed.</summary>
-    public double DailyDrawdown
-    {
-        get; init;
-    }
+    /// <inheritdoc/>
+    public double DailyDrawdown { get; init; }
 
-    /// <summary>Total number of trades (full + partial closes).</summary>
-    public int TotalTrades
-    {
-        get; init;
-    }
+    /// <inheritdoc/>
+    public int TotalTrades { get; init; }
 
-    /// <summary>Complete trade history in chronological order.</summary>
-    public IReadOnlyList<Position> History { get; init; } = [];
+    /// <inheritdoc/>
+    public IReadOnlyList<Position> History { get; init; } = Array.Empty<Position>();
 }

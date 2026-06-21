@@ -1,5 +1,5 @@
-using System.Collections.Immutable;
 using Chronos.Core.Abstractions.Shared;
+using System.Collections.Immutable;
 
 namespace Chronos.Core.Abstractions.IntegrationTests.Shared;
 

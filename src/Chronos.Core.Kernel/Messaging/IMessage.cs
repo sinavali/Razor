@@ -8,8 +8,10 @@ public interface IMessage
 {
     /// <summary>UTC timestamp when the message was created.</summary>
     DateTime Timestamp { get; }
+
     /// <summary>Optional correlation identifier for linking related events.</summary>
     Guid? CorrelationId { get; }
+
     /// <summary>Optional unique event identifier for deduplication.</summary>
     string? EventId { get; }
 }

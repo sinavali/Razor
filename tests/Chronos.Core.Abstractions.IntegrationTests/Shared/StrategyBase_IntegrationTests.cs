@@ -1,6 +1,6 @@
-using System.Collections.Immutable;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Slots;
+using System.Collections.Immutable;
 
 namespace Chronos.Core.Abstractions.IntegrationTests.Shared;
 
@@ -48,9 +48,13 @@ public class StrategyBase_IntegrationTests
         public double[] Predict(double[] inputs) => [0, 0];
         public void LoadParameters(double[] genes) => Array.Copy(genes, _params, 5);
         public double[] ExportParameters() => (double[])_params.Clone();
-        public void Reset() { }
+        public void Reset()
+        {
+        }
         public byte[] SerializeState() => [];
-        public void DeserializeState(byte[] state) { }
+        public void DeserializeState(byte[] state)
+        {
+        }
     }
 
     private sealed class DummyBroker : IBroker
@@ -90,7 +94,9 @@ public class StrategyBase_IntegrationTests
         public IReadOnlyList<Indicator> ActiveIndicators => Array.Empty<Indicator>();
         public T Get<T>(params object[] args) where T : Indicator => null!;
         public bool Unregister(Indicator indicator) => false;
-        public void DisposeAll() { }
+        public void DisposeAll()
+        {
+        }
     }
 
     private static readonly string[] BtcSymbols = { "BTCUSDT" };

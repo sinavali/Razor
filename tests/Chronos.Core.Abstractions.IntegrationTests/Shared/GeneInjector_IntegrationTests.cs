@@ -16,16 +16,56 @@ public class GeneInjector_IntegrationTests
 
     private sealed class BigStrategy
     {
-        [Gene(0, 100, 1, GeneType.Discrete)] public int P1 { get; set; }
-        [Gene(0, 200, 1, GeneType.Discrete)] public int P2 { get; set; }
-        [Gene(0, 300, 1, GeneType.Discrete)] public int P3 { get; set; }
-        [Gene(0, 400, 1, GeneType.Discrete)] public int P4 { get; set; }
-        [Gene(0, 500, 1, GeneType.Discrete)] public int P5 { get; set; }
-        [Gene(0, 100, 0, GeneType.Continuous)] public double C1 { get; set; }
-        [Gene(0, 200, 0, GeneType.Continuous)] public double C2 { get; set; }
-        [Gene(-10, 10, 0, GeneType.Parametric)] public double W1 { get; set; }
-        [Gene(-10, 10, 0, GeneType.Parametric)] public double W2 { get; set; }
-        [Gene(0, 50, 1, GeneType.Categorical)] public int Cat { get; set; }
+        [Gene(0, 100, 1, GeneType.Discrete)]
+        public int P1
+        {
+            get; set;
+        }
+        [Gene(0, 200, 1, GeneType.Discrete)]
+        public int P2
+        {
+            get; set;
+        }
+        [Gene(0, 300, 1, GeneType.Discrete)]
+        public int P3
+        {
+            get; set;
+        }
+        [Gene(0, 400, 1, GeneType.Discrete)]
+        public int P4
+        {
+            get; set;
+        }
+        [Gene(0, 500, 1, GeneType.Discrete)]
+        public int P5
+        {
+            get; set;
+        }
+        [Gene(0, 100, 0, GeneType.Continuous)]
+        public double C1
+        {
+            get; set;
+        }
+        [Gene(0, 200, 0, GeneType.Continuous)]
+        public double C2
+        {
+            get; set;
+        }
+        [Gene(-10, 10, 0, GeneType.Parametric)]
+        public double W1
+        {
+            get; set;
+        }
+        [Gene(-10, 10, 0, GeneType.Parametric)]
+        public double W2
+        {
+            get; set;
+        }
+        [Gene(0, 50, 1, GeneType.Categorical)]
+        public int Cat
+        {
+            get; set;
+        }
     }
 
     private sealed class CategoricalOnlyStrategy
@@ -44,9 +84,13 @@ public class GeneInjector_IntegrationTests
         public double[] Predict(double[] inputs) => [0];
         public void LoadParameters(double[] genes) => _params = (double[])genes.Clone();
         public double[] ExportParameters() => (double[])_params.Clone();
-        public void Reset() { }
+        public void Reset()
+        {
+        }
         public byte[] SerializeState() => [];
-        public void DeserializeState(byte[] state) { }
+        public void DeserializeState(byte[] state)
+        {
+        }
     }
 
     private sealed class BigNetwork : INeuralNetworkModel
@@ -59,9 +103,13 @@ public class GeneInjector_IntegrationTests
         public double[] Predict(double[] inputs) => new double[10];
         public void LoadParameters(double[] genes) => Array.Copy(genes, _params, 1000);
         public double[] ExportParameters() => (double[])_params.Clone();
-        public void Reset() { }
+        public void Reset()
+        {
+        }
         public byte[] SerializeState() => [];
-        public void DeserializeState(byte[] state) { }
+        public void DeserializeState(byte[] state)
+        {
+        }
     }
 
     private static readonly double[] TestInputs = { 0.5, 0.2 };

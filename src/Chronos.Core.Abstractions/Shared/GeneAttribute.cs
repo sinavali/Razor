@@ -1,6 +1,6 @@
 namespace Chronos.Core.Abstractions.Shared;
 
-/// <summary>Type of gene (affects mutation behaviour).</summary>
+/// <summary>Type of gene (affects mutation behavior).</summary>
 public enum GeneType
 {
     /// <summary>Continuous range.</summary>
@@ -53,29 +53,32 @@ public sealed class GeneAttribute : Attribute
     {
         if (min > max)
         {
-            throw new ArgumentException("A gene cannot have a minimum value greater than its maximum value.");
+            throw new ArgumentException($"Gene minimum value ({min}) cannot be greater than maximum value ({max}).");
         }
 
         if (step < 0)
         {
-            throw new ArgumentException("Gene step must be non‑negative.");
+            throw new ArgumentException($"Gene step must be non-negative. Provided: {step}.");
         }
 
         // For Continuous, Structural, and Parametric genes, stepping is not applied.
-        // Reject non‑zero step values to avoid silent misinterpretation.
+        // Reject non‑zero-step values to avoid silent misinterpretation.
         if (type is GeneType.Continuous or GeneType.Structural or GeneType.Parametric)
         {
             if (step != 0)
             {
                 throw new ArgumentException(
-                    $"A step value is not valid for gene type '{type}'. Only Discrete and Categorical genes may have a non‑zero step.");
+                    $"Step must be 0 for {type} genes. Provided: {step}. " +
+                    "Only Discrete and Categorical genes support non-zero steps.");
             }
         }
         else // Discrete or Categorical
         {
             if (step < 1)
             {
-                throw new ArgumentException("Categorical and Discrete genes must have a step of at least 1.");
+                throw new ArgumentException(
+                    $"Step must be at least 1 for {type} genes. Provided: {step}. " +
+                    "Discrete and Categorical genes require a positive integer step size.");
             }
         }
 

@@ -4,7 +4,9 @@ namespace Chronos.Core.Abstractions.UnitTests.Shared;
 
 internal sealed class TestableIndicator : Indicator
 {
-    public override void Calculate(long index) { }
+    public override void Calculate(long index)
+    {
+    }
 }
 
 public class IndicatorTests

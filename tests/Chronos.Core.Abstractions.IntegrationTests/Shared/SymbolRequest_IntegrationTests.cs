@@ -1,5 +1,5 @@
-using System.Collections.Immutable;
 using Chronos.Core.Abstractions.Shared;
+using System.Collections.Immutable;
 
 namespace Chronos.Core.Abstractions.IntegrationTests.Shared;
 
@@ -25,7 +25,10 @@ public class SymbolRequest_IntegrationTests
     public void With_Expression_Works()
     {
         var sr = new SymbolRequest("BTCUSDT", ImmutableArray.Create(TimeFrame.M5));
-        var modified = sr with { Symbol = "ETHUSDT" };
+        var modified = sr with
+        {
+            Symbol = "ETHUSDT"
+        };
         Assert.Equal("BTCUSDT", sr.Symbol);
         Assert.Equal("ETHUSDT", modified.Symbol);
     }

@@ -61,7 +61,11 @@ public sealed class BorrowedTickData_IntegrationTests : IDisposable
         public Task DisconnectAsync() => Task.CompletedTask;
         public Task<HistoricalDataResponse> FetchHistoryToBinaryFileAsync(HistoricalDataRequest r, CancellationToken ct) => Task.FromResult(new HistoricalDataResponse());
         public Task DeleteHistoryFileAsync(string path) => Task.CompletedTask;
-        public Task NotifyFileSafeToDeleteAsync(string path) { NotifyCount++; return Task.CompletedTask; }
+        public Task NotifyFileSafeToDeleteAsync(string path)
+        {
+            NotifyCount++;
+            return Task.CompletedTask;
+        }
         public Task SubscribeAsync(string symbol) => Task.CompletedTask;
         public Task UnsubscribeAsync(string symbol) => Task.CompletedTask;
 #pragma warning disable CS0067

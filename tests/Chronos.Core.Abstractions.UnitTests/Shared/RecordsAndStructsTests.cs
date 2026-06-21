@@ -1,5 +1,5 @@
-using System.Reflection;
 using Chronos.Core.Abstractions.Shared;
+using System.Reflection;
 
 namespace Chronos.Core.Abstractions.UnitTests.Shared;
 
@@ -68,7 +68,10 @@ public class OrderTests
     public void Immutability_With()
     {
         var o = new Order { Ticket = 123, Symbol = "EURUSD" };
-        var copy = o with { Ticket = 456 };
+        var copy = o with
+        {
+            Ticket = 456
+        };
         Assert.Equal(123, o.Ticket);
         Assert.Equal(456, copy.Ticket);
     }
@@ -120,7 +123,10 @@ public class PositionTests
     public void With_Changes()
     {
         var p = new Position { Ticket = 1 };
-        var modified = p with { Volume = 2.0 };
+        var modified = p with
+        {
+            Volume = 2.0
+        };
         Assert.Equal(1L, p.Ticket);
         Assert.Equal(2.0, modified.Volume);
     }
@@ -204,7 +210,10 @@ public class SymbolPropertiesTests
     public void With_Change()
     {
         var a = CreateDefault();
-        var b = a with { TickSize = 0.05 };
+        var b = a with
+        {
+            TickSize = 0.05
+        };
         Assert.NotEqual(a, b);
     }
 

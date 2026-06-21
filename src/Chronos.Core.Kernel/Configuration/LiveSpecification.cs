@@ -1,6 +1,4 @@
-using System.Collections.Immutable;
 using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Strategies;
 
 namespace Chronos.Core.Kernel.Configuration;
 
@@ -12,11 +10,8 @@ public sealed record LiveSpecification
     /// <summary>Unique magic number for order tagging.</summary>
     public required int MagicNumber { get; init; }
 
-    /// <summary>A Timeout for Order requests in seconds</summary>
+    /// <summary>Timeout in seconds for duplicate order rejection (in‑flight guard).</summary>
     public int OrderGuardTimeoutSeconds { get; init; } = 5;
-
-    /// <summary>Notification channels.</summary>
-    public ImmutableArray<INotificationChannel> NotificationChannels { get; init; } = [];
 
     /// <summary>Validates this specification and throws <see cref="ConfigurationException"/> if invalid.</summary>
     public void Validate()
@@ -33,14 +28,12 @@ public sealed record LiveSpecification
     }
 
     /// <summary>Creates a validated instance.</summary>
-    public static LiveSpecification CreateValidated(
-        int magicNumber,
-        ImmutableArray<INotificationChannel>? notificationChannels = null)
+    public static LiveSpecification CreateValidated(int magicNumber, int orderGuardTimeoutSeconds = 5)
     {
         var spec = new LiveSpecification
         {
             MagicNumber = magicNumber,
-            NotificationChannels = notificationChannels ?? []
+            OrderGuardTimeoutSeconds = orderGuardTimeoutSeconds
         };
         spec.Validate();
         return spec;

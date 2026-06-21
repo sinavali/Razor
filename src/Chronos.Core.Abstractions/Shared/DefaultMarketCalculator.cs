@@ -2,7 +2,7 @@ namespace Chronos.Core.Abstractions.Shared;
 
 /// <summary>
 /// Base class for <see cref="IMarketCalculator"/> implementations.
-/// Provides standard normalisation and margin/PnL logic that adapters can override
+/// Provides standard normalization and margin/PnL logic that adapters can override
 /// when an exchange requires different formulas.
 /// </summary>
 public abstract class DefaultMarketCalculator : IMarketCalculator
@@ -87,7 +87,9 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
             return 0;
         }
 
-        double periods = (currentTime - lastFundingTime) / (double)TimeSpan.TicksPerHour;
+        // Use the interval defined in SymbolProperties (default to 1 hour if not set)
+        long intervalTicks = props.HoldingCostIntervalTicks > 0 ? props.HoldingCostIntervalTicks : TimeSpan.TicksPerHour;
+        double periods = (currentTime - lastFundingTime) / (double)intervalTicks;
         double positionValue = openPrice * volume * props.ContractSize;
         double payment = positionValue * fundingRate * periods;
         return type == OrderType.Buy ? -payment : payment;
@@ -98,7 +100,10 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
                                                double bid, double ask, double orderPrice)
     {
         ArgumentNullException.ThrowIfNull(props);
-        double triggerPrice = props.PendingTrigger switch
+
+        // For buy orders, use the trigger mode to choose bid or ask.
+        // For sell orders, always use ask for limit/stop checks (exchange convention).
+        double buyTriggerPrice = props.PendingTrigger switch
         {
             PendingOrderTriggerMode.UseBidForBuy => bid,
             PendingOrderTriggerMode.UseAskForBuy => ask,
@@ -106,20 +111,20 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
             _ => ask
         };
 
-        double sellTrigger = props.PendingTrigger switch
+        double sellTriggerPrice = props.PendingTrigger switch
         {
-            PendingOrderTriggerMode.UseBidForBuy => bid,
-            PendingOrderTriggerMode.UseAskForBuy => ask,
-            PendingOrderTriggerMode.UseMidPrice => (bid + ask) * 0.5,
-            _ => bid
+            // For sell orders, we typically use ask for limit and bid for stop,
+            // but we simplify by using ask for limit and bid for stop.
+            // More precise: SellLimit triggers when ask >= orderPrice, SellStop when bid <= orderPrice.
+            _ => (pendingType == OrderType.SellLimit) ? ask : bid
         };
 
         return pendingType switch
         {
-            OrderType.BuyLimit => triggerPrice <= orderPrice,
-            OrderType.SellLimit => sellTrigger >= orderPrice,
-            OrderType.BuyStop => triggerPrice >= orderPrice,
-            OrderType.SellStop => sellTrigger <= orderPrice,
+            OrderType.BuyLimit => buyTriggerPrice <= orderPrice,
+            OrderType.SellLimit => sellTriggerPrice >= orderPrice,
+            OrderType.BuyStop => buyTriggerPrice >= orderPrice,
+            OrderType.SellStop => sellTriggerPrice <= orderPrice,
             _ => false
         };
     }
@@ -131,5 +136,12 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
         ArgumentNullException.ThrowIfNull(props);
         return CalculateSwap(props, volume, type, fromTime, toTime)
              + CalculateFunding(props, volume, openPrice, type, toTime, fromTime);
+    }
+
+    /// <inheritdoc/>
+    public virtual double CalculateSlippage(SymbolProperties props, OrderType type, double volume, double price)
+    {
+        ArgumentNullException.ThrowIfNull(props);
+        return 0.0;
     }
 }

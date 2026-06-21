@@ -1,7 +1,6 @@
-using System.Collections.Immutable;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Slots;
-using Xunit.Abstractions;
+using System.Collections.Immutable;
 
 namespace Chronos.Core.Abstractions.UnitTests.Shared;
 

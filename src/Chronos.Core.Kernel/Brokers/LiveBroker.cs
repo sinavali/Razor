@@ -1,58 +1,53 @@
-#pragma warning disable CA1031 // Reason: General exceptions caught in background loop and event
-// handler to prevent process crash per Principle 13.
+#pragma warning disable CA1031 // Reason: Background tasks and event handlers must not crash the process (Principle 13)
 
-using Chronos.Core.Abstractions.Adapters;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Kernel.Events;
-using Chronos.Core.Kernel.Telemetry;
-using Chronos.Core.Kernel.Clock;
-using Chronos.Core.Kernel.Messaging;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Chronos.Core.Abstractions.Hooks;
+using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Abstractions.Slots;
+using Chronos.Core.Kernel.Clock;
+using Chronos.Core.Kernel.Events;
+using Chronos.Core.Kernel.Hooks;
+using Chronos.Core.Kernel.Messaging;
+using Chronos.Core.Kernel.Telemetry;
 
 namespace Chronos.Core.Kernel.Brokers;
 
 /// <summary>
-/// Live broker that wraps an <see cref="IAdapter"/> for real exchange trading.
-/// Handles state synchronisation, order execution, telemetry, stop‑out protection,
-/// and reconnection.  All market‑time calculations are tick‑driven; wall‑clock time is
-/// used exclusively for in‑flight guards and telemetry (Principle 3).
+/// Live broker wrapping an <see cref="IAdapterCapability"/> for real exchange trading.
+/// All market‑time calculations are tick‑driven; wall‑clock is used only for in‑flight guards and telemetry.
 /// </summary>
 public sealed class LiveBroker : IBroker, IAsyncDisposable
 {
-    // ── dependencies ──────────────────────────────────────────────
-    private readonly IAdapter _adapter;
+    private readonly IAdapterCapability _adapter;
     private readonly int _magicNumber;
-    private readonly IReadOnlyList<INotificationChannel> _notifiers;
-    private readonly long _syncIntervalTicks;
     private readonly double _leverage;
     private readonly IMessageBus? _messageBus;
     private readonly TickClock _marketClock;
     private readonly SystemClock _wallClock;
-    private readonly IChronosMetrics _metrics;
+    private readonly ICoreMetrics _metrics;
     private readonly int _orderGuardTimeoutSeconds;
     private readonly double _stopOutLevel;
+    private readonly ILiveHooks? _hooks;
+    private readonly long _syncIntervalTicks;
 
-    // ── synchronisation primitives ────────────────────────────────
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private CancellationTokenSource? _lifecycleCts;
     private long _orderSequence;
     private bool _isDisposing;
 
-    // ── mutable state (all access protected by _stateLock) ────────
-    private readonly List<Position> _openPositions = [];
-    private readonly List<Position> _history = [];
-    private readonly List<Order> _pendingOrders = [];
-    private readonly Dictionary<long, Position> _positionMap = [];
+    private readonly List<Position> _openPositions = new();
+    private readonly List<Position> _history = new();
+    private readonly List<Order> _pendingOrders = new();
+    private readonly Dictionary<long, Position> _positionMap = new();
     private readonly ConcurrentDictionary<string, long> _inFlightOps = new();
 
-    private readonly Dictionary<string, SymbolProperties> _symbolSpecs =
-        new(StringComparer.OrdinalIgnoreCase);
+    // Track tickets that are currently being liquidated to avoid stop-out spam
+    private readonly HashSet<long> _liquidationTickets = new();
 
-    private readonly Dictionary<string, (double Bid, double Ask)> _lastPrices =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SymbolProperties> _symbolSpecs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (double Bid, double Ask)> _lastPrices = new(StringComparer.OrdinalIgnoreCase);
 
     private double _balance;
     private double _equity;
@@ -62,75 +57,22 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     private long _lastSyncTime;
     private long _nextHoldingCostTime;
 
-    // ── IBroker properties ────────────────────────────────────────
+    // Reconnection state
+    private readonly TimeSpan _reconnectBaseDelay = TimeSpan.FromSeconds(2);
+    private int _reconnectAttempt;
+    private bool _reconnectRunning;
 
     /// <inheritdoc/>
-    public double Balance
-    {
-        get
-        {
-            _stateLock.Wait();
-            try
-            {
-                return _balance;
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-        }
-    }
+    public double Balance => GetState(() => _balance);
 
     /// <inheritdoc/>
-    public double Equity
-    {
-        get
-        {
-            _stateLock.Wait();
-            try
-            {
-                return _equity;
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-        }
-    }
+    public double Equity => GetState(() => _equity);
 
     /// <inheritdoc/>
-    public double MarginUsed
-    {
-        get
-        {
-            _stateLock.Wait();
-            try
-            {
-                return _marginUsed;
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-        }
-    }
+    public double MarginUsed => GetState(() => _marginUsed);
 
     /// <inheritdoc/>
-    public double FreeMargin
-    {
-        get
-        {
-            _stateLock.Wait();
-            try
-            {
-                return _equity - _marginUsed;
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-        }
-    }
+    public double FreeMargin => GetState(() => _equity - _marginUsed);
 
     /// <inheritdoc/>
     public double MaxDrawdown { get; private set; }
@@ -141,33 +83,33 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     /// <inheritdoc/>
     public bool IsWarmup => false;
 
-    // ── constructor ───────────────────────────────────────────────
-
-    /// <summary>Constructs the live broker.</summary>
+    /// <summary>
+    /// Constructs the live broker.
+    /// </summary>
     public LiveBroker(
-        IAdapter adapter,
+        IAdapterCapability adapter,
         int magicNumber,
         double leverage,
         TickClock marketClock,
         SystemClock wallClock,
-        IChronosMetrics metrics,
-        IReadOnlyList<INotificationChannel>? notifiers = null,
+        ICoreMetrics metrics,
         IMessageBus? messageBus = null,
+        ILiveHooks? hooks = null,
         int orderGuardTimeoutSeconds = 5,
-        TimeFrame syncInterval = TimeFrame.M1,
-        double stopOutLevel = 0.50)
+        double stopOutLevel = 0.50,
+        long syncIntervalTicks = TimeSpan.TicksPerMinute)
     {
         _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
         _magicNumber = magicNumber;
         _leverage = leverage;
         _stopOutLevel = stopOutLevel;
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
-        _notifiers = notifiers ?? [];
         _messageBus = messageBus;
         _marketClock = marketClock ?? throw new ArgumentNullException(nameof(marketClock));
         _wallClock = wallClock ?? throw new ArgumentNullException(nameof(wallClock));
         _orderGuardTimeoutSeconds = orderGuardTimeoutSeconds;
-        _syncIntervalTicks = (long)syncInterval * TimeSpan.TicksPerMinute;
+        _syncIntervalTicks = syncIntervalTicks;
+        _hooks = hooks;
 
         _adapter.OnExecutionUpdate += report =>
             _ = Task.Run(() => HandleExecutionReportAsync(report)).ContinueWith(t =>
@@ -179,9 +121,9 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
-    // ── initialisation ────────────────────────────────────────────
+    // ── Initialisation ────────────────────────────────────────────
 
-    /// <summary>Applies specific Symbol Properties internally.</summary>
+    /// <summary>Sets symbol specifications for the given symbol.</summary>
     public async Task SetSymbolSpecsAsync(string symbol, SymbolProperties specs)
     {
         await _stateLock.WaitAsync().ConfigureAwait(false);
@@ -199,8 +141,10 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     public async Task InitializeLiveStateAsync(CancellationToken cancellationToken)
     {
         await ReconcileAsync(cancellationToken).ConfigureAwait(false);
+        _lifecycleCts?.Dispose(); // ensure previous is disposed
         _lifecycleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _ = Task.Run(() => PeriodicSyncLoopAsync(_lifecycleCts.Token), _lifecycleCts.Token);
+        _ = Task.Run(() => StartReconnectionLoopAsync(_lifecycleCts.Token), _lifecycleCts.Token);
     }
 
     private async Task PeriodicSyncLoopAsync(CancellationToken ct)
@@ -223,7 +167,63 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
     }
 
-    // ── state synchronisation ─────────────────────────────────────
+    private async Task StartReconnectionLoopAsync(CancellationToken ct)
+    {
+        if (_reconnectRunning)
+        {
+            return;
+        }
+
+        _reconnectRunning = true;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                if (!_adapter.IsConnected)
+                {
+                    _reconnectAttempt++;
+                    _hooks?.OnReconnectAttempt.InvokeActionChain(
+                        _reconnectAttempt,
+                        new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                            _adapter.IsConnected, "live.reconnect.attempt"));
+
+                    bool success = await _adapter.ConnectAsync(ct).ConfigureAwait(false);
+                    if (success)
+                    {
+                        _metrics.SetConnectionState(true, _adapter.Name);
+                        _messageBus?.Publish(new ConnectionStateEvent(true, _adapter.Name)
+                        {
+                            Timestamp = _wallClock.GetUtcNow()
+                        });
+                        _hooks?.OnReconnectSuccess.InvokeActionChain(
+                            _reconnectAttempt,
+                            new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                                true, "live.reconnect.success"));
+                        _reconnectAttempt = 0;
+                        await ReconcileAsync(ct).ConfigureAwait(false);
+                        // Do NOT fire OnStart again; it's a session-begin event.
+                    }
+                    else
+                    {
+                        // backoff
+                        double delay = Math.Min(60, _reconnectBaseDelay.TotalSeconds * Math.Pow(1.5, _reconnectAttempt));
+                        await Task.Delay(TimeSpan.FromSeconds(delay), ct).ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    _reconnectAttempt = 0;
+                    await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+                }
+            }
+        }
+        finally
+        {
+            _reconnectRunning = false;
+        }
+    }
+
+    // ── State synchronisation ─────────────────────────────────────
 
     /// <inheritdoc/>
     public async Task SyncStateAsync(CancellationToken cancellationToken)
@@ -238,6 +238,10 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                _hooks?.OnSyncBefore.InvokeActionChain(
+                    new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                        _adapter.IsConnected, "live.sync.before"));
+
                 var (balance, equity) = await _adapter.GetAccountInfoAsync(cancellationToken).ConfigureAwait(false);
                 _balance = balance;
                 _equity = equity;
@@ -262,6 +266,10 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 _marginUsed = CalculateTotalMarginUsed();
                 UpdateDrawdowns();
                 _lastSyncTime = _marketClock.GetTimestamp();
+
+                _hooks?.OnSyncAfter.InvokeActionChain(
+                    new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                        _adapter.IsConnected, "live.sync.after"));
             }
             finally
             {
@@ -274,7 +282,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
     }
 
-    /// <summary>Forces a complete reconciliation against the adapter states.</summary>
+    /// <summary>Full reconciliation against the adapter.</summary>
     public async Task ReconcileAsync(CancellationToken cancellationToken)
     {
         await _syncGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -337,32 +345,48 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
     }
 
-    // ── order entry ───────────────────────────────────────────────
+    // ── Order entry ────────────────────────────────────────────────
 
     /// <inheritdoc/>
     public async Task<AdapterOrderResponse> ExecuteMarketOrderAsync(
         string symbol, OrderType type, double volume, double sl = 0, double tp = 0, string comment = "")
     {
+        var request = new AdapterOrderRequest
+        {
+            Symbol = symbol,
+            Type = type,
+            Volume = volume,
+            StopLoss = sl,
+            TakeProfit = tp,
+            Comment = comment,
+            MagicNumber = _magicNumber
+        };
+
+        if (!InvokeOrderValidationFilter(request, out var filtered, out var rejectReason))
+        {
+            return new AdapterOrderResponse { Success = false, ErrorMessage = rejectReason ?? "Rejected by filter" };
+        }
+
+        if (!InvokeOrderBeforeSendFilter(filtered, out filtered, out rejectReason))
+        {
+            return new AdapterOrderResponse { Success = false, ErrorMessage = rejectReason ?? "Rejected by filter" };
+        }
+
         string key = NextOrderKey(symbol);
         if (!TryAcquireInFlight(key))
         {
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Duplicate in‑flight order" };
         }
 
-        if (!_lastPrices.TryGetValue(symbol, out var px))
+        if (!_lastPrices.TryGetValue(symbol, out var px) || !_symbolSpecs.TryGetValue(symbol, out var spec))
         {
-            return new AdapterOrderResponse { Success = false, ErrorMessage = "Price not available" };
-        }
-
-        if (!_symbolSpecs.TryGetValue(symbol, out var spec))
-        {
-            return new AdapterOrderResponse { Success = false, ErrorMessage = "Symbol properties not available" };
+            return new AdapterOrderResponse
+                { Success = false, ErrorMessage = "Price or symbol properties not available" };
         }
 
         double refPrice = type == OrderType.Buy ? px.Ask : px.Bid;
         double requiredMargin = _adapter.Calculator.CalculateRequiredMargin(spec, refPrice, volume, _leverage);
 
-        // Perform margin check under lock for a consistent snapshot
         bool marginOk;
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
@@ -379,20 +403,8 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
         }
 
-        Broadcast($"[bold green]LIVE EXECUTION:[/] {type} {volume} {symbol}");
         var sw = Stopwatch.StartNew();
-
-        var response = await _adapter.ExecuteOrderAsync(new AdapterOrderRequest
-        {
-            Symbol = symbol,
-            Type = type,
-            Volume = volume,
-            StopLoss = sl,
-            TakeProfit = tp,
-            Comment = comment,
-            MagicNumber = _magicNumber
-        }).ConfigureAwait(false);
-
+        var response = await _adapter.ExecuteOrderAsync(filtered).ConfigureAwait(false);
         sw.Stop();
         RecordTelemetry(response.Success, sw.ElapsedMilliseconds);
 
@@ -410,6 +422,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             }
         }
 
+        InvokeOrderExecutedHook(filtered, response);
         return response;
     }
 
@@ -417,6 +430,28 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     public async Task<AdapterOrderResponse> PlacePendingOrderAsync(
         string symbol, OrderType type, double volume, double price, double sl, double tp, string comment = "")
     {
+        var request = new AdapterOrderRequest
+        {
+            Symbol = symbol,
+            Type = type,
+            Volume = volume,
+            Price = price,
+            StopLoss = sl,
+            TakeProfit = tp,
+            Comment = comment,
+            MagicNumber = _magicNumber
+        };
+
+        if (!InvokeOrderValidationFilter(request, out var filtered, out var rejectReason))
+        {
+            return new AdapterOrderResponse { Success = false, ErrorMessage = rejectReason ?? "Rejected by filter" };
+        }
+
+        if (!InvokeOrderBeforeSendFilter(filtered, out filtered, out rejectReason))
+        {
+            return new AdapterOrderResponse { Success = false, ErrorMessage = rejectReason ?? "Rejected by filter" };
+        }
+
         string key = NextOrderKey(symbol);
         if (!TryAcquireInFlight(key))
         {
@@ -430,7 +465,6 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
 
         double requiredMargin = _adapter.Calculator.CalculateRequiredMargin(spec, price, volume, _leverage);
 
-        // Perform margin check under lock for a consistent snapshot
         bool marginOk;
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
@@ -447,21 +481,8 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
         }
 
-        Broadcast($"[bold yellow]LIVE PENDING:[/] {type} {volume} {symbol} @ {price}");
         var sw = Stopwatch.StartNew();
-
-        var response = await _adapter.ExecuteOrderAsync(new AdapterOrderRequest
-        {
-            Symbol = symbol,
-            Type = type,
-            Volume = volume,
-            Price = price,
-            StopLoss = sl,
-            TakeProfit = tp,
-            Comment = comment,
-            MagicNumber = _magicNumber
-        }).ConfigureAwait(false);
-
+        var response = await _adapter.ExecuteOrderAsync(filtered).ConfigureAwait(false);
         sw.Stop();
         RecordTelemetry(response.Success, sw.ElapsedMilliseconds);
 
@@ -479,98 +500,21 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             }
         }
 
+        InvokeOrderExecutedHook(filtered, response);
         return response;
     }
 
     /// <inheritdoc/>
-    public async Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null,
+    public Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null,
         double? price = null)
     {
-        var response = await _adapter.ModifyOrderAsync(ticket, sl, tp, price).ConfigureAwait(false);
-        if (!response.Success)
-        {
-            return response;
-        }
-
-        await _stateLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            for (int i = 0; i < _pendingOrders.Count; i++)
-            {
-                if (_pendingOrders[i].Ticket == ticket)
-                {
-                    var o = _pendingOrders[i];
-                    if (price.HasValue)
-                    {
-                        o = o with { Price = price.Value };
-                    }
-
-                    if (sl.HasValue)
-                    {
-                        o = o with { SL = sl.Value };
-                    }
-
-                    if (tp.HasValue)
-                    {
-                        o = o with { TP = tp.Value };
-                    }
-
-                    _pendingOrders[i] = o;
-                    break;
-                }
-            }
-
-            if (_positionMap.TryGetValue(ticket, out var pos))
-            {
-                if (sl.HasValue)
-                {
-                    pos = pos with { SL = sl.Value };
-                }
-
-                if (tp.HasValue)
-                {
-                    pos = pos with { TP = tp.Value };
-                }
-
-                int idx = _openPositions.IndexOf(_positionMap[ticket]);
-                if (idx >= 0)
-                {
-                    _openPositions[idx] = pos;
-                    _positionMap[ticket] = pos;
-                }
-            }
-
-            _marginUsed = CalculateTotalMarginUsed();
-        }
-        finally
-        {
-            _stateLock.Release();
-        }
-
-        return response;
+        return _adapter.ModifyOrderAsync(ticket, sl, tp, price);
     }
 
     /// <inheritdoc/>
-    public async Task<AdapterOrderResponse> CancelOrderAsync(long ticket)
+    public Task<AdapterOrderResponse> CancelOrderAsync(long ticket)
     {
-        var response = await _adapter.CancelAsync(ticket).ConfigureAwait(false);
-        if (!response.Success)
-        {
-            return response;
-        }
-
-        await _stateLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            _pendingOrders.RemoveAll(o => o.Ticket == ticket);
-            _marginUsed = CalculateTotalMarginUsed();
-        }
-        finally
-        {
-            _stateLock.Release();
-        }
-
-        return response;
+        return _adapter.CancelAsync(ticket);
     }
 
     /// <inheritdoc/>
@@ -605,10 +549,11 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
-        return [.. tasks.Select(t => t.Result)];
+        return tasks.ConvertAll(t => t.Result);
     }
 
-    // ── position queries ──────────────────────────────────────────
+    // ── Position queries ──────────────────────────────────────────
+
     /// <inheritdoc/>
     public async Task<bool> HasOpenPositionAsync(string symbol, OrderType? type = null,
         CancellationToken cancellationToken = default)
@@ -667,15 +612,27 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
     }
 
-    // ── tick processing ───────────────────────────────────────────
+    // ── Tick processing ────────────────────────────────────────────
 
-    /// <summary>Asynchronously routes incoming ticks.</summary>
+    /// <summary>Processes an incoming tick from the adapter.</summary>
     public async Task OnTickAsync(string symbol, Tick tick)
     {
         _marketClock.SetTickTime(tick.Time);
         long now = _marketClock.GetTimestamp();
 
-        // Use wall clock via SystemClock, not DateTime.UtcNow directly (Principle 3)
+        if (_hooks is not null)
+        {
+            var ctx = new LiveContext(_wallClock, tick, _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                _adapter.IsConnected, "live.tick.received");
+            var filterResult = _hooks.OnTickReceived.InvokeFilterChain(tick, ctx);
+            if (!filterResult.IsAllowed)
+            {
+                return;
+            }
+
+            tick = filterResult.IsAllowed ? filterResult.Data : tick;
+        }
+
         long latencyTicks = _wallClock.GetUtcNow().Ticks - now;
         _metrics.RecordLiveTickLatency(latencyTicks);
 
@@ -684,7 +641,8 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             await SyncStateAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
-        List<long>? ticketsToClose = null;
+        // Local list to avoid shared state corruption (fixes concurrency crash)
+        List<long> ticketsToClose = new List<long>();
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -736,7 +694,6 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
 
                     if (close)
                     {
-                        ticketsToClose ??= new List<long>();
                         ticketsToClose.Add(p.Ticket);
                     }
                 }
@@ -746,62 +703,146 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             UpdateDrawdowns();
 
             double totalMargin = CalculateActiveMarginUsed();
-            if (totalMargin > 0 && _stopOutLevel > 0)
+            if (totalMargin > 0 && _stopOutLevel > 0 && (_equity / totalMargin) <= _stopOutLevel)
             {
-                double marginLevel = _equity / totalMargin;
-                if (marginLevel <= _stopOutLevel)
-                {
-                    ApplyStopOut();
-                }
+                ApplyStopOut();
             }
+
+            InvokeEquityChangedHook();
         }
         finally
         {
             _stateLock.Release();
         }
 
-        if (ticketsToClose != null)
+        foreach (var tck in ticketsToClose)
         {
-            foreach (var ticket in ticketsToClose)
+            try
             {
-                try
-                {
-                    await ClosePositionAsync(ticket).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Trace.TraceError($"Close failed for ticket {ticket}: {ex}");
-                }
+                await ClosePositionAsync(tck).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Close failed for ticket {tck}: {ex}");
             }
         }
+
+        _hooks?.OnTickProcessed.InvokeActionChain(
+            tick,
+            new LiveContext(_wallClock, tick, _equity, _balance, MaxDrawdown, this, _adapter.Name, _adapter.IsConnected,
+                "live.tick.processed"));
     }
 
-    /// <summary>Connects safely handling metrics.</summary>
+    // ── Connection management ──────────────────────────────────────
+
+    /// <summary>Connects and notifies hooks/metrics (session start).</summary>
     public async Task ConnectAndNotifyAsync(CancellationToken ct)
     {
         bool connected = await _adapter.ConnectAsync(ct).ConfigureAwait(false);
         if (connected)
         {
-            _metrics.SetConnectionState(true, _adapter.AdapterName);
-            _messageBus?.Publish(new ConnectionStateEvent(true, _adapter.AdapterName)
+            _metrics.SetConnectionState(true, _adapter.Name);
+            _messageBus?.Publish(new ConnectionStateEvent(true, _adapter.Name)
             {
                 Timestamp = _wallClock.GetUtcNow()
             });
+            // Fire OnStart hook only once at session start
+            _hooks?.OnStart.InvokeActionChain(
+                new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                    true, "live.start"));
         }
     }
 
-    /// <summary>Disconnects safely handling metrics.</summary>
+    /// <summary>Disconnects and notifies hooks/metrics.</summary>
     public async Task DisconnectAndNotifyAsync()
     {
+        // Fire OnStop before disconnecting
+        _hooks?.OnStop.InvokeActionChain(
+            new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                _adapter.IsConnected, "live.stop"));
         await _adapter.DisconnectAsync().ConfigureAwait(false);
-        _metrics.SetConnectionState(false, _adapter.AdapterName);
-        _messageBus?.Publish(new ConnectionStateEvent(false, _adapter.AdapterName)
+        _metrics.SetConnectionState(false, _adapter.Name);
+        _messageBus?.Publish(new ConnectionStateEvent(false, _adapter.Name)
         {
             Timestamp = _wallClock.GetUtcNow()
         });
     }
 
-    /// <summary>Computes margin used by open positions only.</summary>
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        // Fire OnStop before ending session
+        _hooks?.OnStop.InvokeActionChain(
+            new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                _adapter.IsConnected, "live.stop"));
+        await EndSessionAsync().ConfigureAwait(false);
+        if (_lifecycleCts is not null)
+        {
+            await _lifecycleCts.CancelAsync().ConfigureAwait(false);
+            _lifecycleCts.Dispose();
+        }
+
+        await _adapter.DisconnectAsync().ConfigureAwait(false);
+        _stateLock.Dispose();
+        _syncGate.Dispose();
+    }
+
+    // ── Private helpers ────────────────────────────────────────────
+
+    private async Task EndSessionAsync()
+    {
+        List<Position> positionsToClose;
+        await _stateLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _isDisposing = true;
+            positionsToClose = _openPositions.ToList();
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        // Close positions with individual error handling to ensure event is published
+        var closeTasks = positionsToClose.Select(p => ClosePositionAsync(p.Ticket));
+        try
+        {
+            await Task.WhenAll(closeTasks).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceError($"EndSessionAsync: One or more close tasks failed: {ex}");
+        }
+
+        _messageBus?.Publish(new LiveSessionEndedEvent
+        {
+            FinalBalance = _balance,
+            FinalEquity = _equity,
+            MaxDrawdownPct = MaxDrawdown,
+            MaxDailyDrawdownPct = MaxDailyDrawdown,
+            TotalTrades = _history.Count,
+            CorrelationId = Guid.NewGuid(),
+            Timestamp = _wallClock.GetUtcNow()
+        });
+    }
+
+    private string NextOrderKey(string symbol)
+    {
+        return $"{symbol}_ORD_{Interlocked.Increment(ref _orderSequence)}";
+    }
+
+    private bool TryAcquireInFlight(string key)
+    {
+        long now = _wallClock.GetTimestamp();
+        if (_inFlightOps.TryGetValue(key, out long expiry) && now < expiry)
+        {
+            return false;
+        }
+
+        _inFlightOps[key] = now + _orderGuardTimeoutSeconds * 1000L;
+        return true;
+    }
+
     private double CalculateActiveMarginUsed()
     {
         double used = 0;
@@ -817,7 +858,6 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         return used;
     }
 
-    /// <summary>Computes total margin reserved (open positions + pending orders).</summary>
     private double CalculateTotalMarginUsed()
     {
         double used = CalculateActiveMarginUsed();
@@ -848,6 +888,9 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 return;
             }
 
+            // If this ticket was being liquidated, remove it from the set
+            _liquidationTickets.Remove(report.Ticket);
+
             if (_positionMap.TryGetValue(report.Ticket, out var pos))
             {
                 if (report.State == ExecutionState.Filled && report.RemainingVolume <= 0)
@@ -864,7 +907,13 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                     _history.Add(closedPosition);
                     _openPositions.Remove(pos);
                     _positionMap.Remove(report.Ticket);
-                    Broadcast($"[bold cyan]POSITION CLOSED:[/] {pos.Symbol} @ {report.ExecutedPrice}");
+
+                    // Fire position closed hook
+                    _hooks?.OnPositionClosed.InvokeActionChain(
+                        closedPosition,
+                        new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                            _adapter.IsConnected, "live.position.closed"));
+
                     _messageBus?.Publish(new OrderExecutedEvent
                     {
                         Symbol = pos.Symbol,
@@ -878,10 +927,13 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 }
                 else
                 {
-                    var updated = pos with
+                    // Partial fill: update volume with normalisation
+                    double newVolume = pos.Volume + (report.Type == pos.Type ? report.ExecutedVolume : -report.ExecutedVolume);
+                    if (_symbolSpecs.TryGetValue(pos.Symbol, out var spec))
                     {
-                        Volume = pos.Volume + (report.Type == pos.Type ? report.ExecutedVolume : -report.ExecutedVolume)
-                    };
+                        newVolume = _adapter.Calculator.NormalizeVolume(spec, newVolume);
+                    }
+                    var updated = pos with { Volume = newVolume };
                     int idx = _openPositions.IndexOf(pos);
                     if (idx >= 0)
                     {
@@ -907,6 +959,13 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 _openPositions.Add(newPos);
                 _positionMap[report.Ticket] = newPos;
                 UpdateDrawdowns();
+
+                // Fire position opened hook
+                _hooks?.OnPositionOpened.InvokeActionChain(
+                    newPos,
+                    new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                        _adapter.IsConnected, "live.position.opened"));
+
                 _messageBus?.Publish(new OrderExecutedEvent
                 {
                     Symbol = report.Symbol,
@@ -927,78 +986,103 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
     }
 
-    /// <summary>Terminates the live session cleanly, waiting for closure fills.</summary>
-    public async Task EndSessionAsync()
+    private void ApplyStopOut()
     {
-        List<Position> positionsToClose;
-        await _stateLock.WaitAsync().ConfigureAwait(false);
-        try
+        if (_openPositions.Count == 0)
         {
-            _isDisposing = true;
-            positionsToClose = _openPositions.ToList();
-        }
-        finally
-        {
-            _stateLock.Release();
+            return;
         }
 
-        var closeTasks = positionsToClose.Select(p => ClosePositionAsync(p.Ticket));
-        await Task.WhenAll(closeTasks).ConfigureAwait(false);
-
-        await _stateLock.WaitAsync().ConfigureAwait(false);
-        try
+        // Find worst position, skipping those already being liquidated
+        int worstIdx = -1;
+        double worstProfit = double.MaxValue;
+        for (int i = 0; i < _openPositions.Count; i++)
         {
-            // Only clear positions that were in the snapshot; new positions added
-            // during close (e.g., from execution reports) are handled by the guard.
-            for (int i = _openPositions.Count - 1; i >= 0; i--)
+            var p = _openPositions[i];
+            if (_liquidationTickets.Contains(p.Ticket))
             {
-                if (positionsToClose.Any(p => p.Ticket == _openPositions[i].Ticket))
+                continue;
+            }
+            if (p.Profit < worstProfit)
+            {
+                worstProfit = p.Profit;
+                worstIdx = i;
+            }
+        }
+
+        if (worstIdx < 0)
+        {
+            return; // all positions are already being liquidated
+        }
+
+        var worstPos = _openPositions[worstIdx];
+        _liquidationTickets.Add(worstPos.Ticket); // mark as in liquidation
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ClosePositionAsync(worstPos.Ticket).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Stop‑out close failed for ticket {worstPos.Ticket}: {ex}");
+            }
+        });
+
+        // Fire stop-out hook
+        _hooks?.OnPositionStopout.InvokeActionChain(
+            worstPos,
+            new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                _adapter.IsConnected, "live.position.stopout"));
+    }
+
+    private void ProcessHoldingCosts()
+    {
+        long currentTime = _marketClock.GetTimestamp();
+        // Determine the smallest holding cost interval among all symbols
+        long holdingInterval = _symbolSpecs.Values
+            .Select(s => s.HoldingCostIntervalTicks)
+            .DefaultIfEmpty(TimeSpan.TicksPerDay)
+            .Min();
+
+        if (_nextHoldingCostTime == 0)
+        {
+            _nextHoldingCostTime = (currentTime / holdingInterval + 1) * holdingInterval;
+            _peakDailyEquity = _equity;
+            return;
+        }
+
+        while (currentTime >= _nextHoldingCostTime)
+        {
+            long prevBoundary = _nextHoldingCostTime - holdingInterval;
+
+            for (int i = 0; i < _openPositions.Count; i++)
+            {
+                var pos = _openPositions[i];
+                if (_symbolSpecs.TryGetValue(pos.Symbol, out var spec))
                 {
-                    _openPositions.RemoveAt(i);
+                    double cost = _adapter.Calculator.CalculateHoldingCost(
+                        spec, pos.Volume, pos.OpenPrice, pos.Type, prevBoundary, _nextHoldingCostTime);
+
+                    if (Math.Abs(cost) > 0)
+                    {
+                        var updated = pos with { Swap = pos.Swap + cost };
+                        _openPositions[i] = updated;
+                        _positionMap[pos.Ticket] = updated;
+                    }
                 }
             }
 
-            foreach (var p in positionsToClose)
+            // Reset daily peak if we crossed a day boundary
+            DateTime utcCurrent = new DateTime(_nextHoldingCostTime, DateTimeKind.Utc).Date;
+            DateTime utcLast = new DateTime(prevBoundary, DateTimeKind.Utc).Date;
+            if (utcCurrent != utcLast)
             {
-                _positionMap.Remove(p.Ticket);
+                _peakDailyEquity = _equity;
             }
-        }
-        finally
-        {
-            _stateLock.Release();
-        }
 
-        _messageBus?.Publish(new LiveSessionEndedEvent
-        {
-            FinalBalance = _balance,
-            FinalEquity = _equity,
-            MaxDrawdownPct = MaxDrawdown,
-            MaxDailyDrawdownPct = MaxDailyDrawdown,
-            TotalTrades = _history.Count,
-            CorrelationId = Guid.NewGuid(),
-            Timestamp = _wallClock.GetUtcNow()
-        });
-    }
-
-    private string NextOrderKey(string symbol) => $"{symbol}_ORD_{Interlocked.Increment(ref _orderSequence)}";
-
-    private bool TryAcquireInFlight(string key)
-    {
-        long now = _wallClock.GetTimestamp();
-        if (_inFlightOps.TryGetValue(key, out long expiry) && now < expiry)
-        {
-            return false;
-        }
-
-        _inFlightOps[key] = now + (long)_orderGuardTimeoutSeconds * 1000L;
-        return true;
-    }
-
-    private void Broadcast(string message)
-    {
-        foreach (var n in _notifiers)
-        {
-            _ = n.SendAsync(message);
+            _nextHoldingCostTime += holdingInterval;
         }
     }
 
@@ -1033,82 +1117,87 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         }
     }
 
-    private void ProcessHoldingCosts()
+    private void InvokeEquityChangedHook()
     {
-        long currentTime = _marketClock.GetTimestamp();
-        if (_nextHoldingCostTime == 0)
+        if (_hooks is null)
         {
-            _nextHoldingCostTime = (currentTime / TimeSpan.TicksPerDay + 1) * TimeSpan.TicksPerDay;
-            _peakDailyEquity = _equity;
             return;
         }
 
-        while (currentTime >= _nextHoldingCostTime)
-        {
-            long prevBoundary = _nextHoldingCostTime - TimeSpan.TicksPerDay;
-
-            for (int i = 0; i < _openPositions.Count; i++)
-            {
-                var pos = _openPositions[i];
-                if (_symbolSpecs.TryGetValue(pos.Symbol, out var spec))
-                {
-                    double cost = _adapter.Calculator.CalculateHoldingCost(
-                        spec, pos.Volume, pos.OpenPrice, pos.Type, prevBoundary, _nextHoldingCostTime);
-
-                    if (Math.Abs(cost) > 0)
-                    {
-                        var updated = pos with { Swap = pos.Swap + cost };
-                        _openPositions[i] = updated;
-                        _positionMap[pos.Ticket] = updated;
-                    }
-                }
-            }
-
-            DateTime utcCurrent = new DateTime(_nextHoldingCostTime, DateTimeKind.Utc).Date;
-            DateTime utcLast = new DateTime(prevBoundary, DateTimeKind.Utc).Date;
-            if (utcCurrent != utcLast)
-            {
-                _peakDailyEquity = _equity;
-            }
-
-            _nextHoldingCostTime += TimeSpan.TicksPerDay;
-        }
+        var snapshot = new EquitySnapshot(_equity, _balance, MaxDrawdown, MaxDailyDrawdown);
+        _hooks.OnEquityChanged.InvokeActionChain(
+            snapshot,
+            new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                _adapter.IsConnected, "live.equity.changed"));
     }
 
-    /// <summary>
-    /// Stop‑out handler: closes the position with the lowest PnL.
-    /// No local state is removed here – the execution report callback takes care of that.
-    /// </summary>
-    private void ApplyStopOut()
+    private bool InvokeOrderValidationFilter(AdapterOrderRequest request, out AdapterOrderRequest filtered,
+        out string? reason)
     {
-        if (_openPositions.Count == 0)
+        filtered = request;
+        reason = null;
+        if (_hooks is null)
+        {
+            return true;
+        }
+
+        var ctx = new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+            _adapter.IsConnected, "live.order.validation");
+        var result = _hooks.OnOrderValidation.InvokeFilterChain(request, ctx);
+        filtered = result.Data ?? request;
+        reason = result.RejectionReason;
+        return result.IsAllowed;
+    }
+
+    private bool InvokeOrderBeforeSendFilter(AdapterOrderRequest request, out AdapterOrderRequest filtered,
+        out string? reason)
+    {
+        filtered = request;
+        reason = null;
+        if (_hooks is null)
+        {
+            return true;
+        }
+
+        var ctx = new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+            _adapter.IsConnected, "live.order.before_send");
+        var result = _hooks.OnOrderBeforeSend.InvokeFilterChain(request, ctx);
+        filtered = result.Data ?? request;
+        reason = result.RejectionReason;
+        return result.IsAllowed;
+    }
+
+    private void InvokeOrderExecutedHook(AdapterOrderRequest request, AdapterOrderResponse response)
+    {
+        if (_hooks is null)
         {
             return;
         }
 
-        int worstIdx = 0;
-        double worstProfit = _openPositions[0].Profit;
-        for (int i = 1; i < _openPositions.Count; i++)
+        if (response.Success)
         {
-            if (_openPositions[i].Profit < worstProfit)
-            {
-                worstProfit = _openPositions[i].Profit;
-                worstIdx = i;
-            }
+            _hooks.OnOrderExecuted.InvokeActionChain(
+                new ExecutionReport
+                {
+                    Ticket = response.Ticket,
+                    Symbol = request.Symbol,
+                    Type = request.Type,
+                    State = ExecutionState.Filled,
+                    ExecutedVolume = response.ExecutedVolume,
+                    ExecutedPrice = response.ExecutedPrice,
+                    Comment = request.Comment,
+                    Timestamp = _marketClock.GetTimestamp()
+                },
+                new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                    _adapter.IsConnected, "live.order.executed"));
         }
-
-        var worstPos = _openPositions[worstIdx];
-        _ = Task.Run(async () =>
+        else
         {
-            try
-            {
-                await ClosePositionAsync(worstPos.Ticket).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Trace.TraceError($"Stop‑out close failed for ticket {worstPos.Ticket}: {ex}");
-            }
-        });
+            _hooks.OnOrderRejected.InvokeActionChain(
+                (request, response.ErrorMessage),
+                new LiveContext(_wallClock, new Tick(), _equity, _balance, MaxDrawdown, this, _adapter.Name,
+                    _adapter.IsConnected, "live.order.rejected"));
+        }
     }
 
     private void RecordTelemetry(bool success, long latencyMs)
@@ -1121,18 +1210,16 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         _metrics.RecordLiveOrderLatency(latencyMs);
     }
 
-    /// <inheritdoc/>
-    public async ValueTask DisposeAsync()
+    private double GetState(Func<double> accessor)
     {
-        await EndSessionAsync().ConfigureAwait(false);
-        if (_lifecycleCts is not null)
+        _stateLock.Wait();
+        try
         {
-            await _lifecycleCts.CancelAsync().ConfigureAwait(false);
-            _lifecycleCts.Dispose();
+            return accessor();
         }
-
-        await _adapter.DisconnectAsync().ConfigureAwait(false);
-        _stateLock.Dispose();
-        _syncGate.Dispose();
+        finally
+        {
+            _stateLock.Release();
+        }
     }
 }

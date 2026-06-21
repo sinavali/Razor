@@ -32,4 +32,11 @@ public interface IOptimizationHooks
 
     /// <summary>Fires when the optimization completes.</summary>
     IActionRegistration<Chromosome> OnCompleted { get; }
+
+    /// <summary>
+    /// Hook for calculating fitness of a chromosome.
+    /// Plugins can set <c>context.Fitness</c>; the first non‑NaN value wins.
+    /// Fires before <see cref="OnChromosomeEvaluated"/>.
+    /// </summary>
+    IActionRegistration<IFitnessEvaluationContext> OnFitnessEvaluation { get; }
 }

@@ -1,4 +1,3 @@
-using Chronos.Core.Abstractions.Adapters;
 using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Kernel.Configuration;
@@ -29,11 +28,11 @@ public sealed record ExecutionSpecification
     /// <summary>Stop‑out level as a ratio (e.g., 0.5 = 50%).</summary>
     public required double StopOutLevel { get; init; }
 
-    /// <summary>Policy for cached historical data.</summary>
-    public DataActionPolicy HistoricalDataPolicy { get; init; }
-
-    /// <summary>Seed used for deterministic gene initialization when no specific genes are provided.</summary>
-    public required int GeneInitializationSeed { get; init; }
+    /// <summary>
+    /// Seed used for deterministic gene initialization when no explicit genes are provided.
+    /// A value of <c>null</c> indicates that the strategy's default gene values should be used.
+    /// </summary>
+    public int? GeneInitializationSeed { get; init; }
 
     /// <summary>Validates this specification.</summary>
     public void Validate()
@@ -62,14 +61,23 @@ public sealed record ExecutionSpecification
         {
             throw new ConfigurationException("MaxParallelThreads cannot be negative.");
         }
+
+        if (GeneInitializationSeed.HasValue && GeneInitializationSeed.Value < 0)
+        {
+            throw new ConfigurationException("GeneInitializationSeed must be non‑negative when provided.");
+        }
     }
 
     /// <summary>Creates a validated instance.</summary>
     public static ExecutionSpecification CreateValidated(
-        DateTime startDate, DateTime endDate, int warmupBars, int maxOpenPositions, double stopOutLevel,
-        long latencyTicks, int geneInitializationSeed,
-        int maxParallelThreads = 0,
-        DataActionPolicy historicalDataPolicy = DataActionPolicy.DeleteAfterTask)
+        DateTime startDate,
+        DateTime endDate,
+        int warmupBars,
+        int maxOpenPositions,
+        double stopOutLevel,
+        long latencyTicks = 0,
+        int? geneInitializationSeed = null,
+        int maxParallelThreads = 0)
     {
         var spec = new ExecutionSpecification
         {
@@ -80,7 +88,6 @@ public sealed record ExecutionSpecification
             StopOutLevel = stopOutLevel,
             MaxParallelThreads = maxParallelThreads,
             LatencyTicks = latencyTicks,
-            HistoricalDataPolicy = historicalDataPolicy,
             GeneInitializationSeed = geneInitializationSeed
         };
         spec.Validate();

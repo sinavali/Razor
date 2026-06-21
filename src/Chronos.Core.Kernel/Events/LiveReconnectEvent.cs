@@ -7,8 +7,10 @@ public sealed record LiveReconnectEvent(bool Success, int AttemptCount, string A
 {
     /// <inheritdoc/>
     public required DateTime Timestamp { get; init; }
+
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
+
     /// <inheritdoc/>
     public string? EventId { get; init; }
 }

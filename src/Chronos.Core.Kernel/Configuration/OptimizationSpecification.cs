@@ -1,43 +1,51 @@
 using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Strategies;
 
 namespace Chronos.Core.Kernel.Configuration;
 
 /// <summary>
 /// Immutable specification for a genetic optimisation run.
+/// Fitness evaluation is performed externally via hooks; no built‑in fitness model.
 /// </summary>
 public sealed record OptimizationSpecification
 {
-    /// <summary>Master seed for reproducibility.</summary>
+    /// <summary>Master seed for reproducibility (must be ≥ 0).</summary>
     public required int MasterSeed { get; init; }
 
     /// <summary>Number of generations to evolve.</summary>
     public required int Generations { get; init; }
 
-    /// <summary>Population size.</summary>
+    /// <summary>Population size (must be ≥ 4).</summary>
     public required int PopulationSize { get; init; }
 
-    /// <summary>Base mutation rate.</summary>
+    /// <summary>Base mutation rate (0‑1).</summary>
     public required double MutationRate { get; init; }
 
-    /// <summary>Crossover rate.</summary>
+    /// <summary>Crossover rate (0‑1).</summary>
     public required double CrossoverRate { get; init; }
 
-    /// <summary>Fraction of population preserved via elitism.</summary>
+    /// <summary>Fraction of population preserved via elitism (0‑1).</summary>
     public required double ElitismPct { get; init; }
 
-    /// <summary>Tournament selection size.</summary>
+    /// <summary>Tournament selection size (≥ 2).</summary>
     public required int TournamentSize { get; init; }
 
     /// <summary>Number of consecutive generations with unchanged best fitness before hyper‑mutation activates.</summary>
     public int StagnationGenerationsBeforeHyper { get; init; } = 3;
 
-    /// <summary>Fitness model used to evaluate chromosome quality.</summary>
-    public required IFitnessModel FitnessModel { get; init; }
+    /// <summary>
+    /// Maximum parallel threads for chromosome evaluation.
+    /// 0 = auto (Environment.ProcessorCount - 1). Must be ≥ 0.
+    /// </summary>
+    public int MaxParallelThreads { get; init; }
 
     /// <summary>Validates this specification.</summary>
     public void Validate()
     {
+        if (MasterSeed < 0)
+        {
+            throw new ConfigurationException("MasterSeed must be non‑negative.");
+        }
+
         if (Generations <= 0)
         {
             throw new ConfigurationException("Generations must be positive.");
@@ -73,9 +81,9 @@ public sealed record OptimizationSpecification
             throw new ConfigurationException("StagnationGenerationsBeforeHyper must be at least 1.");
         }
 
-        if (FitnessModel == null)
+        if (MaxParallelThreads < 0)
         {
-            throw new ConfigurationException("FitnessModel is required for optimisation.");
+            throw new ConfigurationException("MaxParallelThreads must be ≥ 0.");
         }
     }
 
@@ -88,8 +96,8 @@ public sealed record OptimizationSpecification
         double crossoverRate,
         double elitismPct,
         int tournamentSize,
-        IFitnessModel fitnessModel,
-        int stagnationGenerationsBeforeHyper = 3)
+        int stagnationGenerationsBeforeHyper = 3,
+        int maxParallelThreads = 0)
     {
         var spec = new OptimizationSpecification
         {
@@ -101,7 +109,7 @@ public sealed record OptimizationSpecification
             ElitismPct = elitismPct,
             TournamentSize = tournamentSize,
             StagnationGenerationsBeforeHyper = stagnationGenerationsBeforeHyper,
-            FitnessModel = fitnessModel
+            MaxParallelThreads = maxParallelThreads
         };
         spec.Validate();
         return spec;

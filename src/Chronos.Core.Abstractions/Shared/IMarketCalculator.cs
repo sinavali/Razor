@@ -43,4 +43,7 @@ public interface IMarketCalculator
     /// </summary>
     double CalculateHoldingCost(SymbolProperties props, double volume, double openPrice, OrderType type,
                                 long fromTime, long toTime);
+
+    /// <summary>Calculate simulated slippage for a market order.</summary>
+    double CalculateSlippage(SymbolProperties props, OrderType type, double volume, double price);
 }

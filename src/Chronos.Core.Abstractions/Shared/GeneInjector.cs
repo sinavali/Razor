@@ -63,7 +63,7 @@ public static class GeneInjector
             return propertyGenes;
         }
 
-        var rng = new ChronosRandom(seed);
+        var rng = new CustomizedRandom(seed);
         double[] neuralGenes = new double[neuralGeneCount];
         for (int i = 0; i < neuralGeneCount; i++)
         {
@@ -217,8 +217,8 @@ public static class GeneInjector
         }
     }
 
-    /// <summary>Generates a random gene value within constraints using the given ChronosRandom.</summary>
-    public static double GenerateRandomGene(ChronosRandom rng, double min, double max, double step)
+    /// <summary>Generates a random gene value within constraints using the given CustomizedRandom.</summary>
+    public static double GenerateRandomGene(CustomizedRandom rng, double min, double max, double step)
     {
         ArgumentNullException.ThrowIfNull(rng);
         Debug.Assert(min <= max, "Gene min must be ≤ max.");
@@ -243,7 +243,7 @@ public static class GeneInjector
             for (int i = 0; i < count; i++)
             {
                 schema.Add(new GeneAttribute(-1.0, 1.0, 0, GeneType.Parametric)
-                    { Name = $"NN_W{i}", Order = int.MaxValue });
+                { Name = $"NN_W{i}", Order = int.MaxValue });
             }
         }
 

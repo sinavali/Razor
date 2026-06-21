@@ -7,8 +7,10 @@ public sealed record BacktestStartedEvent : IMessage
 {
     /// <inheritdoc/>
     public required DateTime Timestamp { get; init; }
+
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
+
     /// <inheritdoc/>
     public string? EventId { get; init; }
 }

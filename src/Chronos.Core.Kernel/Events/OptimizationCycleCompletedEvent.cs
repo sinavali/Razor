@@ -7,8 +7,10 @@ public sealed record OptimizationCycleCompletedEvent(int CycleIndex, double Best
 {
     /// <inheritdoc/>
     public required DateTime Timestamp { get; init; }
+
     /// <inheritdoc/>
     public Guid? CorrelationId { get; init; }
+
     /// <inheritdoc/>
     public string? EventId { get; init; }
 }

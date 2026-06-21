@@ -1,7 +1,9 @@
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Strategies;
-using Chronos.Core.Kernel.Telemetry;
 using System.Diagnostics;
+using Chronos.Core.Abstractions.Hooks;
+using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Kernel.Clock;
+using Chronos.Core.Kernel.Hooks;
+using Chronos.Core.Kernel.Telemetry;
 
 namespace Chronos.Core.Kernel.Optimization;
 
@@ -15,8 +17,9 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     private readonly IReadOnlyList<GeneAttribute> _schema;
     private readonly int _populationSize;
     private readonly int _masterSeed;
-    private readonly ChronosRandom _mainRng;
-    private readonly IChronosMetrics _metrics;
+    private readonly CustomizedRandom _mainRng;
+    private readonly CoreMetrics _metrics;
+    private readonly IOptimizationHooks? _hooks;
 
     private Chromosome[] _population;
     private int _currentGeneration;
@@ -29,25 +32,45 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     private int _stagnationCount;
     private bool _hyperMutation;
     private readonly int _stagnationGenerationsBeforeHyper;
-    private const double RelativeFitnessTolerance = 1e-6;   // K‑P1‑4: relative tolerance for stagnation detection
+    private const double RelativeFitnessTolerance = 1e-6;
+    private readonly SystemClock _systemClock = new();
 
     /// <inheritdoc/>
     public int CurrentGeneration => _currentGeneration;
+
     /// <inheritdoc/>
     public int PopulationSize => _populationSize;
+
     /// <inheritdoc/>
     public bool IsHyperMutation => _hyperMutation;
+
     /// <inheritdoc/>
-    public Chromosome BestSolution { get { Sort(); return _population[0]; } }
+    public Chromosome BestSolution
+    {
+        get
+        {
+            Sort();
+            return _population[0];
+        }
+    }
+
     /// <inheritdoc/>
-    public IReadOnlyList<Chromosome> Population { get { Sort(); return _population; } }
+    public IReadOnlyList<Chromosome> Population
+    {
+        get
+        {
+            Sort();
+            return _population;
+        }
+    }
+
     /// <summary>Configures threading limits for parallel evaluations.</summary>
     public int MaxDegreeOfParallelism { get; set; }
 
     /// <summary>Initializes a new optimizer instance.</summary>
     public GeneticOptimizer(
         IReadOnlyList<GeneAttribute> schema,
-        IChronosMetrics metrics,
+        CoreMetrics metrics,
         int populationSize = 100,
         int masterSeed = 0,
         double mutationRate = 0.1,
@@ -55,10 +78,12 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         double elitismPct = 0.05,
         int tournamentSize = 3,
         int stagnationGenerationsBeforeHyper = 3,
-        int maxDegreeOfParallelism = 0)
+        int maxDegreeOfParallelism = 0,
+        IOptimizationHooks? hooks = null)
     {
         _schema = schema ?? throw new ArgumentNullException(nameof(schema));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
+        _hooks = hooks;
         _populationSize = Math.Max(4, populationSize);
         _masterSeed = masterSeed;
         _mutationRate = mutationRate;
@@ -67,7 +92,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _tournamentSize = Math.Max(2, tournamentSize);
         _stagnationGenerationsBeforeHyper = stagnationGenerationsBeforeHyper;
 
-        _mainRng = new ChronosRandom(masterSeed);
+        _mainRng = new CustomizedRandom(masterSeed);
         _population = new Chromosome[_populationSize];
         for (int i = 0; i < _populationSize; i++)
         {
@@ -85,6 +110,8 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _stagnationCount = 0;
         _bestOverallFitness = Chromosome.NotEvaluated;
 
+        var hookContext = new OptimizationContext(_systemClock, 0, 0, _populationSize, Chromosome.NotEvaluated, false, "optimization.chromosome.created");
+
         for (int i = 0; i < _populationSize; i++)
         {
             var c = _population[i];
@@ -92,16 +119,59 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             c.IndividualIndex = i;
             c.Fitness = Chromosome.NotEvaluated;
 
-            int individualSeed = GenerateIndividualSeed(i);
-            c.Seed = individualSeed;
-            var indRng = new ChronosRandom(individualSeed);
-
-            for (int j = 0; j < _schema.Count; j++)
+            // Generate a valid chromosome by retrying if filter rejects
+            bool accepted = false;
+            int attempt = 0;
+            while (!accepted)
             {
-                var attr = _schema[j];
-                c.Genes[j] = GeneInjector.GenerateRandomGene(indRng, attr.Min, attr.Max, attr.Step);
+                int individualSeed = GenerateIndividualSeed(i + attempt * _populationSize);
+                c.Seed = individualSeed;
+                var indRng = new CustomizedRandom(individualSeed);
+
+                for (int j = 0; j < _schema.Count; j++)
+                {
+                    var attr = _schema[j];
+                    c.Genes[j] = GeneInjector.GenerateRandomGene(indRng, attr.Min, attr.Max, attr.Step);
+                }
+
+                // Invoke filter
+                if (_hooks is not null)
+                {
+                    var wrapped = new Chronos.Core.Abstractions.Hooks.Chromosome
+                    {
+                        Genes = c.Genes,
+                        Fitness = c.Fitness,
+                        Generation = c.Generation,
+                        IndividualIndex = c.IndividualIndex,
+                        Seed = c.Seed
+                    };
+                    var result = _hooks.OnChromosomeCreated.InvokeFilterChain(wrapped, hookContext);
+                    if (result.IsAllowed)
+                    {
+                        // Apply modified genes if any
+                        if (result.Data is not null)
+                        {
+                            Array.Copy(result.Data.Genes, c.Genes, c.Genes.Length);
+                            c.Fitness = result.Data.Fitness;
+                            c.Generation = result.Data.Generation;
+                            c.IndividualIndex = result.Data.IndividualIndex;
+                            c.Seed = result.Data.Seed;
+                        }
+                        accepted = true;
+                    }
+                    else
+                    {
+                        // Regenerate with a new seed and try again
+                        attempt++;
+                    }
+                }
+                else
+                {
+                    accepted = true; // no filter, accept as is
+                }
             }
         }
+
         _evaluated = false;
     }
 
@@ -119,8 +189,10 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         var sw = Stopwatch.StartNew();
 
         await Parallel.ForEachAsync(unevaluated, parallelOptions,
-                async (c, innerCt) => { c.Fitness = await evaluator(c, innerCt).ConfigureAwait(false); })
-            .ConfigureAwait(false);
+            async (c, innerCt) =>
+            {
+                c.Fitness = await evaluator(c, innerCt).ConfigureAwait(false);
+            }).ConfigureAwait(false);
 
         if (_population.Any(c => c.Fitness <= Chromosome.NotEvaluated))
         {
@@ -151,7 +223,6 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             _metrics.RecordGaFitnessImprovement(improvement);
         }
 
-        // K‑P1‑4: relative tolerance for stagnation detection
         double tolerance = RelativeFitnessTolerance * Math.Max(1.0, Math.Abs(genBest));
         if (Math.Abs(genBest - _bestOverallFitness) < tolerance)
         {
@@ -179,6 +250,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             nextPop[i] = new Chromosome(_schema.Count);
         }
 
+        // Elitism
         for (int i = 0; i < elitismCount; i++)
         {
             nextPop[i].CopyFrom(_population[i]);
@@ -186,17 +258,53 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             nextPop[i].IndividualIndex = i;
         }
 
+        var hookContext = new OptimizationContext(_systemClock, _currentGeneration, 0, _populationSize, _bestOverallFitness, _hyperMutation, "optimization");
+
+        // Selection, crossover, mutation
         for (int i = elitismCount; i < _populationSize; i++)
         {
+            // Selection
             var parent1 = TournamentSelect();
             var parent2 = TournamentSelect();
+            _hooks?.OnSelectionApplied.InvokeActionChain(
+                (new Chronos.Core.Abstractions.Hooks.Chromosome
+                {
+                    Genes = parent1.Genes,
+                    Fitness = parent1.Fitness,
+                    Generation = parent1.Generation,
+                    IndividualIndex = parent1.IndividualIndex,
+                    Seed = parent1.Seed
+                },
+                new Chronos.Core.Abstractions.Hooks.Chromosome
+                {
+                    Genes = parent2.Genes,
+                    Fitness = parent2.Fitness,
+                    Generation = parent2.Generation,
+                    IndividualIndex = parent2.IndividualIndex,
+                    Seed = parent2.Seed
+                }),
+                new OptimizationContext(_systemClock, _currentGeneration, 0, _populationSize, _bestOverallFitness, _hyperMutation, "optimization.selection"));
+
             var child = nextPop[i];
 
+            // Crossover
             for (int j = 0; j < _schema.Count; j++)
             {
                 child.Genes[j] = _mainRng.NextDouble() < _crossoverRate ? parent1.Genes[j] : parent2.Genes[j];
             }
 
+            _hooks?.OnCrossoverApplied.InvokeActionChain(
+                new Chronos.Core.Abstractions.Hooks.Chromosome
+                {
+                    Genes = child.Genes,
+                    Fitness = child.Fitness,
+                    Generation = child.Generation,
+                    IndividualIndex = child.IndividualIndex,
+                    Seed = child.Seed
+                },
+                new OptimizationContext(_systemClock, _currentGeneration, 0, _populationSize, _bestOverallFitness, _hyperMutation, "optimization.crossover"));
+
+            // Mutation
             for (int j = 0; j < _schema.Count; j++)
             {
                 if (_mainRng.NextDouble() < currentMutRate)
@@ -205,6 +313,17 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
                     child.Genes[j] = GeneInjector.GenerateRandomGene(_mainRng, attr.Min, attr.Max, attr.Step);
                 }
             }
+
+            _hooks?.OnMutationApplied.InvokeActionChain(
+                new Chronos.Core.Abstractions.Hooks.Chromosome
+                {
+                    Genes = child.Genes,
+                    Fitness = child.Fitness,
+                    Generation = child.Generation,
+                    IndividualIndex = child.IndividualIndex,
+                    Seed = child.Seed
+                },
+                new OptimizationContext(_systemClock, _currentGeneration, 0, _populationSize, _bestOverallFitness, _hyperMutation, "optimization.mutation"));
 
             child.Generation = _currentGeneration + 1;
             child.IndividualIndex = i;
@@ -217,18 +336,21 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _evaluated = false;
     }
 
-    /// <summary>Saves current state.</summary>
-    public GeneticOptimizerState SaveState() => new()
+    /// <summary>Saves current state to a snapshot for pause/resume.</summary>
+    public GeneticOptimizerState SaveState()
     {
-        Population = [.. _population.Select(c => c.Clone())],
-        CurrentGeneration = _currentGeneration,
-        Evaluated = _evaluated,
-        BestOverallFitness = _bestOverallFitness,
-        StagnationCount = _stagnationCount,
-        HyperMutation = _hyperMutation
-    };
+        return new GeneticOptimizerState
+        {
+            Population = [.. _population.Select(c => c.Clone())],
+            CurrentGeneration = _currentGeneration,
+            Evaluated = _evaluated,
+            BestOverallFitness = _bestOverallFitness,
+            StagnationCount = _stagnationCount,
+            HyperMutation = _hyperMutation
+        };
+    }
 
-    /// <summary>Restores state.</summary>
+    /// <summary>Restores state from a previously saved snapshot.</summary>
     public void LoadState(GeneticOptimizerState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -240,7 +362,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
         _hyperMutation = state.HyperMutation;
     }
 
-    /// <summary>Marks fitness as dirty.</summary>
+    /// <summary>Marks all chromosomes as unevaluated.</summary>
     public void InvalidateFitness()
     {
         foreach (var c in _population)
@@ -252,6 +374,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
     }
 
     private void Sort() => Array.Sort(_population, (a, b) => b.Fitness.CompareTo(a.Fitness));
+
     private int GenerateIndividualSeed(int index) => (int)(((uint)_masterSeed * 397) ^ (uint)index);
 
     private Chromosome TournamentSelect()
@@ -265,6 +388,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
                 best = competitor;
             }
         }
+
         return best;
     }
 }

@@ -24,16 +24,15 @@ public enum PriceType
 /// Ticks are the sole source of truth; all calculations use raw tick data.
 /// </summary>
 /// <remarks>
-/// <para>This class is <b>not thread‑safe</b>. It must be used from a single thread,
+/// This class is <b>not thread‑safe</b>. It must be used from a single thread,
 /// or externally synchronized. The engine guarantees that all tick processing
 /// (backtest loop, live tick handler) runs on a single thread, so no additional
-/// locking is required when used inside a strategy's <c>OnTick</c> method.</para>
-/// <para>If you need to access it from a background task, acquire the strategy's
-/// <see cref="StrategyBase.GeneLock"/> or another synchronization primitive first.</para>
+/// locking is required when used inside a strategy's <c>OnTick</c> method.
 /// </remarks>
 public sealed class TickWindow : IDisposable
 {
     private readonly Dictionary<string, TickRingBuffer> _buffers = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly Dictionary<string, Dictionary<TimeFrame, long>> _lastCompleteTimes =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -41,19 +40,15 @@ public sealed class TickWindow : IDisposable
 
     private readonly Dictionary<(string Symbol, TimeFrame Timeframe), CompletedBar> _lastCompletedBar = new();
 
+    // Rolling accumulators for O(1) GetCurrentStats
+    private readonly Dictionary<(string Symbol, TimeFrame Timeframe), RollingStats> _rollingStats = new();
+
     /// <summary>
     /// Raised when a full timeframe window completes (i.e., a new candle would have closed).
-    /// <para>
-    /// <b>Note:</b> If multiple timeframes share the same boundary (e.g., M5 and M15 both complete on the same tick),
-    /// this event fires once per timeframe. Thus, it can be raised multiple times for the same tick.
-    /// </para>
     /// </summary>
     public event Action<string, TimeFrame>? WindowCompleted;
 
     /// <summary>Creates a new tick window.</summary>
-    /// <param name="symbols">Symbols to track.</param>
-    /// <param name="timeframes">Timeframes for which window‑completion events are fired.</param>
-    /// <param name="maxTicksPerSymbol">Maximum number of ticks stored per symbol.</param>
     public TickWindow(IEnumerable<string> symbols, IEnumerable<TimeFrame> timeframes, int maxTicksPerSymbol = 100_000)
     {
         ArgumentNullException.ThrowIfNull(symbols);
@@ -66,6 +61,7 @@ public sealed class TickWindow : IDisposable
             foreach (var tf in timeframes.Where(tf => tf != TimeFrame.Tick))
             {
                 tfDict[tf] = 0;
+                _rollingStats[(sym, tf)] = new RollingStats();
             }
 
             _lastCompleteTimes[sym] = tfDict;
@@ -93,9 +89,38 @@ public sealed class TickWindow : IDisposable
             long currentWindowStart = tick.Time / periodTicks * periodTicks;
             if (currentWindowStart > lastTime)
             {
-                ComputeAndStoreCompletedBar(symbol, tf, buffer);
+                // Finalise the completed bar using the rolling accumulator
+                if (_rollingStats.TryGetValue((symbol, tf), out var stats) && stats.Count > 0)
+                {
+                    _lastCompletedBar[(symbol, tf)] = new CompletedBar(
+                        stats.Open, stats.High, stats.Low, stats.Close, stats.Volume, true);
+                }
+                else
+                {
+                    // Fallback: compute from buffer
+                    ComputeAndStoreCompletedBar(symbol, tf, buffer);
+                }
+
+                // Reset rolling stats for the new window
+                _rollingStats[(symbol, tf)] = new RollingStats();
                 WindowCompleted?.Invoke(symbol, tf);
                 times[tf] = currentWindowStart;
+            }
+
+            // Update rolling stats with this tick
+            if (_rollingStats.TryGetValue((symbol, tf), out var rolling))
+            {
+                double price = (tick.Bid + tick.Ask) * 0.5;
+                if (rolling.Count == 0)
+                {
+                    rolling.Open = price;
+                }
+
+                rolling.High = Math.Max(rolling.High, price);
+                rolling.Low = rolling.Count == 0 ? price : Math.Min(rolling.Low, price);
+                rolling.Close = price;
+                rolling.Volume += tick.Volume;
+                rolling.Count++;
             }
         }
 
@@ -106,7 +131,8 @@ public sealed class TickWindow : IDisposable
     /// Tries to get the OHLC of the last completed bar for the given symbol/timeframe.
     /// Returns <c>true</c> if such a bar exists and was completed, otherwise <c>false</c>.
     /// </summary>
-    public bool TryGetLastCompletedBar(string symbol, TimeFrame tf, out double open, out double high, out double low, out double close, out double volume)
+    public bool TryGetLastCompletedBar(string symbol, TimeFrame tf, out double open, out double high, out double low,
+        out double close, out double volume)
     {
         open = high = low = close = volume = 0;
         if (_lastCompletedBar.TryGetValue((symbol, tf), out var bar))
@@ -151,7 +177,7 @@ public sealed class TickWindow : IDisposable
     }
 
     /// <summary>
-    /// Retrieves OHLC statistics and indicates whether the window was complete.
+    /// Retrieves OHLC statistics using rolling accumulators (O(1)) and indicates whether the window was complete.
     /// </summary>
     public void GetCurrentStats(string symbol, TimeFrame tf, PriceType priceType,
         out double open, out double high, out double low, out double close, out double volume, out bool isComplete)
@@ -185,6 +211,19 @@ public sealed class TickWindow : IDisposable
         first++;
         isComplete = first == 0 || buffer[first - 1].Time < windowStart;
 
+        // Use rolling stats if available and up‑to‑date
+        if (_rollingStats.TryGetValue((symbol, tf), out var stats) && stats.Count > 0)
+        {
+            open = stats.Open;
+            high = stats.High;
+            low = stats.Low;
+            close = stats.Close;
+            volume = stats.Volume;
+            // isComplete already computed
+            return;
+        }
+
+        // Fallback: compute from buffer (should rarely happen)
         bool isFirst = true;
         volume = 0;
         for (int i = first; i < n; i++)
@@ -233,6 +272,7 @@ public sealed class TickWindow : IDisposable
         }
 
         _buffers.Clear();
+        _rollingStats.Clear();
     }
 
     private void ComputeAndStoreCompletedBar(string symbol, TimeFrame tf, TickRingBuffer buffer)
@@ -296,7 +336,23 @@ public sealed class TickWindow : IDisposable
         }
     }
 
-    private sealed record CompletedBar(double Open, double High, double Low, double Close, double Volume, bool IsComplete);
+    private sealed record CompletedBar(
+        double Open,
+        double High,
+        double Low,
+        double Close,
+        double Volume,
+        bool IsComplete);
+
+    private sealed class RollingStats
+    {
+        public double Open;
+        public double High;
+        public double Low;
+        public double Close;
+        public double Volume;
+        public int Count;
+    }
 
     private sealed class TickRingBuffer : IDisposable
     {
@@ -339,12 +395,12 @@ public sealed class TickWindow : IDisposable
 
         public int CopyMostRecent(Span<Tick> destination, int maxCount)
         {
-            if (_count == 0 || maxCount <= 0)
+            if (_count == 0 || maxCount <= 0 || destination.Length == 0)
             {
                 return 0;
             }
 
-            int actual = Math.Min(maxCount, _count);
+            int actual = Math.Min(Math.Min(maxCount, _count), destination.Length);
             int start = _head - actual;
             if (start < 0)
             {

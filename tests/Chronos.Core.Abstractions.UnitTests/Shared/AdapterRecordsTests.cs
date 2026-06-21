@@ -40,7 +40,10 @@ public class AdapterOrderRequestTests
     public void With_Changes_Correctly()
     {
         var original = new AdapterOrderRequest { Symbol = "BTCUSDT", Volume = 1.0 };
-        var modified = original with { Volume = 1.5 };
+        var modified = original with
+        {
+            Volume = 1.5
+        };
         Assert.Equal("BTCUSDT", modified.Symbol);
         Assert.Equal(1.5, modified.Volume);
         Assert.Equal(original.Symbol, modified.Symbol);
@@ -78,11 +81,21 @@ public class ExecutionReportTests
     {
         var a = new ExecutionReport
         {
-            Ticket = 1, Symbol = "X", Type = OrderType.Sell, State = ExecutionState.Filled,
-            ExecutedVolume = 0.5, ExecutedPrice = 1.2, RemainingVolume = 0.3,
-            Commission = 0.01, RealizedPnL = 5.0, Timestamp = 100, Comment = "c"
+            Ticket = 1,
+            Symbol = "X",
+            Type = OrderType.Sell,
+            State = ExecutionState.Filled,
+            ExecutedVolume = 0.5,
+            ExecutedPrice = 1.2,
+            RemainingVolume = 0.3,
+            Commission = 0.01,
+            RealizedPnL = 5.0,
+            Timestamp = 100,
+            Comment = "c"
         };
-        var b = a with { };
+        var b = a with
+        {
+        };
         Assert.Equal(a, b);
     }
 
@@ -133,7 +146,10 @@ public class HistoricalDataResponseTests
     {
         var r = new HistoricalDataResponse
         {
-            Symbol = "EURUSD", Success = true, BinaryFilePath = "/path", TotalRecords = 1000
+            Symbol = "EURUSD",
+            Success = true,
+            BinaryFilePath = "/path",
+            TotalRecords = 1000
         };
         Assert.True(r.Success);
         Assert.Equal(1000L, r.TotalRecords);

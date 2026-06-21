@@ -62,7 +62,4 @@ public sealed record Position
 
     /// <summary>Whether the position is closed.</summary>
     public bool IsClosed => CloseTime > 0;
-
-    /// <summary>Sequence identifier to differentiate multiple partial closes of the same ticket.</summary>
-    public int CloseSequence { get; init; }
 }
