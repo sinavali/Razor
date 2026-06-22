@@ -26,16 +26,16 @@ internal interface IStateManager
     Task SaveStateAsync(CancellationToken cancellationToken);
 
     /// <summary>Saves live trading state.</summary>
-    Task SaveLiveStateAsync(object liveState, CancellationToken cancellationToken);
+    Task SaveLiveStateAsync(LiveState liveState, CancellationToken cancellationToken);
 
     /// <summary>Loads live trading state.</summary>
-    Task<object?> LoadLiveStateAsync(CancellationToken cancellationToken);
+    Task<LiveState?> LoadLiveStateAsync(CancellationToken cancellationToken);
 
     /// <summary>Saves an optimization state snapshot.</summary>
-    Task SaveOptimizationStateAsync(string optimizationId, object state, CancellationToken cancellationToken);
+    Task SaveOptimizationStateAsync(string optimizationId, OptimizationState state, CancellationToken cancellationToken);
 
     /// <summary>Loads an optimization state snapshot.</summary>
-    Task<object?> LoadOptimizationStateAsync(string optimizationId, CancellationToken cancellationToken);
+    Task<OptimizationState?> LoadOptimizationStateAsync(string optimizationId, CancellationToken cancellationToken);
 
     /// <summary>Saves a cron job.</summary>
     Task SaveCronJobAsync(CronJob job, CancellationToken cancellationToken);
@@ -95,6 +95,7 @@ internal sealed class StateManager : IStateManager, IDisposable
         }
     }
 
+    /// <summary>Initialises the SQLite database with required tables.</summary>
     private void InitializeDatabase()
     {
         using var connection = new SqliteConnection($"Data Source={_databasePath}");
@@ -121,6 +122,7 @@ internal sealed class StateManager : IStateManager, IDisposable
         _engineId = newId;
     }
 
+    /// <summary>Loads the engine ID from the database.</summary>
     private string LoadEngineId()
     {
         using var connection = new SqliteConnection($"Data Source={_databasePath}");
@@ -149,18 +151,23 @@ internal sealed class StateManager : IStateManager, IDisposable
     /// <inheritdoc/>
     public Task LoadStateAsync(CancellationToken cancellationToken)
     {
+        // For now, nothing more to load – live/optimization states are loaded on demand.
         return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public Task SaveStateAsync(CancellationToken cancellationToken)
+    public async Task SaveStateAsync(CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        // Save all active tasks – we rely on individual save methods for live/optimization.
+        // This method can be used as a global checkpoint.
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public async Task SaveLiveStateAsync(object liveState, CancellationToken cancellationToken)
+    public async Task SaveLiveStateAsync(LiveState liveState, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(liveState);
+
         string json = JsonSerializer.Serialize(liveState, _jsonOptions);
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -179,7 +186,7 @@ internal sealed class StateManager : IStateManager, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<object?> LoadLiveStateAsync(CancellationToken cancellationToken)
+    public async Task<LiveState?> LoadLiveStateAsync(CancellationToken cancellationToken)
     {
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -191,7 +198,7 @@ internal sealed class StateManager : IStateManager, IDisposable
             object? result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (result is string json)
             {
-                return JsonSerializer.Deserialize<object>(json, _jsonOptions);
+                return JsonSerializer.Deserialize<LiveState>(json, _jsonOptions);
             }
             return null;
         }
@@ -202,8 +209,11 @@ internal sealed class StateManager : IStateManager, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task SaveOptimizationStateAsync(string optimizationId, object state, CancellationToken cancellationToken)
+    public async Task SaveOptimizationStateAsync(string optimizationId, OptimizationState state, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(optimizationId);
+        ArgumentNullException.ThrowIfNull(state);
+
         string json = JsonSerializer.Serialize(state, _jsonOptions);
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -223,7 +233,7 @@ internal sealed class StateManager : IStateManager, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<object?> LoadOptimizationStateAsync(string optimizationId, CancellationToken cancellationToken)
+    public async Task<OptimizationState?> LoadOptimizationStateAsync(string optimizationId, CancellationToken cancellationToken)
     {
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -236,7 +246,7 @@ internal sealed class StateManager : IStateManager, IDisposable
             object? result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (result is string json)
             {
-                return JsonSerializer.Deserialize<object>(json, _jsonOptions);
+                return JsonSerializer.Deserialize<OptimizationState>(json, _jsonOptions);
             }
             return null;
         }

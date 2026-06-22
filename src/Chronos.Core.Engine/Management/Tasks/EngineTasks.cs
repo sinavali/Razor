@@ -3,11 +3,23 @@ using Microsoft.Extensions.Logging;
 namespace Chronos.Core.Engine.Management.Tasks;
 
 /// <summary>Live trading task.</summary>
-internal sealed class LiveTask : EngineTask
+internal sealed class LiveTask : EngineTaskBase
 {
-    private readonly object _config;
     private readonly ILogger<LiveTask> _logger;
     private readonly ITaskManager _taskManager;
+    private double[] _genes = Array.Empty<double>();
+
+    /// <summary>Gets the configuration object used to start this task.</summary>
+    public object Config { get; }
+
+    /// <summary>Gets or sets the name of the active strategy.</summary>
+    public string StrategyName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the name of the active adapter.</summary>
+    public string AdapterName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the timestamp of the last tick received (UTC).</summary>
+    public DateTime? LastTickTime { get; set; }
 
     // LoggerMessage delegates
     private static readonly Action<ILogger, string, Exception?> _logLiveTaskStarted =
@@ -25,7 +37,7 @@ internal sealed class LiveTask : EngineTask
     {
         TaskId = taskId;
         TaskType = "Live";
-        _config = config;
+        Config = config;
         _logger = logger;
         _taskManager = taskManager;
         StartTime = DateTime.UtcNow;
@@ -40,6 +52,9 @@ internal sealed class LiveTask : EngineTask
         {
             while (!cancellationToken.IsCancellationRequested)
             {
+                // Simulate tick processing – in real implementation, this would be driven by adapter ticks.
+                // For now, just update tick time with current UTC time periodically.
+                LastTickTime = DateTime.UtcNow;
                 await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
             }
             State = TaskState.Completed;
@@ -62,12 +77,21 @@ internal sealed class LiveTask : EngineTask
         }
     }
 
-    public Task InjectGenesAsync(double[] genes, CancellationToken cancellationToken)
+    /// <summary>Injects a gene array into the live strategy.</summary>
+    public async Task InjectGenesAsync(double[] genes, CancellationToken cancellationToken)
     {
-        _logInjectedGenes(_logger, genes?.Length ?? 0, TaskId, null);
-        return Task.CompletedTask;
+        _genes = genes ?? Array.Empty<double>();
+        _logInjectedGenes(_logger, _genes.Length, TaskId, null);
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
+    /// <summary>Returns the currently active gene array.</summary>
+    public Task<double[]> GetGenesAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(_genes);
+    }
+
+    /// <summary>Gets a snapshot of the live trading state.</summary>
     public Task<object> GetLiveStateAsync(CancellationToken cancellationToken)
     {
         return Task.FromResult<object>(new
@@ -83,7 +107,7 @@ internal sealed class LiveTask : EngineTask
 }
 
 /// <summary>Backtest task.</summary>
-internal sealed class BacktestTask : EngineTask
+internal sealed class BacktestTask : EngineTaskBase
 {
     private readonly object _input;
     private readonly ILogger<BacktestTask> _logger;
@@ -138,12 +162,15 @@ internal sealed class BacktestTask : EngineTask
 }
 
 /// <summary>Optimization task.</summary>
-internal sealed class OptimizationTask : EngineTask
+internal sealed class OptimizationTask : EngineTaskBase
 {
     private readonly object _config;
     private readonly ILogger<OptimizationTask> _logger;
     private readonly ITaskManager _taskManager;
     private object? _result;
+
+    /// <summary>Gets the configuration object used to start this task.</summary>
+    public object Config => _config;
 
     private static readonly Action<ILogger, string, Exception?> _logOptimizationTaskStarted =
         LoggerMessage.Define<string>(LogLevel.Information, 0, "Optimization task {TaskId} started.");
@@ -193,6 +220,7 @@ internal sealed class OptimizationTask : EngineTask
         }
     }
 
+    /// <summary>Gets the result of the optimization, if available.</summary>
     public Task<object> GetResultAsync(CancellationToken cancellationToken)
     {
         return Task.FromResult(_result ?? new { BestFitness = 0.0, Generations = 0 });

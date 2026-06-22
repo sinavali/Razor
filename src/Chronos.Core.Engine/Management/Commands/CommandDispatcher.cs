@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Extensions;
+using Chronos.Core.Engine.Management.Commands.Handlers;
 using Chronos.Core.Engine.Management.Scheduling;
 using Chronos.Core.Engine.Management.Tasks;
 using Chronos.Core.Engine.Services.BehaviorRecorder;
@@ -46,9 +47,6 @@ internal sealed class CommandDispatcher : ICommandDispatcher
 
     private static readonly Action<ILogger, Exception?> _logSendResponseError =
         LoggerMessage.Define(LogLevel.Error, 4, "Error sending command response.");
-
-    private static readonly Action<ILogger, Exception?> _logGracePeriodShutdown =
-        LoggerMessage.Define(LogLevel.Critical, 5, "Grace period expired. Stopping live and all user tasks.");
 
     /// <summary>Initialises a new instance of the <see cref="CommandDispatcher"/> class.</summary>
     /// <param name="cloudConnector">Cloud connector.</param>
@@ -152,7 +150,6 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         this.RegisterHandler(2103, new DeleteBehaviorLogsHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<DeleteBehaviorLogsHandler>()));
     }
 
-    /// <summary>Initialises the dispatcher by hooking up the cloud connector's command event.</summary>
     public void Initialize()
     {
         if (_cloudConnector is CloudConnector connector)
@@ -166,14 +163,12 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         await this.DispatchAsync(command, CancellationToken.None).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
     public override void RegisterHandler(int commandId, ICommandHandler handler)
     {
         _handlers[commandId] = handler;
         _logRegisterHandler(_logger, commandId, null);
     }
 
-    /// <inheritdoc/>
     public override async Task DispatchAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         if (!_handlers.TryGetValue(command.CommandId, out var handler))
@@ -196,7 +191,6 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         }
     }
 
-    /// <inheritdoc/>
     public override async Task SendResponseAsync(int commandId, string correlationId, object? result, string? error = null,
         CancellationToken cancellationToken = default)
     {
@@ -230,17 +224,8 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         }
     }
 
-    /// <inheritdoc/>
     public override async Task StopUserTasksAsync(CancellationToken cancellationToken)
     {
-        await _taskManager.StopAllUserTasksAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    public override async Task ExecuteGracePeriodShutdownAsync(CancellationToken cancellationToken)
-    {
-        _logGracePeriodShutdown(_logger, null);
-        await _taskManager.StopAllLiveTasksAsync(cancellationToken).ConfigureAwait(false);
         await _taskManager.StopAllUserTasksAsync(cancellationToken).ConfigureAwait(false);
     }
 }

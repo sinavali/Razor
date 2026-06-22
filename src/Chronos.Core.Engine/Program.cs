@@ -6,8 +6,7 @@
 
 namespace Chronos.Core.Engine;
 
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.InteropServices;
+using Chronos.Core.Abstractions.Hooks;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Core.Exceptions;
@@ -18,10 +17,12 @@ using Chronos.Core.Engine.Management.Tasks;
 using Chronos.Core.Engine.Services.BehaviorRecorder;
 using Chronos.Core.Engine.Services.Mining;
 using Chronos.Core.Engine.Services.Update;
+using Chronos.Core.Kernel.Hooks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
-
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 // Resolve ambiguity between Microsoft.Extensions.Logging.ILogger and Serilog.ILogger.
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 
@@ -141,10 +142,12 @@ internal sealed class Program
         services.AddSingleton<ISecurityManager, SecurityManager>();
         services.AddSingleton<IStateManager, StateManager>();
         services.AddSingleton<IEngineTelemetry, EngineTelemetry>();
+        services.AddSingleton<BinaryTransferManager>();
         services.AddSingleton<ILoggingService, LoggingService>();
 
         // Communication
         services.AddSingleton<ICloudConnector, CloudConnector>();
+        services.AddSingleton<BinaryTransferManager>();
 
         // Management
         services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
@@ -160,6 +163,9 @@ internal sealed class Program
         services.AddSingleton<IBehaviorRecorder, BehaviorRecorder>();
         services.AddSingleton<IMiningIntegration, MiningIntegration>();
         services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
+
+        // Hooks
+        services.AddSingleton<IHookRegistry, HookRegistry>();
 
         // Logging
         services.AddLogging(builder =>
@@ -185,6 +191,23 @@ internal sealed class Program
 
         var stateManager = serviceProvider.GetRequiredService<IStateManager>();
         await stateManager.LoadStateAsync(cancellationToken).ConfigureAwait(false);
+
+        // ---- RESTORE PERSISTED LIVE STATE ----
+        var liveState = await stateManager.LoadLiveStateAsync(cancellationToken).ConfigureAwait(false);
+        if (liveState != null)
+        {
+            var taskManager = serviceProvider.GetRequiredService<ITaskManager>() as TaskManager;
+            if (taskManager != null)
+            {
+                string? restoredId = await taskManager.RestoreLiveTaskAsync(liveState, cancellationToken).ConfigureAwait(false);
+                if (restoredId != null)
+                {
+                    Log.Information("Resumed live task {TaskId} from persisted state.", restoredId);
+                    // Optionally send a notification to Cloud that we resumed.
+                    // For now, we'll just log.
+                }
+            }
+        }
 
         var extensionManager = serviceProvider.GetRequiredService<IExtensionManager>();
         await extensionManager.DiscoverExtensionsAsync(cancellationToken).ConfigureAwait(false);

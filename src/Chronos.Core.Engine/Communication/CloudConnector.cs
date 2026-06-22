@@ -6,42 +6,16 @@
 
 namespace Chronos.Core.Engine.Communication;
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Core.Exceptions;
-using Chronos.Core.Engine.Management.Commands;
+using Chronos.Core.Engine.Management.Tasks;
 using Microsoft.Extensions.Logging;
-
-/// <summary>
-/// Manages the WebSocket connection to the cloud with infinite retry on failure.
-/// </summary>
-internal interface ICloudConnector
-{
-    /// <summary>Gets a value indicating whether the connection is established.</summary>
-    bool IsConnected { get; }
-
-    /// <summary>Gets the current session identifier.</summary>
-    string? SessionId { get; }
-
-    /// <summary>Runs the main connection loop with infinite retry.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-    Task RunAsync(CancellationToken cancellationToken);
-
-    /// <summary>Disconnects gracefully.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-    Task DisconnectAsync(CancellationToken cancellationToken);
-
-    /// <summary>Sends a message to the cloud.</summary>
-    /// <param name="message">The message to send.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-    Task SendAsync(CloudMessage message, CancellationToken cancellationToken);
-}
 
 /// <summary>Default implementation of <see cref="ICloudConnector"/>.</summary>
 internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
@@ -50,6 +24,8 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     private readonly ISecurityManager _securityManager;
     private readonly IEngineTelemetry _telemetry;
     private readonly IStateManager _stateManager;
+    private readonly ITaskManager _taskManager;
+    private readonly BinaryTransferManager _transferManager;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _receiveCts;
@@ -58,6 +34,10 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     private int _reconnectAttempt;
     private bool _isDisposing;
     private int _connectionAttemptCounter;
+
+    // For CPU usage calculation
+    private DateTime _lastCpuTimeSample = DateTime.UtcNow;
+    private TimeSpan _lastTotalProcessorTime = TimeSpan.Zero;
 
     // LoggerMessage delegates
     private static readonly Action<ILogger, Exception?> _logStartingConnector =
@@ -151,6 +131,27 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     private static readonly Action<ILogger, string, Exception?> _logConnectFailed =
         LoggerMessage.Define<string>(LogLevel.Trace, 34, "Failed to connect to {Endpoint}");
 
+    private static readonly Action<ILogger, string, Exception?> _logBinarySendStarted =
+        LoggerMessage.Define<string>(LogLevel.Information, 35, "Started binary send: {FilePath}");
+
+    private static readonly Action<ILogger, string, Exception?> _logBinarySendCompleted =
+        LoggerMessage.Define<string>(LogLevel.Information, 36, "Completed binary send: {FilePath}");
+
+    private static readonly Action<ILogger, string, Exception?> _logBinarySendFailed =
+        LoggerMessage.Define<string>(LogLevel.Error, 37, "Binary send failed: {FilePath}");
+
+    private static readonly Action<ILogger, string, string, Exception?> _logBinaryTransferSaved =
+        LoggerMessage.Define<string, string>(LogLevel.Information, 38, "Binary transfer {TransferId} saved to {Path}");
+
+    private static readonly Action<ILogger, string, Exception?> _logBinaryTransferNotFound =
+        LoggerMessage.Define<string>(LogLevel.Warning, 39, "Binary transfer {TransferId} completed but transfer not found.");
+
+    private static readonly Action<ILogger, string, string, Exception?> _logBinaryTransferEnded =
+        LoggerMessage.Define<string, string>(LogLevel.Warning, 40, "Binary transfer {TransferId} ended with status: {Status}");
+
+    private static readonly Action<ILogger, string, string, Exception?> _logBinaryTransferAck =
+        LoggerMessage.Define<string, string>(LogLevel.Debug, 41, "Binary transfer ACK for {TransferId}: {Status}");
+
     /// <inheritdoc/>
     public bool IsConnected => _isConnected;
 
@@ -161,20 +162,20 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     public event Func<CloudCommand, Task>? CommandReceived;
 
     /// <summary>Initialises a new instance of the <see cref="CloudConnector"/> class.</summary>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="securityManager">Security manager.</param>
-    /// <param name="telemetry">Telemetry service.</param>
-    /// <param name="stateManager">State manager.</param>
     public CloudConnector(
         ILogger<CloudConnector> logger,
         ISecurityManager securityManager,
         IEngineTelemetry telemetry,
-        IStateManager stateManager)
+        IStateManager stateManager,
+        ITaskManager taskManager,
+        BinaryTransferManager transferManager)
     {
         _logger = logger;
         _securityManager = securityManager;
         _telemetry = telemetry;
         _stateManager = stateManager;
+        _taskManager = taskManager;
+        _transferManager = transferManager;
     }
 
     /// <inheritdoc/>
@@ -192,14 +193,21 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
                     break;
                 }
 
-                // Ensure credentials are available (prompt if needed).
                 Credentials.EnsureAvailable();
 
                 await this.ConnectAndAuthenticateAsync(cancellationToken).ConfigureAwait(false);
 
                 if (_isConnected)
                 {
-                    await this.ProcessMessagesAsync(cancellationToken).ConfigureAwait(false);
+                    // Keep the connection alive; wait indefinitely but respect cancellation.
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Expected when cancellation is requested.
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -217,21 +225,6 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
         }
 
         await this.DisconnectAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task ProcessMessagesAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested && _isConnected)
-        {
-            try
-            {
-                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
     }
 
     /// <inheritdoc/>
@@ -300,6 +293,112 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
         finally
         {
             _sendLock.Release();
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SendBinaryAsync(string filePath, string contentType, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException($"File not found: {filePath}");
+        }
+
+        if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+        {
+            throw new InvalidOperationException("WebSocket is not connected.");
+        }
+
+        _logBinarySendStarted(_logger, filePath, null);
+
+        var fileInfo = new FileInfo(filePath);
+        long totalSize = fileInfo.Length;
+        string transferId = Guid.NewGuid().ToString();
+        string checksum;
+
+        // Compute checksum using static HashData
+        using (var stream = File.OpenRead(filePath))
+        {
+            checksum = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+        }
+
+        // Start transfer
+        var startPayload = new
+        {
+            TransferId = transferId,
+            FileName = Path.GetFileName(filePath),
+            TotalSize = totalSize,
+            ContentType = contentType,
+            Checksum = checksum
+        };
+
+        var startMessage = new CloudMessage
+        {
+            MessageType = "BinaryTransferStart",
+            Encrypted = true,
+            Payload = startPayload
+        };
+
+        await this.SendAsync(startMessage, cancellationToken).ConfigureAwait(false);
+
+        // Register outgoing transfer
+        _transferManager.StartOutgoing(transferId, filePath, contentType, totalSize, checksum);
+
+        int chunkSize = AppConstants.DefaultChunkSize;
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var (offset, data) = _transferManager.GetNextChunk(transferId, chunkSize);
+                if (data == null)
+                {
+                    // End of file
+                    break;
+                }
+
+                var chunkPayload = new
+                {
+                    TransferId = transferId,
+                    Offset = offset,
+                    Data = Convert.ToBase64String(data)
+                };
+
+                var chunkMessage = new CloudMessage
+                {
+                    MessageType = "BinaryChunk",
+                    Encrypted = true,
+                    Payload = chunkPayload
+                };
+
+                await this.SendAsync(chunkMessage, cancellationToken).ConfigureAwait(false);
+
+                // Small delay to avoid flooding
+                await Task.Delay(10, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Send end message
+            var endPayload = new
+            {
+                TransferId = transferId,
+                Status = "Success"
+            };
+
+            var endMessage = new CloudMessage
+            {
+                MessageType = "BinaryTransferEnd",
+                Encrypted = true,
+                Payload = endPayload
+            };
+
+            await this.SendAsync(endMessage, cancellationToken).ConfigureAwait(false);
+            _transferManager.CompleteOutgoing(transferId);
+            _logBinarySendCompleted(_logger, filePath, null);
+        }
+        catch (Exception ex)
+        {
+            _transferManager.CancelOutgoing(transferId);
+            _logBinarySendFailed(_logger, filePath, ex);
+            throw;
         }
     }
 
@@ -604,6 +703,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             case "BinaryTransferStart":
             case "BinaryChunk":
             case "BinaryTransferEnd":
+            case "BinaryTransferAck":
                 await this.ProcessBinaryTransferAsync(message, cancellationToken).ConfigureAwait(false);
                 break;
 
@@ -613,6 +713,89 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
 
             default:
                 _logUnhandledMessageType(_logger, message.MessageType, null);
+                break;
+        }
+    }
+
+    private async Task ProcessBinaryTransferAsync(CloudMessage message, CancellationToken cancellationToken)
+    {
+        _logBinaryTransfer(_logger, message.MessageType, null);
+
+        if (message.Payload is not Dictionary<string, object> payload)
+        {
+            return;
+        }
+
+        switch (message.MessageType)
+        {
+            case "BinaryTransferStart":
+                string transferId = payload.GetValueOrDefault("TransferId")?.ToString() ?? string.Empty;
+                string fileName = payload.GetValueOrDefault("FileName")?.ToString() ?? "unknown";
+                long totalSize = Convert.ToInt64(payload.GetValueOrDefault("TotalSize", 0L), CultureInfo.InvariantCulture);
+                string checksum = payload.GetValueOrDefault("Checksum")?.ToString() ?? string.Empty;
+                string contentType = payload.GetValueOrDefault("ContentType")?.ToString() ?? "application/octet-stream";
+
+                _transferManager.StartIncoming(transferId, fileName, totalSize, checksum, contentType);
+                break;
+
+            case "BinaryChunk":
+                string chunkTransferId = payload.GetValueOrDefault("TransferId")?.ToString() ?? string.Empty;
+                long offset = Convert.ToInt64(payload.GetValueOrDefault("Offset", 0L), CultureInfo.InvariantCulture);
+                string dataB64 = payload.GetValueOrDefault("Data")?.ToString() ?? string.Empty;
+                byte[] chunkData = Convert.FromBase64String(dataB64);
+
+                bool complete = _transferManager.AppendChunk(chunkTransferId, offset, chunkData);
+                if (complete)
+                {
+                    // Send ACK
+                    var ackPayload = new
+                    {
+                        TransferId = chunkTransferId,
+                        Status = "Success"
+                    };
+                    var ackMessage = new CloudMessage
+                    {
+                        MessageType = "BinaryTransferAck",
+                        Encrypted = true,
+                        Payload = ackPayload
+                    };
+                    await this.SendAsync(ackMessage, cancellationToken).ConfigureAwait(false);
+                    _logBinaryTransfer(_logger, "BinaryTransferAck", null);
+                }
+                break;
+
+            case "BinaryTransferEnd":
+                string endTransferId = payload.GetValueOrDefault("TransferId")?.ToString() ?? string.Empty;
+                string status = payload.GetValueOrDefault("Status")?.ToString() ?? "Success";
+
+                if (status == "Success")
+                {
+                    var transfer = _transferManager.GetCompletedTransfer(endTransferId);
+                    if (transfer != null)
+                    {
+                        // Save the received file to disk
+                        string outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "downloads");
+                        Directory.CreateDirectory(outputDir);
+                        string outputPath = Path.Combine(outputDir, transfer.FileName);
+                        await File.WriteAllBytesAsync(outputPath, transfer.Data, cancellationToken).ConfigureAwait(false);
+                        _logBinaryTransferSaved(_logger, endTransferId, outputPath, null);
+                    }
+                    else
+                    {
+                        _logBinaryTransferNotFound(_logger, endTransferId, null);
+                    }
+                }
+                else
+                {
+                    _transferManager.CancelIncoming(endTransferId);
+                    _logBinaryTransferEnded(_logger, endTransferId, status, null);
+                }
+                break;
+
+            case "BinaryTransferAck":
+                string ackTransferId = payload.GetValueOrDefault("TransferId")?.ToString() ?? string.Empty;
+                string ackStatus = payload.GetValueOrDefault("Status")?.ToString() ?? "Success";
+                _logBinaryTransferAck(_logger, ackTransferId, ackStatus, null);
                 break;
         }
     }
@@ -699,12 +882,6 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
         }
     }
 
-    private async Task ProcessBinaryTransferAsync(CloudMessage message, CancellationToken cancellationToken)
-    {
-        _logBinaryTransfer(_logger, message.MessageType, null);
-        await Task.CompletedTask.ConfigureAwait(false);
-    }
-
     private async Task DisplayBroadcastMessageAsync(CloudMessage message, CancellationToken cancellationToken)
     {
         if (message.Payload is not Dictionary<string, object> payload)
@@ -755,6 +932,18 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             return;
         }
 
+        // Collect system metrics
+        double cpuUsage = GetCpuUsage();
+        long memoryUsage = Process.GetCurrentProcess().WorkingSet64;
+        int tasksRunning = _taskManager.RunningTasks.Count;
+        long? liveTickAgeTicks = GetLiveTickAgeTicks();
+
+        // Record live tick age telemetry
+        if (liveTickAgeTicks.HasValue)
+        {
+            _telemetry.RecordLiveTickAge(liveTickAgeTicks.Value);
+        }
+
         var heartbeat = new CloudMessage
         {
             MessageType = "Heartbeat",
@@ -766,15 +955,53 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
                 IsConnected = _isConnected,
                 Health = new
                 {
-                    CpuUsage = 0.0,
-                    MemoryUsage = 0L,
-                    TasksRunning = 0,
-                    LiveTickAge = 0.0
+                    CpuUsage = cpuUsage,
+                    MemoryUsage = memoryUsage,
+                    TasksRunning = tasksRunning,
+                    LiveTickAge = liveTickAgeTicks ?? 0
                 }
             }
         };
 
         await this.SendAsync(heartbeat, cancellationToken).ConfigureAwait(false);
+    }
+
+    private double GetCpuUsage()
+    {
+        try
+        {
+            var process = Process.GetCurrentProcess();
+            var now = DateTime.UtcNow;
+            var totalProcessorTime = process.TotalProcessorTime;
+            var deltaTime = (now - _lastCpuTimeSample).TotalSeconds;
+            var deltaProcessorTime = (totalProcessorTime - _lastTotalProcessorTime).TotalSeconds;
+
+            _lastCpuTimeSample = now;
+            _lastTotalProcessorTime = totalProcessorTime;
+
+            if (deltaTime <= 0 || deltaProcessorTime <= 0)
+            {
+                return 0.0;
+            }
+
+            // CPU usage as percentage of total available (Environment.ProcessorCount)
+            double usage = (deltaProcessorTime / deltaTime) / Environment.ProcessorCount * 100.0;
+            return Math.Min(100.0, Math.Max(0.0, usage));
+        }
+        catch
+        {
+            return 0.0;
+        }
+    }
+
+    private long? GetLiveTickAgeTicks()
+    {
+        var lastTick = _taskManager.GetLastLiveTickTimestamp();
+        if (lastTick.HasValue)
+        {
+            return (DateTime.UtcNow - lastTick.Value).Ticks;
+        }
+        return null;
     }
 
     private TimeSpan GetReconnectDelay()
@@ -796,5 +1023,6 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
         await this.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         _receiveCts?.Dispose();
         _sendLock.Dispose();
+        _transferManager.Dispose();
     }
 }
