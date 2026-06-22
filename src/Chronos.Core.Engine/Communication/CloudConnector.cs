@@ -25,6 +25,8 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     private readonly ISecurityManager _securityManager;
     private readonly IEngineTelemetry _telemetry;
     private readonly IStateManager _stateManager;
+    private CancellationTokenSource? _queueCts;
+    private Task? _queueProcessingTask;
     private readonly ITaskManager _taskManager;
     private readonly BinaryTransferManager _transferManager;
     private readonly ISelfUpdateManager _selfUpdateManager;
@@ -153,11 +155,15 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
 
     private static readonly Action<ILogger, string, string, Exception?> _logBinaryTransferAck =
         LoggerMessage.Define<string, string>(LogLevel.Debug, 41, "Binary transfer ACK for {TransferId}: {Status}");
+
     private static readonly Action<ILogger, Exception?> _logSelfUpdateInstallFailed =
         LoggerMessage.Define(LogLevel.Error, 42, "Self-update installation failed.");
 
     private static readonly Action<ILogger, Exception?> _logSelfUpdateMetadataFailed =
         LoggerMessage.Define(LogLevel.Error, 43, "Failed to process self-update metadata.");
+
+    private static readonly Action<ILogger, string, Exception?> _logQueuedMessage =
+    LoggerMessage.Define<string>(LogLevel.Information, 44, "Message of type {MessageType} queued for later delivery.");
 
     /// <inheritdoc/>
     public bool IsConnected => _isConnected;
@@ -244,6 +250,19 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             return;
         }
 
+        // Cancel queue processing
+        if (_queueCts != null)
+        {
+            await _queueCts.CancelAsync().ConfigureAwait(false);
+            if (_queueProcessingTask != null)
+            {
+                try { await _queueProcessingTask.ConfigureAwait(false); } catch { }
+            }
+            _queueCts.Dispose();
+            _queueCts = null;
+            _queueProcessingTask = null;
+        }
+
         _isConnected = false;
         if (_receiveCts != null)
         {
@@ -275,11 +294,28 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+        var ws = _webSocket;
+        bool isOpen = ws != null && ws.State == WebSocketState.Open;
+
+        // If socket is not open, enqueue non‑critical messages
+        if (!isOpen)
         {
+            if (message.MessageType != "Heartbeat" &&
+                message.MessageType != "Auth" &&
+                message.MessageType != "AuthConfirm")
+            {
+                string json = JsonSerializer.Serialize(message);
+                await _stateManager.EnqueueOutgoingMessageAsync(message.MessageType, json, cancellationToken)
+                    .ConfigureAwait(false);
+                _logQueuedMessage(_logger, message.MessageType, null);
+                return;
+            }
+
+            // Critical messages require an open connection
             throw new InvalidOperationException("WebSocket is not connected.");
         }
 
+        // At this point, ws is guaranteed non‑null and open
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -294,8 +330,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
 
             string json = JsonSerializer.Serialize(message);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
-            await _webSocket
-                .SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken)
+            await ws!.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken)
                 .ConfigureAwait(false);
             _logSentMessage(_logger, message.MessageType, message.Encrypted, null);
         }
@@ -486,11 +521,61 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             _ = Task.Run(() => this.ReceiveLoopAsync(_receiveCts.Token), _receiveCts.Token);
 
             _isConnected = true;
+            _queueCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _queueProcessingTask = Task.Run(
+                () => ProcessOutgoingQueueAsync(_queueCts.Token),
+                _queueCts.Token);
+
             _telemetry.SetConnectionState(true);
             _reconnectAttempt = 0;
 
             await this.SendHeartbeatAsync(cancellationToken).ConfigureAwait(false);
             _ = Task.Run(() => this.HeartbeatLoopAsync(cancellationToken), cancellationToken);
+        }
+    }
+
+    private async Task ProcessOutgoingQueueAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (_isConnected && _webSocket?.State == WebSocketState.Open)
+                {
+                    var pending = await _stateManager.GetPendingOutgoingMessagesAsync(cancellationToken).ConfigureAwait(false);
+                    foreach (var msg in pending)
+                    {
+                        if (!_isConnected)
+                        {
+                            break;
+                        }
+                        // Deserialize message from JSON
+                        var cloudMsg = JsonSerializer.Deserialize<CloudMessage>(msg.PayloadJson);
+                        if (cloudMsg == null)
+                        {
+                            continue;
+                        }
+                        // Send it
+                        try
+                        {
+                            await SendAsync(cloudMsg, cancellationToken).ConfigureAwait(false);
+                            // Mark as sent
+                            await _stateManager.DeleteOutgoingMessageAsync(msg.Id, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            // If send fails, break and retry later
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException) { break; }
+            catch
+            {
+                // Log and continue
+            }
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -1059,9 +1144,11 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
         }
 
         _isDisposing = true;
+
         await this.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
         _receiveCts?.Dispose();
         _sendLock.Dispose();
         _transferManager.Dispose();
+        _queueCts?.Dispose();
     }
 }

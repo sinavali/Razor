@@ -10,6 +10,8 @@ internal sealed record CronJob(string JobId, string CronExpression, string Comma
 /// <summary>Represents a one‑off schedule.</summary>
 internal sealed record Schedule(string ScheduleId, DateTime ScheduledTimeUtc, string Command, bool Repeat);
 
+internal sealed record QueuedMessage(long Id, string MessageType, string PayloadJson, DateTime CreatedAtUtc);
+
 /// <summary>Manages persistence of engine state using SQLite.</summary>
 internal interface IStateManager
 {
@@ -66,6 +68,15 @@ internal interface IStateManager
 
     /// <summary>Gets an arbitrary metadata value.</summary>
     Task<string?> GetMetadataAsync(string key, CancellationToken cancellationToken);
+
+    /// <summary>Enqueues an outgoing message to be sent later.</summary>
+    Task EnqueueOutgoingMessageAsync(string messageType, string payloadJson, CancellationToken cancellationToken);
+
+    /// <summary>Gets all pending outgoing messages.</summary>
+    Task<IReadOnlyList<QueuedMessage>> GetPendingOutgoingMessagesAsync(CancellationToken cancellationToken);
+
+    /// <summary>Deletes a queued message by ID.</summary>
+    Task DeleteOutgoingMessageAsync(long id, CancellationToken cancellationToken);
 }
 
 /// <summary>Default implementation of state persistence.</summary>
@@ -109,6 +120,7 @@ internal sealed class StateManager : IStateManager, IDisposable
             CREATE TABLE IF NOT EXISTS CronJobs (JobId TEXT PRIMARY KEY, CronExpression TEXT NOT NULL, Command TEXT NOT NULL, Enabled INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS Schedules (ScheduleId TEXT PRIMARY KEY, ScheduledTimeUtc TEXT NOT NULL, Command TEXT NOT NULL, Repeat INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS ExtensionManifest (ManifestType TEXT PRIMARY KEY, ManifestJson TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS QueuedMessages (Id INTEGER PRIMARY KEY AUTOINCREMENT, MessageType TEXT NOT NULL, PayloadJson TEXT NOT NULL, CreatedAtUtc TEXT NOT NULL, Sent INTEGER NOT NULL DEFAULT 0);
         ";
 
         using var command = new SqliteCommand(createTablesSql, connection);
@@ -120,6 +132,73 @@ internal sealed class StateManager : IStateManager, IDisposable
         insertCmd.ExecuteNonQuery();
 
         _engineId = newId;
+    }
+
+    public async Task EnqueueOutgoingMessageAsync(string messageType, string payloadJson, CancellationToken cancellationToken)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            using var cmd = new SqliteCommand(
+                "INSERT INTO QueuedMessages (MessageType, PayloadJson, CreatedAtUtc, Sent) VALUES (@Type, @Json, @Created, 0)",
+                connection);
+            cmd.Parameters.AddWithValue("@Type", messageType);
+            cmd.Parameters.AddWithValue("@Json", payloadJson);
+            cmd.Parameters.AddWithValue("@Created", DateTime.UtcNow.ToString("O"));
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<QueuedMessage>> GetPendingOutgoingMessagesAsync(CancellationToken cancellationToken)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            using var cmd = new SqliteCommand(
+                "SELECT Id, MessageType, PayloadJson, CreatedAtUtc FROM QueuedMessages WHERE Sent = 0 ORDER BY Id ASC",
+                connection);
+            using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var list = new List<QueuedMessage>();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                list.Add(new QueuedMessage(
+                    reader.GetInt64(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    DateTime.Parse(reader.GetString(3), CultureInfo.InvariantCulture)
+                ));
+            }
+            return list;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task DeleteOutgoingMessageAsync(long id, CancellationToken cancellationToken)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            using var cmd = new SqliteCommand("DELETE FROM QueuedMessages WHERE Id = @Id", connection);
+            cmd.Parameters.AddWithValue("@Id", id);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     /// <summary>Loads the engine ID from the database.</summary>
