@@ -1,7 +1,11 @@
-using System.Collections.Concurrent;
+using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Core.Exceptions;
+using Chronos.Core.Engine.Kernel;
+using Chronos.Core.Kernel.Backtesting;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using LiveState = Chronos.Core.Engine.Core.LiveState;
 
 namespace Chronos.Core.Engine.Management.Tasks;
 
@@ -13,20 +17,26 @@ internal sealed class TaskManager : ITaskManager, IDisposable
     private readonly ILogger<TaskManager> _logger;
     private readonly IStateManager _stateManager;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly IKernelService _kernelService;
     private bool _disposed;
 
     private static readonly Action<ILogger, string, Exception?> _logTaskFaulted =
         LoggerMessage.Define<string>(LogLevel.Error, 0, "Task {TaskId} faulted.");
 
-    private static readonly Action<ILogger, string, Exception?> _logLiveStateRestored =
-        LoggerMessage.Define<string>(LogLevel.Information, 1, "Restored live task {TaskId} from persisted state.");
+    private static readonly Action<ILogger, Exception?> _logLiveTaskRestoreNotImplemented =
+        LoggerMessage.Define(LogLevel.Warning, 15, "Live task restoration not implemented with IKernelService; ignoring.");
 
     /// <summary>Initialises a new instance of the <see cref="TaskManager"/> class.</summary>
-    public TaskManager(ILogger<TaskManager> logger, IStateManager stateManager, ILoggerFactory loggerFactory)
+    public TaskManager(
+        ILogger<TaskManager> logger,
+        IStateManager stateManager,
+        ILoggerFactory loggerFactory,
+        IKernelService kernelService)
     {
         _logger = logger;
         _stateManager = stateManager;
         _loggerFactory = loggerFactory;
+        _kernelService = kernelService;
     }
 
     /// <inheritdoc/>
@@ -53,30 +63,8 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             return null;
         }
 
-        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var task = new LiveTask(state.TaskId, state.Config, _loggerFactory.CreateLogger<LiveTask>(), this)
-            {
-                StartTime = state.StartTime,
-                StrategyName = state.StrategyName,
-                AdapterName = state.AdapterName
-            };
-
-            // Restore genes and last tick time
-            await task.InjectGenesAsync(state.Genes, cancellationToken).ConfigureAwait(false);
-            task.LastTickTime = state.LastTickTime;
-
-            _tasks[state.TaskId] = task;
-            task.State = TaskState.Running;
-            _ = Task.Run(() => ExecuteTaskAsync(task, cancellationToken), cancellationToken);
-            _logLiveStateRestored(_logger, state.TaskId, null);
-            return state.TaskId;
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        _logLiveTaskRestoreNotImplemented(_logger, null);
+        return null;
     }
 
     /// <inheritdoc/>
@@ -86,20 +74,40 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var task = new LiveTask(taskId, config, _loggerFactory.CreateLogger<LiveTask>(), this);
+            // Build LiveInput from config (dummy for now)
+            var liveInput = new LiveInput
+            {
+                AdapterName = config?.GetType().GetProperty("AdapterName")?.GetValue(config)?.ToString() ?? "MockAdapter",
+                StrategyName = config?.GetType().GetProperty("StrategyName")?.GetValue(config)?.ToString() ?? "MockStrategy",
+                StrategyConfig = config ?? new object(),
+                MagicNumber = 12345,
+                Leverage = 100,
+                InitialBalance = 10000,
+                Symbols = new[] { "EURUSD" },
+                OrderGuardTimeoutSeconds = 5,
+                StopOutLevel = 0.5,
+                MaxOpenPositions = 5,
+                Genes = Array.Empty<double>(),
+                NeuralNetworkName = string.Empty
+            };
+
+            // Start via kernel service
+            string kernelTaskId = await _kernelService.StartLiveAsync(liveInput, cancellationToken).ConfigureAwait(false);
+
+            var task = new LiveTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<LiveTask>(), this, _kernelService, kernelTaskId);
             _tasks[taskId] = task;
             _ = Task.Run(() => ExecuteTaskAsync(task, cancellationToken), cancellationToken);
 
-            // Persist state
+            // Persist state (basic info)
             var state = new LiveState
             {
                 TaskId = taskId,
-                Config = config,
+                Config = config ?? new object(),
                 Genes = Array.Empty<double>(),
                 StartTime = task.StartTime,
                 LastTickTime = null,
-                StrategyName = config?.GetType().GetProperty("StrategyName")?.GetValue(config)?.ToString() ?? string.Empty,
-                AdapterName = config?.GetType().GetProperty("AdapterName")?.GetValue(config)?.ToString() ?? string.Empty
+                StrategyName = liveInput.StrategyName,
+                AdapterName = liveInput.AdapterName
             };
             await _stateManager.SaveLiveStateAsync(state, cancellationToken).ConfigureAwait(false);
             return taskId;
@@ -120,9 +128,12 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
-                // Remove persisted state by saving a null state? For now we just delete the record.
-                // We'll use SQL direct deletion. We can call SaveLiveStateAsync with a null? Not supported.
-                // We'll just ignore – the next start will overwrite.
+
+                // If it's a live task, stop the kernel session
+                if (task is LiveTask liveTask)
+                {
+                    await _kernelService.StopLiveAsync(liveTask.KernelTaskId, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         finally
@@ -138,7 +149,22 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var task = new BacktestTask(taskId, input, _loggerFactory.CreateLogger<BacktestTask>(), this);
+            // Build BacktestInput from input (dummy)
+            var backtestInput = new BacktestInput
+            {
+                TickStreams = Array.Empty<IReadOnlyList<Tick>>(),
+                Symbols = Array.Empty<string>(),
+                Strategy = null!,
+                StrategySpecification = null!,
+                ExecutionSpecification = null!,
+                MarketCalculator = null!,
+                SymbolProperties = new Dictionary<string, SymbolProperties>()
+            };
+
+            // Start via kernel service
+            string kernelTaskId = await _kernelService.StartBacktestAsync(backtestInput, cancellationToken).ConfigureAwait(false);
+
+            var task = new BacktestTask(taskId, input ?? new object(), _loggerFactory.CreateLogger<BacktestTask>(), this, _kernelService, kernelTaskId);
             _tasks[taskId] = task;
             _ = Task.Run(() => ExecuteTaskAsync(task, cancellationToken), cancellationToken);
             return taskId;
@@ -159,6 +185,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
+                // No explicit kernel cancel for backtest (stub)
             }
         }
         finally
@@ -174,7 +201,30 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var task = new OptimizationTask(taskId, config, _loggerFactory.CreateLogger<OptimizationTask>(), this);
+            // Build OptimizationInput (dummy)
+            var optInput = new OptimizationInput
+            {
+                AdapterName = "MockAdapter",
+                StrategyName = "MockStrategy",
+                StrategyConfig = config ?? new object(),
+                Leverage = 100,
+                InitialBalance = 10000,
+                Symbols = new[] { "EURUSD" },
+                MasterSeed = 42,
+                Generations = 10,
+                PopulationSize = 50,
+                MutationRate = 0.1,
+                CrossoverRate = 0.5,
+                ElitismPct = 0.05,
+                TournamentSize = 3,
+                StagnationGenerationsBeforeHyper = 3,
+                MaxParallelThreads = 0,
+                NeuralNetworkName = string.Empty
+            };
+
+            string kernelTaskId = await _kernelService.StartOptimizationAsync(optInput, cancellationToken).ConfigureAwait(false);
+
+            var task = new OptimizationTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<OptimizationTask>(), this, _kernelService, kernelTaskId);
             _tasks[taskId] = task;
             _ = Task.Run(() => ExecuteTaskAsync(task, cancellationToken), cancellationToken);
 
@@ -182,7 +232,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             var state = new OptimizationState
             {
                 TaskId = taskId,
-                Config = config,
+                Config = config ?? new object(),
                 Population = new object(),
                 CurrentGeneration = 0,
                 BestFitness = 0.0,
@@ -207,8 +257,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
-                // Optionally remove persisted state
-                await _stateManager.SaveOptimizationStateAsync(taskId, null!, cancellationToken).ConfigureAwait(false);
+                // No explicit kernel cancel for optimisation (stub)
             }
         }
         finally
@@ -226,34 +275,11 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             if (_tasks.TryGetValue(taskId, out var task))
             {
                 await task.PauseAsync(cancellationToken).ConfigureAwait(false);
-                // Persist state if live or optimization
                 if (task is LiveTask liveTask)
                 {
-                    var state = new LiveState
-                    {
-                        TaskId = liveTask.TaskId,
-                        Config = liveTask.Config,
-                        Genes = await liveTask.GetGenesAsync(cancellationToken).ConfigureAwait(false),
-                        LastTickTime = liveTask.LastTickTime,
-                        StartTime = liveTask.StartTime,
-                        StrategyName = liveTask.StrategyName,
-                        AdapterName = liveTask.AdapterName
-                    };
-                    await _stateManager.SaveLiveStateAsync(state, cancellationToken).ConfigureAwait(false);
+                    await _kernelService.PauseLiveAsync(liveTask.KernelTaskId, cancellationToken).ConfigureAwait(false);
                 }
-                else if (task is OptimizationTask optTask)
-                {
-                    var state = new OptimizationState
-                    {
-                        TaskId = optTask.TaskId,
-                        Config = optTask.Config,
-                        Population = new object(),
-                        CurrentGeneration = 0,
-                        BestFitness = 0.0,
-                        StartTime = optTask.StartTime
-                    };
-                    await _stateManager.SaveOptimizationStateAsync(taskId, state, cancellationToken).ConfigureAwait(false);
-                }
+                // For optimisation, we could also pause, but stub doesn't support.
             }
         }
         finally
@@ -271,6 +297,10 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             if (_tasks.TryGetValue(taskId, out var task))
             {
                 await task.ResumeAsync(cancellationToken).ConfigureAwait(false);
+                if (task is LiveTask liveTask)
+                {
+                    await _kernelService.ResumeLiveAsync(liveTask.KernelTaskId, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         finally
@@ -311,6 +341,11 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
+                // Cancel kernel sessions
+                if (task is LiveTask lt)
+                {
+                    await _kernelService.StopLiveAsync(lt.KernelTaskId, cancellationToken).ConfigureAwait(false);
+                }
             }
             _tasks.Clear();
         }
@@ -331,6 +366,11 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await kv.Value.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 kv.Value.State = TaskState.Canceled;
+                if (kv.Value is LiveTask lt)
+                {
+                    await _kernelService.StopLiveAsync(lt.KernelTaskId, cancellationToken).ConfigureAwait(false);
+                }
+
                 _tasks.TryRemove(kv.Key, out _);
             }
         }
@@ -351,6 +391,11 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await kv.Value.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 kv.Value.State = TaskState.Canceled;
+                if (kv.Value is LiveTask lt)
+                {
+                    await _kernelService.StopLiveAsync(lt.KernelTaskId, cancellationToken).ConfigureAwait(false);
+                }
+
                 _tasks.TryRemove(kv.Key, out _);
             }
         }
@@ -369,6 +414,8 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             if (_tasks.TryGetValue(taskId, out var task) && task is LiveTask liveTask)
             {
                 await liveTask.InjectGenesAsync(genes, cancellationToken).ConfigureAwait(false);
+                await _kernelService.InjectGenesAsync(liveTask.KernelTaskId, genes, cancellationToken).ConfigureAwait(false);
+
                 // Persist updated genes
                 var state = new LiveState
                 {

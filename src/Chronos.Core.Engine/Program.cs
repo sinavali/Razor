@@ -7,6 +7,10 @@
 namespace Chronos.Core.Engine;
 
 using Abstractions.Hooks;
+using Chronos.Core.Engine.Kernel;
+using Chronos.Core.Kernel.Hooks;
+using Chronos.Core.Kernel.Messaging;
+using Chronos.Core.Kernel.Telemetry;
 using Communication;
 using Core;
 using Core.Exceptions;
@@ -14,13 +18,12 @@ using Extensions;
 using Management.Commands;
 using Management.Scheduling;
 using Management.Tasks;
-using Services.BehaviorRecorder;
-using Services.Mining;
-using Services.Update;
-using Kernel.Hooks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using Services.BehaviorRecorder;
+using Services.Mining;
+using Services.Update;
 using System.Diagnostics.CodeAnalysis;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 
@@ -167,6 +170,11 @@ internal sealed class Program
         // Extensions
         services.AddSingleton<IExtensionManager, ExtensionManager>();
 
+        // Kernel
+        services.AddSingleton<IMessageBus, MessageBus>();
+        services.AddSingleton<ICoreMetrics>(sp => new CoreMetrics("engine"));
+        services.AddSingleton<IKernelService, KernelService>();
+
         // Services
         services.AddSingleton<IBehaviorRecorder>(sp =>
             new BehaviorRecorder(
@@ -216,8 +224,6 @@ internal sealed class Program
                 if (restoredId != null)
                 {
                     Log.Information("Resumed live task {TaskId} from persisted state.", restoredId);
-                    // Optionally send a notification to Cloud that we resumed.
-                    // For now, we'll just log.
                 }
             }
         }
