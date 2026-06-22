@@ -13,6 +13,7 @@ namespace Chronos.Core.Engine.Management.Tasks;
 internal sealed class TaskManager : ITaskManager, IDisposable
 {
     private readonly ConcurrentDictionary<string, EngineTaskBase> _tasks = new();
+    private readonly ConcurrentDictionary<string, Thread> _liveThreads = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly ILogger<TaskManager> _logger;
     private readonly IStateManager _stateManager;
@@ -25,6 +26,9 @@ internal sealed class TaskManager : ITaskManager, IDisposable
 
     private static readonly Action<ILogger, Exception?> _logLiveTaskRestoreNotImplemented =
         LoggerMessage.Define(LogLevel.Warning, 15, "Live task restoration not implemented with IKernelService; ignoring.");
+
+    private static readonly Action<ILogger, string, Exception?> _logLiveThreadDidNotExit =
+        LoggerMessage.Define<string>(LogLevel.Warning, 16, "Live thread {TaskId} did not exit within 5 seconds.");
 
     /// <summary>Initialises a new instance of the <see cref="TaskManager"/> class.</summary>
     public TaskManager(
@@ -96,7 +100,27 @@ internal sealed class TaskManager : ITaskManager, IDisposable
 
             var task = new LiveTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<LiveTask>(), this, _kernelService, kernelTaskId);
             _tasks[taskId] = task;
-            _ = Task.Run(() => ExecuteTaskAsync(task, cancellationToken), cancellationToken);
+
+            // Create a dedicated thread for live trading with high priority
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    ExecuteTaskAsync(task, cancellationToken).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logTaskFaulted(_logger, task.TaskId, ex);
+                }
+            })
+            {
+                Priority = ThreadPriority.Highest,
+                IsBackground = true,
+                Name = $"LiveThread-{taskId}"
+            };
+
+            _liveThreads[taskId] = thread;
+            thread.Start();
 
             // Persist state (basic info)
             var state = new LiveState
@@ -128,6 +152,19 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
+
+                // Wait for the live thread to finish
+                if (_liveThreads.TryRemove(taskId, out var thread))
+                {
+                    if (thread.IsAlive)
+                    {
+                        // Wait up to 5 seconds for graceful exit
+                        if (!thread.Join(TimeSpan.FromSeconds(5)))
+                        {
+                            _logLiveThreadDidNotExit(_logger, taskId, null);
+                        }
+                    }
+                }
 
                 // If it's a live task, stop the kernel session
                 if (task is LiveTask liveTask)
@@ -347,6 +384,16 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                     await _kernelService.StopLiveAsync(lt.KernelTaskId, cancellationToken).ConfigureAwait(false);
                 }
             }
+
+            // Wait for live threads to finish
+            foreach (var kv in _liveThreads)
+            {
+                if (kv.Value.IsAlive)
+                {
+                    kv.Value.Join(TimeSpan.FromSeconds(5));
+                }
+            }
+            _liveThreads.Clear();
             _tasks.Clear();
         }
         finally
@@ -372,6 +419,13 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 }
 
                 _tasks.TryRemove(kv.Key, out _);
+                if (_liveThreads.TryRemove(kv.Key, out var thread))
+                {
+                    if (thread.IsAlive)
+                    {
+                        thread.Join(TimeSpan.FromSeconds(5));
+                    }
+                }
             }
         }
         finally
@@ -397,6 +451,13 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 }
 
                 _tasks.TryRemove(kv.Key, out _);
+                if (_liveThreads.TryRemove(kv.Key, out var thread))
+                {
+                    if (thread.IsAlive)
+                    {
+                        thread.Join(TimeSpan.FromSeconds(5));
+                    }
+                }
             }
         }
         finally
@@ -474,6 +535,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await Task.Delay(TimeSpan.FromMinutes(5), CancellationToken.None).ConfigureAwait(false);
                 _tasks.TryRemove(task.TaskId, out _);
+                _liveThreads.TryRemove(task.TaskId, out _);
             }, CancellationToken.None);
         }
     }
@@ -490,6 +552,14 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         foreach (var task in _tasks.Values)
         {
             task.CancellationTokenSource.Cancel();
+        }
+
+        foreach (var kv in _liveThreads)
+        {
+            if (kv.Value.IsAlive)
+            {
+                kv.Value.Join(TimeSpan.FromSeconds(5));
+            }
         }
 
         _lock.Dispose();
