@@ -4,12 +4,12 @@
 // </copyright>
 // -----------------------------------------------------------------------------
 
-namespace Chronos.Core.Engine.Management.Commands.Handlers;
-
+using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Communication;
-using Chronos.Core.Engine.Management.Commands;
 using Chronos.Core.Engine.Services.BehaviorRecorder;
 using Microsoft.Extensions.Logging;
+
+namespace Chronos.Core.Engine.Management.Commands.Handlers;
 
 // ─── Behavior Logging ──────────────────────────────────────────
 
@@ -17,7 +17,8 @@ internal sealed class EnableBehaviorLoggingHandler : CommandHandlerBase
 {
     private readonly IBehaviorRecorder _behaviorRecorder;
 
-    public EnableBehaviorLoggingHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher, IBehaviorRecorder behaviorRecorder, ILogger<EnableBehaviorLoggingHandler> logger)
+    public EnableBehaviorLoggingHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher,
+        IBehaviorRecorder behaviorRecorder, ILogger<EnableBehaviorLoggingHandler> logger)
         : base(cloudConnector, dispatcher, logger)
     {
         _behaviorRecorder = behaviorRecorder;
@@ -32,7 +33,8 @@ internal sealed class EnableBehaviorLoggingHandler : CommandHandlerBase
             !dict.TryGetValue("StrategyName", out object? strategyNameObj) ||
             !dict.TryGetValue("Genes", out object? genesObj))
         {
-            await SendErrorAsync(command.CorrelationId ?? string.Empty, "Missing SessionId, StrategyName, or Genes.", cancellationToken).ConfigureAwait(false);
+            await SendErrorAsync(command.CorrelationId ?? string.Empty, "Missing SessionId, StrategyName, or Genes.",
+                cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -40,7 +42,16 @@ internal sealed class EnableBehaviorLoggingHandler : CommandHandlerBase
         string strategyName = strategyNameObj?.ToString()!;
         double[] genes = (genesObj as double[]) ?? Array.Empty<double>();
 
-        _behaviorRecorder.Enable(sessionId, strategyName, genes);
-        await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { SessionId = sessionId }, cancellationToken).ConfigureAwait(false);
+        // Optional upload interval
+        int uploadInterval = AppConstants.DefaultBehaviorUploadIntervalSeconds;
+        if (dict.TryGetValue("UploadIntervalSeconds", out object? intervalObj) && intervalObj is int interval &&
+            interval > 0)
+        {
+            uploadInterval = interval;
+        }
+
+        _behaviorRecorder.Enable(sessionId, strategyName, genes, uploadInterval);
+        await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { SessionId = sessionId }, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

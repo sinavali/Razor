@@ -147,7 +147,7 @@ internal sealed class Program
 
         // Communication
         services.AddSingleton<ICloudConnector, CloudConnector>();
-        services.AddSingleton<BinaryTransferManager>();
+        services.AddSingleton<BinaryTransferManager>(); // already added, can keep one
 
         // Management
         services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
@@ -160,7 +160,10 @@ internal sealed class Program
         services.AddSingleton<IExtensionManager, ExtensionManager>();
 
         // Services
-        services.AddSingleton<IBehaviorRecorder, BehaviorRecorder>();
+        services.AddSingleton<IBehaviorRecorder>(sp =>
+            new BehaviorRecorder(
+                sp.GetRequiredService<ILogger<BehaviorRecorder>>(),
+                sp.GetRequiredService<ICloudConnector>()));
         services.AddSingleton<IMiningIntegration, MiningIntegration>();
         services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
 

@@ -20,6 +20,9 @@ internal static class AppConstants
     /// <summary>Default chunk size for binary transfers in bytes.</summary>
     public const int DefaultChunkSize = 64 * 1024;
 
+    /// <summary>Default interval for uploading behaviour logs in seconds.</summary>
+    public const int DefaultBehaviorUploadIntervalSeconds = 60;
+
     /// <summary>Engine version.</summary>
     public const string EngineVersion = "1.0.0";
 
