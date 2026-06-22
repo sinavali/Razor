@@ -6,30 +6,29 @@
 
 namespace Chronos.Core.Engine;
 
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Engine.Communication;
-using Chronos.Core.Engine.Core;
-using Chronos.Core.Engine.Core.Exceptions;
-using Chronos.Core.Engine.Extensions;
-using Chronos.Core.Engine.Management.Commands;
-using Chronos.Core.Engine.Management.Scheduling;
-using Chronos.Core.Engine.Management.Tasks;
-using Chronos.Core.Engine.Services.BehaviorRecorder;
-using Chronos.Core.Engine.Services.Mining;
-using Chronos.Core.Engine.Services.Update;
-using Chronos.Core.Kernel.Hooks;
+using Abstractions.Hooks;
+using Communication;
+using Core;
+using Core.Exceptions;
+using Extensions;
+using Management.Commands;
+using Management.Scheduling;
+using Management.Tasks;
+using Services.BehaviorRecorder;
+using Services.Mining;
+using Services.Update;
+using Kernel.Hooks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.InteropServices;
-// Resolve ambiguity between Microsoft.Extensions.Logging.ILogger and Serilog.ILogger.
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 /// <summary>
 /// Main entry point for the Chronos Engine.
 /// </summary>
-[SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Console output for CLI; no localization required.")]
+[SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters",
+    Justification = "Console output for CLI; no localization required.")]
 internal sealed class Program
 {
     private static IServiceProvider? _serviceProvider;
@@ -52,17 +51,20 @@ internal sealed class Program
     /// The main method.
     /// </summary>
     /// <param name="args">Command‑line arguments. Supports --auth=username:password:apikey.</param>
-    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method", Justification = "Main is async.")]
+    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method",
+        Justification = "Main is async.")]
     public static async Task Main(string[] args)
     {
         // Parse --help and --version first.
-        if (args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.Ordinal)))
+        if (args.Any(a =>
+                a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.Ordinal)))
         {
             PrintHelp();
             return;
         }
 
-        if (args.Any(a => a.Equals("--version", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.Ordinal)))
+        if (args.Any(a =>
+                a.Equals("--version", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.Ordinal)))
         {
             PrintVersion();
             return;
@@ -70,7 +72,7 @@ internal sealed class Program
 
         if (args.Any(a => a.Equals("--development", StringComparison.OrdinalIgnoreCase)))
         {
-            Chronos.Core.Engine.Core.RuntimeEnvironment.SetDevelopment(true);
+            RuntimeEnvironment.SetDevelopment(true);
         }
 
 #if DEBUG
@@ -110,6 +112,13 @@ internal sealed class Program
         {
             _serviceProvider = BuildServiceProvider();
 
+            // If this is a restart after update, finalize the update
+            if (isRestart)
+            {
+                var selfUpdate = _serviceProvider.GetRequiredService<ISelfUpdateManager>();
+                await selfUpdate.FinalizeUpdateAsync(_shutdownCts.Token).ConfigureAwait(false);
+            }
+
             // After building, initialise command dispatcher to hook up event.
             var dispatcher = _serviceProvider.GetRequiredService<ICommandDispatcher>() as CommandDispatcher;
             dispatcher?.Initialize();
@@ -147,7 +156,6 @@ internal sealed class Program
 
         // Communication
         services.AddSingleton<ICloudConnector, CloudConnector>();
-        services.AddSingleton<BinaryTransferManager>(); // already added, can keep one
 
         // Management
         services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
@@ -180,7 +188,8 @@ internal sealed class Program
         return services.BuildServiceProvider();
     }
 
-    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method", Justification = "Execution is async.")]
+    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method",
+        Justification = "Execution is async.")]
     private static async Task RunEngineAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         Console.WriteLine("=== Chronos Engine v1.0.0 LTS ===");
@@ -202,7 +211,8 @@ internal sealed class Program
             var taskManager = serviceProvider.GetRequiredService<ITaskManager>() as TaskManager;
             if (taskManager != null)
             {
-                string? restoredId = await taskManager.RestoreLiveTaskAsync(liveState, cancellationToken).ConfigureAwait(false);
+                string? restoredId = await taskManager.RestoreLiveTaskAsync(liveState, cancellationToken)
+                    .ConfigureAwait(false);
                 if (restoredId != null)
                 {
                     Log.Information("Resumed live task {TaskId} from persisted state.", restoredId);
@@ -343,7 +353,8 @@ internal sealed class Program
         _shutdownCts?.Cancel();
     }
 
-    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Console output for CLI help; no localization required.")]
+    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters",
+        Justification = "Console output for CLI help; no localization required.")]
     private static void PrintHelp()
     {
         Console.WriteLine("Chronos Engine v" + AppConstants.EngineVersion);
@@ -358,7 +369,8 @@ internal sealed class Program
         Console.WriteLine("  --service-description=<desc>     Description (default: Chronos Trading Engine)");
     }
 
-    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Console output for version; no localization required.")]
+    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters",
+        Justification = "Console output for version; no localization required.")]
     private static void PrintVersion()
     {
         Console.WriteLine($"Chronos Engine v{AppConstants.EngineVersion} LTS");

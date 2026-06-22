@@ -12,9 +12,10 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Chronos.Core.Engine.Core;
-using Chronos.Core.Engine.Core.Exceptions;
-using Chronos.Core.Engine.Management.Tasks;
+using Core;
+using Core.Exceptions;
+using Management.Tasks;
+using Services.Update;
 using Microsoft.Extensions.Logging;
 
 /// <summary>Default implementation of <see cref="ICloudConnector"/>.</summary>
@@ -26,6 +27,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     private readonly IStateManager _stateManager;
     private readonly ITaskManager _taskManager;
     private readonly BinaryTransferManager _transferManager;
+    private readonly ISelfUpdateManager _selfUpdateManager;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _receiveCts;
@@ -151,6 +153,11 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
 
     private static readonly Action<ILogger, string, string, Exception?> _logBinaryTransferAck =
         LoggerMessage.Define<string, string>(LogLevel.Debug, 41, "Binary transfer ACK for {TransferId}: {Status}");
+    private static readonly Action<ILogger, Exception?> _logSelfUpdateInstallFailed =
+        LoggerMessage.Define(LogLevel.Error, 42, "Self-update installation failed.");
+
+    private static readonly Action<ILogger, Exception?> _logSelfUpdateMetadataFailed =
+        LoggerMessage.Define(LogLevel.Error, 43, "Failed to process self-update metadata.");
 
     /// <inheritdoc/>
     public bool IsConnected => _isConnected;
@@ -168,7 +175,8 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
         IEngineTelemetry telemetry,
         IStateManager stateManager,
         ITaskManager taskManager,
-        BinaryTransferManager transferManager)
+        BinaryTransferManager transferManager,
+        ISelfUpdateManager selfUpdateManager)
     {
         _logger = logger;
         _securityManager = securityManager;
@@ -176,6 +184,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
         _stateManager = stateManager;
         _taskManager = taskManager;
         _transferManager = transferManager;
+        _selfUpdateManager = selfUpdateManager;
     }
 
     /// <inheritdoc/>
@@ -411,7 +420,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             _logConnectingCloudAttempt(_logger, _connectionAttemptCounter, null);
             try
             {
-                await this.ConnectSingleEndpointAsync(AppConstants.PrimaryEndpoint, cancellationToken).ConfigureAwait(false);
+                await ConnectSingleEndpointAsync(AppConstants.PrimaryEndpoint, cancellationToken).ConfigureAwait(false);
                 return;
             }
             catch (Exception)
@@ -421,7 +430,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
 
             try
             {
-                await this.ConnectSingleEndpointAsync(AppConstants.FallbackEndpoint, cancellationToken).ConfigureAwait(false);
+                await ConnectSingleEndpointAsync(AppConstants.FallbackEndpoint, cancellationToken).ConfigureAwait(false);
                 return;
             }
             catch (Exception ex)
@@ -611,10 +620,10 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             case "AuthResponse":
                 if (message.Payload is Dictionary<string, object> payload)
                 {
-                    if (payload.TryGetValue("Status", out object? statusObj) && statusObj?.ToString() == "Success")
+                    if (payload.TryGetValue("Status", out object? statusObj) && statusObj.ToString() == "Success")
                     {
                         _sessionId = payload.TryGetValue("SessionId", out object? sessionObj)
-                            ? sessionObj?.ToString()
+                            ? sessionObj.ToString()
                             : null;
                         if (payload.TryGetValue("PublicKey", out object? pubKeyObj))
                         {
@@ -643,7 +652,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
                     else
                     {
                         string error = payload.TryGetValue("ErrorMessage", out object? errObj)
-                            ? errObj?.ToString() ?? "Unknown error"
+                            ? errObj.ToString() ?? "Unknown error"
                             : "Unknown error";
                         _logAuthFailed(_logger, error, null);
                         throw new EngineException($"Authentication failed: {error}");
@@ -809,7 +818,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
 
         if (payload.TryGetValue("Status", out object? statusObj))
         {
-            string? status = statusObj?.ToString();
+            string? status = statusObj.ToString();
             if (status == "Stop")
             {
                 _logStopRequested(_logger, null);
@@ -876,9 +885,39 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             }
         }
 
-        if (payload.TryGetValue("AdminMessage", out object? adminMsgObj) && adminMsgObj?.ToString() is string adminMsg)
+        if (payload.TryGetValue("AdminMessage", out object? adminMsgObj) && adminMsgObj.ToString() is string adminMsg)
         {
             Console.WriteLine($"\n[ADMIN] {adminMsg}");
+        }
+
+        // Check for self-update metadata
+        if (payload.TryGetValue("NewVersion", out object? newVersionObj) && newVersionObj is string newVersion &&
+            payload.TryGetValue("DownloadUrl", out object? downloadUrlObj) && downloadUrlObj is string downloadUrlStr &&
+            payload.TryGetValue("Checksum", out object? checksumObj) && checksumObj is string checksum)
+        {
+            try
+            {
+                _selfUpdateManager.CheckForUpdate(newVersion, new Uri(downloadUrlStr), checksum);
+                if (_selfUpdateManager.IsUpdateAvailable)
+                {
+                    // Trigger update in background
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _selfUpdateManager.InstallUpdateAsync(CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logSelfUpdateInstallFailed(_logger, ex);
+                        }
+                    }, cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logSelfUpdateMetadataFailed(_logger, ex);
+            }
         }
     }
 
