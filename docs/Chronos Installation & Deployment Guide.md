@@ -111,18 +111,34 @@ chronos/
    ./Chronos.Engine
    ```
 
-### 4.3 Running as a Service (Linux)
+### 4.3 Running as a Service
 
-To run the engine as a systemd service:
+The engine can be installed as a background service on both Windows and Linux.
 
-1. Create `/etc/systemd/system/chronos.service`:
+#### Windows Service
+
+1. Install the engine binary in a permanent directory, e.g., `C:\Chronos`.
+2. Create a service using `sc`:
+   ```
+   sc create ChronosEngine binPath = "C:\Chronos\Chronos.Engine.exe --service --auth=username,password,apikey" start=auto
+   ```
+3. Start the service:
+   ```
+   sc start ChronosEngine
+   ```
+4. Monitor logs in `C:\Chronos\logs\`.
+
+#### Linux systemd Service
+
+1. Install the engine binary in `/opt/chronos`.
+2. Create `/etc/systemd/system/chronos.service`:
    ```ini
    [Unit]
    Description=Chronos Engine
    After=network.target
 
    [Service]
-   ExecStart=/opt/chronos/Chronos.Engine
+   ExecStart=/opt/chronos/Chronos.Engine --service --auth=username,password,apikey
    WorkingDirectory=/opt/chronos
    Restart=on-failure
    RestartSec=10
@@ -134,15 +150,14 @@ To run the engine as a systemd service:
    [Install]
    WantedBy=multi-user.target
    ```
-
-2. Enable and start:
-   ```bash
+3. Enable and start:
+   ```
    sudo systemctl daemon-reload
    sudo systemctl enable chronos
    sudo systemctl start chronos
    ```
 
-3. Check status: `sudo systemctl status chronos`
+> **Note:** Replace `username,password,apikey` with the actual credentials required for the engine’s authentication. The `--service` flag tells the engine to run as a daemon/service.
 
 ---
 
@@ -353,7 +368,3 @@ Send the relevant log excerpts to Chronos support through the Cloud dashboard. D
 2. Delete the engine directory.
 3. Revoke the engine's API key in Chronos Cloud.
 4. Remove the engine from the Cloud dashboard.
-
----
-
-*Ready for the next document.*

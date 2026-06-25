@@ -19,6 +19,7 @@ using Management.Commands;
 using Management.Scheduling;
 using Management.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Services.BehaviorRecorder;
@@ -106,6 +107,9 @@ internal sealed class Program
             Log.Information("Engine restarting after update.");
         }
 
+        // Detect --service flag
+        bool isService = args.Any(a => a.Equals("--service", StringComparison.OrdinalIgnoreCase));
+
         _shutdownCts = new CancellationTokenSource();
         Console.CancelKeyPress += OnCancelKeyPress;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -122,11 +126,16 @@ internal sealed class Program
                 await selfUpdate.FinalizeUpdateAsync(_shutdownCts.Token).ConfigureAwait(false);
             }
 
-            // After building, initialise command dispatcher to hook up event.
-            var dispatcher = _serviceProvider.GetRequiredService<ICommandDispatcher>() as CommandDispatcher;
-            dispatcher?.Initialize();
-
-            await RunEngineAsync(_serviceProvider, _shutdownCts.Token).ConfigureAwait(false);
+            if (isService)
+            {
+                // Run as a hosted service (Windows Service / systemd)
+                await RunAsServiceAsync(_serviceProvider, _shutdownCts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                // Run as a console application
+                await RunConsoleAsync(_serviceProvider, _shutdownCts.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -193,12 +202,13 @@ internal sealed class Program
             builder.AddSerilog(dispose: true);
         });
 
+        // Hosted service (for service mode)
+        services.AddHostedService<EngineHostedService>();
+
         return services.BuildServiceProvider();
     }
 
-    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method",
-        Justification = "Execution is async.")]
-    private static async Task RunEngineAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    private static async Task RunConsoleAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         Console.WriteLine("=== Chronos Engine v1.0.0 LTS ===");
         Console.WriteLine($"Runtime: {Environment.Version}");
@@ -212,7 +222,7 @@ internal sealed class Program
         var stateManager = serviceProvider.GetRequiredService<IStateManager>();
         await stateManager.LoadStateAsync(cancellationToken).ConfigureAwait(false);
 
-        // ---- RESTORE PERSISTED LIVE STATE ----
+        // Restore live state
         var liveState = await stateManager.LoadLiveStateAsync(cancellationToken).ConfigureAwait(false);
         if (liveState != null)
         {
@@ -251,6 +261,75 @@ internal sealed class Program
 
         var cloudConnector = serviceProvider.GetRequiredService<ICloudConnector>();
         await cloudConnector.RunAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task RunAsServiceAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    {
+        var host = Host.CreateDefaultBuilder()
+            .UseWindowsService(options =>
+            {
+                options.ServiceName = "Chronos Engine";
+            })
+            .UseSystemd()
+            .ConfigureServices((_, services) =>
+            {
+                // The hosted service is already registered in BuildServiceProvider,
+                // but we need to copy the services from the existing provider.
+                // To avoid duplication, we use the existing provider as the root.
+            })
+            .Build();
+
+        // We need to copy the services from the existing provider into the host's DI,
+        // but the host has its own DI. To avoid complexity, we'll just run the engine
+        // as a hosted service directly, using the existing service provider.
+        // The EngineHostedService is already registered, but we need to start it.
+        // However, we are using the host's RunAsync which will start all hosted services.
+        // But we already built a service provider above. Instead, we can just use the
+        // host's container and not build our own.
+        // Simplest: use the host's container for service mode entirely.
+
+        // Rebuild the host with our services.
+        using var host2 = Host.CreateDefaultBuilder()
+            .UseWindowsService(options =>
+            {
+                options.ServiceName = "Chronos Engine";
+            })
+            .UseSystemd()
+            .ConfigureServices((context, services) =>
+            {
+                // Register all our services.
+                services.AddSingleton<ISecurityManager, SecurityManager>();
+                services.AddSingleton<IStateManager, StateManager>();
+                services.AddSingleton<IEngineTelemetry, EngineTelemetry>();
+                services.AddSingleton<BinaryTransferManager>();
+                services.AddSingleton<ILoggingService, LoggingService>();
+                services.AddSingleton<ICloudConnector, CloudConnector>();
+                services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
+                services.AddSingleton<Lazy<ICommandDispatcher>>(sp =>
+                    new Lazy<ICommandDispatcher>(() => sp.GetRequiredService<ICommandDispatcher>()));
+                services.AddSingleton<ICronJobManager, CronJobManager>();
+                services.AddSingleton<ITaskManager, TaskManager>();
+                services.AddSingleton<IExtensionManager, ExtensionManager>();
+                services.AddSingleton<IMessageBus, MessageBus>();
+                services.AddSingleton<ICoreMetrics>(sp => new CoreMetrics("engine"));
+                services.AddSingleton<IKernelService, KernelService>();
+                services.AddSingleton<IBehaviorRecorder>(sp =>
+                    new BehaviorRecorder(
+                        sp.GetRequiredService<ILogger<BehaviorRecorder>>(),
+                        sp.GetRequiredService<ICloudConnector>()));
+                services.AddSingleton<IMiningIntegration, MiningIntegration>();
+                services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
+                services.AddSingleton<IHookRegistry, HookRegistry>();
+                services.AddHostedService<EngineHostedService>();
+                services.AddLogging(builder =>
+                {
+                    builder.AddConsole();
+                    builder.AddSerilog(dispose: true);
+                });
+            })
+            .Build();
+
+        await host2.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task ShutdownEngineAsync()
@@ -366,13 +445,19 @@ internal sealed class Program
         Console.WriteLine("Chronos Engine v" + AppConstants.EngineVersion);
         Console.WriteLine("Usage: Chronos.Engine [options]");
         Console.WriteLine("Options:");
-        Console.WriteLine("  --auth=username:password:apikey   Set credentials via command line");
+        Console.WriteLine("  --auth=username,password,apikey   Set credentials via command line (required for service mode)");
         Console.WriteLine("  --help, -h                       Show this help message");
         Console.WriteLine("  --version, -v                    Show version information");
-        Console.WriteLine("  --service                        Run as a Windows Service (Windows only)");
-        Console.WriteLine("  --service-name=<name>            Service name (default: ChronosEngine)");
-        Console.WriteLine("  --service-display=<display>      Display name (default: Chronos Engine)");
-        Console.WriteLine("  --service-description=<desc>     Description (default: Chronos Trading Engine)");
+        Console.WriteLine("  --service                        Run as a Windows Service (Windows) or systemd (Linux)");
+        Console.WriteLine("  --development                    Run in development mode (disable some security checks)");
+        Console.WriteLine("  --command=restart                Internal use for self-update");
+        Console.WriteLine("\nService installation (Windows):");
+        Console.WriteLine("  sc create ChronosEngine binPath= \"C:\\Path\\Chronos.Engine.exe --service --auth=user,pass,key\"");
+        Console.WriteLine("\nService installation (Linux):");
+        Console.WriteLine("  Create /etc/systemd/system/chronos.service with:");
+        Console.WriteLine("  [Service]");
+        Console.WriteLine("  ExecStart=/opt/chronos/Chronos.Engine --service --auth=user,pass,key");
+        Console.WriteLine("  WorkingDirectory=/opt/chronos");
     }
 
     [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters",
