@@ -1,9 +1,15 @@
+// -----------------------------------------------------------------------------
+// <copyright file="EngineTasks.cs" company="Chronos Platform">
+//   Copyright (c) Chronos Platform. All rights reserved.
+// </copyright>
+// -----------------------------------------------------------------------------
+
+namespace Chronos.Core.Engine.Management.Tasks;
+
 using Chronos.Core.Engine.Kernel;
 using Chronos.Core.Kernel.Backtesting;
 using Microsoft.Extensions.Logging;
 using ChromosomeKernel = Chronos.Core.Kernel.Optimization.Chromosome;
-
-namespace Chronos.Core.Engine.Management.Tasks;
 
 /// <summary>Live trading task.</summary>
 internal sealed class LiveTask : EngineTaskBase

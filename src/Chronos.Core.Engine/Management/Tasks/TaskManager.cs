@@ -1,13 +1,20 @@
+// -----------------------------------------------------------------------------
+// <copyright file="TaskManager.cs" company="Chronos Platform">
+//   Copyright (c) Chronos Platform. All rights reserved.
+// </copyright>
+// -----------------------------------------------------------------------------
+
+namespace Chronos.Core.Engine.Management.Tasks;
+
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Core.Exceptions;
+using Chronos.Core.Engine.Extensions;
 using Chronos.Core.Engine.Kernel;
 using Chronos.Core.Kernel.Backtesting;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using LiveState = Chronos.Core.Engine.Core.LiveState;
-
-namespace Chronos.Core.Engine.Management.Tasks;
 
 /// <summary>Default implementation of <see cref="ITaskManager"/>.</summary>
 internal sealed class TaskManager : ITaskManager, IDisposable
@@ -19,6 +26,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
     private readonly IStateManager _stateManager;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IKernelService _kernelService;
+    private readonly IExtensionManager _extensionManager;
     private bool _disposed;
 
     private static readonly Action<ILogger, string, Exception?> _logTaskFaulted =
@@ -35,12 +43,14 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         ILogger<TaskManager> logger,
         IStateManager stateManager,
         ILoggerFactory loggerFactory,
-        IKernelService kernelService)
+        IKernelService kernelService,
+        IExtensionManager extensionManager)
     {
         _logger = logger;
         _stateManager = stateManager;
         _loggerFactory = loggerFactory;
         _kernelService = kernelService;
+        _extensionManager = extensionManager;
     }
 
     /// <inheritdoc/>
@@ -180,28 +190,29 @@ internal sealed class TaskManager : ITaskManager, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<string> StartBacktestTaskAsync(object input, CancellationToken cancellationToken)
+    public async Task<string> StartBacktestTaskAsync(object config, CancellationToken cancellationToken)
     {
         var taskId = $"bt_{Guid.NewGuid():N}";
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Build BacktestInput from input (dummy)
-            var backtestInput = new BacktestInput
-            {
-                TickStreams = Array.Empty<IReadOnlyList<Tick>>(),
-                Symbols = Array.Empty<string>(),
-                Strategy = null!,
-                StrategySpecification = null!,
-                ExecutionSpecification = null!,
-                MarketCalculator = null!,
-                SymbolProperties = new Dictionary<string, SymbolProperties>()
-            };
+            // Parse configuration
+            var btConfig = BacktestConfiguration.Parse(config);
+
+            // Get active adapter and strategy
+            var adapter = _extensionManager.ActiveAdapter
+                ?? throw new InvalidOperationException("No active adapter found.");
+            var strategy = _extensionManager.ActiveStrategy
+                ?? throw new InvalidOperationException("No active strategy found.");
 
             // Start via kernel service
-            string kernelTaskId = await _kernelService.StartBacktestAsync(backtestInput, cancellationToken).ConfigureAwait(false);
+            string kernelTaskId = await _kernelService.StartBacktestAsync(
+                adapter,
+                strategy,
+                btConfig,
+                cancellationToken).ConfigureAwait(false);
 
-            var task = new BacktestTask(taskId, input ?? new object(), _loggerFactory.CreateLogger<BacktestTask>(), this, _kernelService, kernelTaskId);
+            var task = new BacktestTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<BacktestTask>(), this, _kernelService, kernelTaskId);
             _tasks[taskId] = task;
             _ = Task.Run(() => ExecuteTaskAsync(task, cancellationToken), cancellationToken);
             return taskId;

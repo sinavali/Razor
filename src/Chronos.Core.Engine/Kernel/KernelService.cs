@@ -10,6 +10,7 @@ using Chronos.Core.Abstractions.Hooks;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Engine.Extensions;
+using Chronos.Core.Engine.Management.Tasks;
 using Chronos.Core.Kernel.Backtesting;
 using Chronos.Core.Kernel.Brokers;
 using Chronos.Core.Kernel.Clock;
@@ -62,6 +63,8 @@ internal sealed class KernelService : IKernelService, IDisposable
         LoggerMessage.Define(LogLevel.Warning, 10, "PauseLive not implemented; ignoring.");
     private static readonly Action<ILogger, Exception?> _logResumeLiveNotImplemented =
         LoggerMessage.Define(LogLevel.Warning, 11, "ResumeLive not implemented; ignoring.");
+    private static readonly Action<ILogger, string, string, Exception?> _logBacktestDataFetchFailed =
+        LoggerMessage.Define<string, string>(LogLevel.Error, 12, "Failed to fetch historical data for symbol {Symbol} in backtest {TaskId}.");
 
     private sealed record TaskState(
         CancellationTokenSource Cts,
@@ -69,7 +72,8 @@ internal sealed class KernelService : IKernelService, IDisposable
         LiveBroker? Broker = null,
         IStrategyCapability? Strategy = null,
         OptimizationRunner? Runner = null,
-        IIndicatorRegistry? IndicatorRegistry = null)
+        IIndicatorRegistry? IndicatorRegistry = null,
+        List<MemoryMappedTickList>? MappedTickLists = null)
     {
         public void DisposeCts()
         {
@@ -98,6 +102,20 @@ internal sealed class KernelService : IKernelService, IDisposable
                 method.Invoke(IndicatorRegistry, null);
             }
         }
+
+        public void DisposeMappedTickLists()
+        {
+            if (MappedTickLists == null)
+            {
+                return;
+            }
+
+            foreach (var mm in MappedTickLists)
+            {
+                mm?.Dispose();
+            }
+            MappedTickLists.Clear();
+        }
     }
 
     public KernelService(
@@ -115,24 +133,148 @@ internal sealed class KernelService : IKernelService, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<string> StartBacktestAsync(BacktestInput input, CancellationToken cancellationToken)
+    public async Task<string> StartBacktestAsync(
+        IAdapterCapability adapter,
+        IStrategyCapability strategy,
+        BacktestConfiguration config,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(adapter);
+        ArgumentNullException.ThrowIfNull(strategy);
+        ArgumentNullException.ThrowIfNull(config);
+
         string taskId = $"bt_{Guid.NewGuid():N}";
         _logBacktestStarted(_logger, taskId, null);
 
-#pragma warning disable CA2000 // Disposable is stored and disposed later in the task state
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _activeTasks[taskId] = new TaskState(cts);
+        // CA2000 is suppressed because the CTS is stored in the task state and disposed
+        // when the task completes or is cancelled.
+        CancellationTokenSource cts;
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 #pragma warning restore CA2000
+        var mappedLists = new List<MemoryMappedTickList>();
+        var taskState = new TaskState(cts, MappedTickLists: mappedLists);
+
+        try
+        {
+            _activeTasks[taskId] = taskState;
+        }
+        catch
+        {
+            cts.Dispose();
+            throw;
+        }
 
         _ = Task.Run(async () =>
         {
             try
             {
+                // 1. Fetch historical data for each symbol
+                var symbolProperties = new Dictionary<string, SymbolProperties>();
+                var tickStreams = new List<IReadOnlyList<Tick>>();
+
+                foreach (string symbol in config.Symbols)
+                {
+                    var props = await adapter.GetSymbolPropertiesAsync(symbol, cts.Token).ConfigureAwait(false);
+                    if (props == null)
+                    {
+                        _logBacktestDataFetchFailed(_logger, symbol, taskId, null);
+                        throw new InvalidOperationException($"Symbol properties for {symbol} not available.");
+                    }
+                    symbolProperties[symbol] = props;
+
+                    // Fetch history
+                    var request = new HistoricalDataRequest
+                    {
+                        Symbol = symbol,
+                        StartTime = config.StartDate,
+                        EndTime = config.EndDate,
+                        RetentionPolicy = DataActionPolicy.DeleteAfterTask
+                    };
+                    var response = await adapter.FetchHistoryToBinaryFileAsync(request, cts.Token).ConfigureAwait(false);
+                    if (!response.Success)
+                    {
+                        throw new InvalidOperationException($"Failed to fetch history for {symbol}: {response.ErrorMessage}");
+                    }
+
+                    // Map the binary file to a memory-mapped list
+                    var mmList = new MemoryMappedTickList(response.BinaryFilePath);
+                    mappedLists.Add(mmList);
+                    tickStreams.Add(mmList);
+                }
+
+                // 2. Build StrategySpecification
+                var timeframeEnums = config.Timeframes
+                    .Select(ParseTimeFrame)
+                    .Distinct()
+                    .ToArray();
+
+                var symbolRequests = config.Symbols.Select(s =>
+                    new SymbolRequest(s, ImmutableArray.Create(timeframeEnums)))
+                    .ToImmutableArray();
+
+                var strategySpec = new StrategySpecification
+                {
+                    InitialBalance = config.InitialBalance,
+                    Leverage = config.Leverage,
+                    RequestedSymbols = symbolRequests
+                };
+                strategySpec.Validate();
+
+                // 3. Build ExecutionSpecification
+                var execSpec = new ExecutionSpecification
+                {
+                    StartDate = config.StartDate,
+                    EndDate = config.EndDate,
+                    MaxParallelThreads = config.MaxParallelThreads,
+                    LatencyTicks = config.LatencyTicks,
+                    WarmupWindowCount = config.WarmupWindowCount,
+                    MaxOpenPositions = config.MaxOpenPositions,
+                    StopOutLevel = config.StopOutLevel,
+                    GeneInitializationSeed = config.GeneInitializationSeed
+                };
+                execSpec.Validate();
+
+                // 4. Get neural network if requested
+                INeuralNetworkModel? nnModel = null;
+                if (!string.IsNullOrEmpty(config.NeuralNetworkName))
+                {
+                    nnModel = _extensionManager.ActiveNeuralNetwork;
+                    if (nnModel == null)
+                    {
+                        throw new InvalidOperationException($"Neural network model '{config.NeuralNetworkName}' not active.");
+                    }
+                }
+
+                // 5. Build BacktestInput
+                var backtestInput = new BacktestInput
+                {
+                    TickStreams = tickStreams.ToArray(),
+                    Symbols = config.Symbols,
+                    Strategy = strategy,
+                    StrategySpecification = strategySpec,
+                    ExecutionSpecification = execSpec,
+                    MarketCalculator = adapter.Calculator,
+                    SymbolProperties = symbolProperties,
+                    Genes = config.Genes.Length > 0 ? config.Genes : null,
+                    GeneInitializationSeed = config.GeneInitializationSeed,
+                    NeuralNetwork = nnModel,
+                    Progress = null,
+                    MessageBus = _messageBus,
+                    Metrics = _metrics,
+                    HookRegistry = _hookRegistry
+                };
+
+                // 6. Run backtest
                 var runner = new BacktestRunner();
-                var result = await runner.RunAsync(input, cts.Token).ConfigureAwait(false);
-                _activeTasks[taskId] = _activeTasks[taskId] with { Result = result };
+                var result = await runner.RunAsync(backtestInput, cts.Token).ConfigureAwait(false);
+
+                // 7. Store result
+                if (_activeTasks.TryGetValue(taskId, out var state))
+                {
+                    _activeTasks[taskId] = state with { Result = result };
+                }
+
                 _logBacktestCompleted(_logger, taskId, null);
             }
             catch (OperationCanceledException)
@@ -140,6 +282,7 @@ internal sealed class KernelService : IKernelService, IDisposable
                 if (_activeTasks.TryRemove(taskId, out var state))
                 {
                     state.DisposeCts();
+                    state.DisposeMappedTickLists();
                 }
                 _logBacktestCancelled(_logger, taskId, null);
             }
@@ -148,8 +291,17 @@ internal sealed class KernelService : IKernelService, IDisposable
                 if (_activeTasks.TryRemove(taskId, out var state))
                 {
                     state.DisposeCts();
+                    state.DisposeMappedTickLists();
                 }
                 _logBacktestFailed(_logger, taskId, ex);
+            }
+            finally
+            {
+                // Ensure mapped lists are disposed even if task state was removed
+                if (_activeTasks.TryGetValue(taskId, out var state))
+                {
+                    state.DisposeMappedTickLists();
+                }
             }
         }, cts.Token);
 
@@ -195,76 +347,103 @@ internal sealed class KernelService : IKernelService, IDisposable
         var marketClock = new TickClock();
         var wallClock = new SystemClock();
 
-#pragma warning disable CA2000 // LiveBroker ownership transferred to TaskState; disposed in StopLiveAsync
-        var liveBroker = new LiveBroker(
-            adapter,
-            input.MagicNumber,
-            input.Leverage,
-            marketClock,
-            wallClock,
-            _metrics,
-            _messageBus,
-            _hookRegistry.Live,
-            input.OrderGuardTimeoutSeconds,
-            input.StopOutLevel,
-            syncIntervalTicks: TimeSpan.TicksPerMinute
-        );
+        // CA2000 is suppressed because the CTS is stored in the task state and disposed
+        // when the live session stops.
+        CancellationTokenSource cts;
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+#pragma warning restore CA2000
+        LiveBroker? liveBroker = null;
+
+        try
+        {
+#pragma warning disable CA2000 // LiveBroker is stored in the task state and disposed when the live session stops
+            liveBroker = new LiveBroker(
+                adapter,
+                input.MagicNumber,
+                input.Leverage,
+                marketClock,
+                wallClock,
+                _metrics,
+                _messageBus,
+                _hookRegistry.Live,
+                input.OrderGuardTimeoutSeconds,
+                input.StopOutLevel,
+                syncIntervalTicks: TimeSpan.TicksPerMinute
+            );
 #pragma warning restore CA2000
 
-        foreach (var kv in symbolProperties)
-        {
-            await liveBroker.SetSymbolSpecsAsync(kv.Key, kv.Value).ConfigureAwait(false);
-        }
-
-        var spec = new StrategySpecification
-        {
-            InitialBalance = input.InitialBalance,
-            Leverage = input.Leverage,
-            RequestedSymbols = input.Symbols.Select(s => new SymbolRequest(s, ImmutableArray.Create(TimeFrame.Tick))).ToImmutableArray()
-        };
-        await strategy.OnConfigureAsync(spec).ConfigureAwait(false);
-
-        // Create and store the indicator registry for later disposal
-        using (var tickWindow = new TickWindow(input.Symbols, new[] { TimeFrame.Tick }))
-        {
-            var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
-            try
+            foreach (var kv in symbolProperties)
             {
-                await strategy.OnStartAsync(indicatorRegistry).ConfigureAwait(false);
-                // Store the registry in the task state
-#pragma warning disable CA2000 // Disposable is stored and disposed later in the task state
-                var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                _activeTasks[taskId] = new TaskState(cts, Broker: liveBroker, Strategy: strategy, IndicatorRegistry: indicatorRegistry);
-#pragma warning restore CA2000
+                await liveBroker.SetSymbolSpecsAsync(kv.Key, kv.Value).ConfigureAwait(false);
             }
-            catch
+
+            var spec = new StrategySpecification
             {
-                // If an error occurs, dispose the registry
-                if (indicatorRegistry is IDisposable disposable)
+                InitialBalance = input.InitialBalance,
+                Leverage = input.Leverage,
+                RequestedSymbols = input.Symbols.Select(s => new SymbolRequest(s, ImmutableArray.Create(TimeFrame.Tick))).ToImmutableArray()
+            };
+            await strategy.OnConfigureAsync(spec).ConfigureAwait(false);
+
+            // Create and store the indicator registry for later disposal
+            using (var tickWindow = new TickWindow(input.Symbols, new[] { TimeFrame.Tick }))
+            {
+                var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
+                try
                 {
-                    disposable.Dispose();
+                    await strategy.OnStartAsync(indicatorRegistry).ConfigureAwait(false);
+                    // Store the registry in the task state
+                    var taskState = new TaskState(cts, Broker: liveBroker, Strategy: strategy, IndicatorRegistry: indicatorRegistry);
+                    try
+                    {
+                        _activeTasks[taskId] = taskState;
+                    }
+                    catch
+                    {
+                        cts.Dispose();
+                        throw;
+                    }
                 }
-                else
+                catch
                 {
-                    // Fallback: call DisposeAll via reflection
-                    var method = indicatorRegistry.GetType().GetMethod("DisposeAll");
-                    method?.Invoke(indicatorRegistry, null);
+                    // If an error occurs, dispose the registry
+                    if (indicatorRegistry is IDisposable disposable)
+                    {
+                        disposable.Dispose();
+                    }
+                    else
+                    {
+                        // Fallback: call DisposeAll via reflection
+                        var method = indicatorRegistry.GetType().GetMethod("DisposeAll");
+                        method?.Invoke(indicatorRegistry, null);
+                    }
+                    throw;
                 }
-                throw;
             }
+
+            strategy.InjectGenes(input.Genes);
+
+            await liveBroker.ConnectAndNotifyAsync(cancellationToken).ConfigureAwait(false);
+            await liveBroker.InitializeLiveStateAsync(cancellationToken).ConfigureAwait(false);
+
+            foreach (var sym in input.Symbols)
+            {
+                await adapter.SubscribeAsync(sym).ConfigureAwait(false);
+            }
+
+            return taskId;
         }
-
-        strategy.InjectGenes(input.Genes);
-
-        await liveBroker.ConnectAndNotifyAsync(cancellationToken).ConfigureAwait(false);
-        await liveBroker.InitializeLiveStateAsync(cancellationToken).ConfigureAwait(false);
-
-        foreach (var sym in input.Symbols)
+        catch
         {
-            await adapter.SubscribeAsync(sym).ConfigureAwait(false);
+            // If an exception occurs after liveBroker is created, dispose it.
+            if (liveBroker != null)
+            {
+                await liveBroker.DisposeAsync().ConfigureAwait(false);
+            }
+            cts.Dispose();
+            throw;
         }
-
-        return taskId;
     }
 
     /// <inheritdoc/>
@@ -415,10 +594,23 @@ internal sealed class KernelService : IKernelService, IDisposable
             return result.Balance - input.InitialBalance;
         }
 
-#pragma warning disable CA2000 // Disposable is stored and disposed later in the task state
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _activeTasks[taskId] = new TaskState(cts, Runner: runner);
+        // CA2000 is suppressed because the CTS is stored in the task state and disposed
+        // when the optimisation completes or is cancelled.
+        CancellationTokenSource cts;
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 #pragma warning restore CA2000
+        var taskState = new TaskState(cts, Runner: runner);
+
+        try
+        {
+            _activeTasks[taskId] = taskState;
+        }
+        catch
+        {
+            cts.Dispose();
+            throw;
+        }
 
         _ = Task.Run(async () =>
         {
@@ -467,6 +659,30 @@ internal sealed class KernelService : IKernelService, IDisposable
         return Task.FromResult(dummy);
     }
 
+    private static TimeFrame ParseTimeFrame(string tf)
+    {
+        return tf.ToUpperInvariant() switch
+        {
+            "TICK" => TimeFrame.Tick,
+            "M1" => TimeFrame.M1,
+            "M5" => TimeFrame.M5,
+            "M15" => TimeFrame.M15,
+            "M30" => TimeFrame.M30,
+            "H1" => TimeFrame.H1,
+            "H2" => TimeFrame.H2,
+            "H3" => TimeFrame.H3,
+            "H4" => TimeFrame.H4,
+            "H6" => TimeFrame.H6,
+            "H12" => TimeFrame.H12,
+            "D1" => TimeFrame.D1,
+            "D2" => TimeFrame.D2,
+            "D3" => TimeFrame.D3,
+            "W1" => TimeFrame.W1,
+            "MN1" => TimeFrame.MN1,
+            _ => TimeFrame.Tick
+        };
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -480,6 +696,7 @@ internal sealed class KernelService : IKernelService, IDisposable
         {
             kv.Value.DisposeCts();
             kv.Value.DisposeIndicatorRegistry();
+            kv.Value.DisposeMappedTickLists();
         }
         _activeTasks.Clear();
     }

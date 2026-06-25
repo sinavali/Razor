@@ -6,16 +6,20 @@
 
 namespace Chronos.Core.Engine.Kernel;
 
+using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Abstractions.Slots;
+using Chronos.Core.Engine.Management.Tasks;
 using Chronos.Core.Kernel.Backtesting;
 using Chronos.Core.Kernel.Optimization;
+using ChromosomeKernel = Chronos.Core.Kernel.Optimization.Chromosome;
 
 /// <summary>
 /// Facade for the Chronos Kernel, providing methods for backtest, live, and optimisation execution.
 /// </summary>
 internal interface IKernelService
 {
-    /// <summary>Starts a backtest.</summary>
-    Task<string> StartBacktestAsync(BacktestInput input, CancellationToken cancellationToken);
+    /// <summary>Starts a backtest using the given adapter and strategy.</summary>
+    Task<string> StartBacktestAsync(IAdapterCapability adapter, IStrategyCapability strategy, BacktestConfiguration config, CancellationToken cancellationToken);
 
     /// <summary>Gets the result of a completed backtest.</summary>
     Task<BacktestResult> GetBacktestResultAsync(string taskId, CancellationToken cancellationToken);
@@ -42,7 +46,7 @@ internal interface IKernelService
     Task<string> StartOptimizationAsync(OptimizationInput input, CancellationToken cancellationToken);
 
     /// <summary>Gets the best chromosome from a completed optimisation.</summary>
-    Task<Chromosome> GetOptimizationResultAsync(string taskId, CancellationToken cancellationToken);
+    Task<ChromosomeKernel> GetOptimizationResultAsync(string taskId, CancellationToken cancellationToken);
 }
 
 /// <summary>Input for starting a live trading session.</summary>
