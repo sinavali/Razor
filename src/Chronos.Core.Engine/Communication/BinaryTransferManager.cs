@@ -44,6 +44,10 @@ internal sealed class BinaryTransferManager : IDisposable
         LoggerMessage.Define<string, long, long>(LogLevel.Warning, 6,
             "Out-of-order chunk for {TransferId}: expected offset {Expected}, got {Actual}");
 
+    private static readonly Action<ILogger, string, long, Exception?> _logRetransmitRequest =
+        LoggerMessage.Define<string, long>(LogLevel.Information, 7,
+            "Retransmit requested for {TransferId} at offset {ExpectedOffset}");
+
     public BinaryTransferManager(ILogger<BinaryTransferManager> logger)
     {
         _logger = logger;
@@ -91,8 +95,8 @@ internal sealed class BinaryTransferManager : IDisposable
         // Validate offset
         if (offset != transfer.ReceivedBytes)
         {
-            // Out of order – we could request retransmission later.
-            // For simplicity, we just ignore and log.
+            // Out of order – we will request retransmission later (in CloudConnector).
+            // We log and return false; the caller will send a retransmit request.
             _logOutOfOrderChunk(_logger, transferId, transfer.ReceivedBytes, offset, null);
             return false;
         }
@@ -206,6 +210,38 @@ internal sealed class BinaryTransferManager : IDisposable
         long offset = transfer.SentBytes;
         transfer.SentBytes += bytesRead;
         return (offset, data);
+    }
+
+    /// <summary>Handles a retransmit request from the receiver.</summary>
+    /// <param name="transferId">The transfer ID.</param>
+    /// <param name="expectedOffset">The offset from which the receiver wants to resume.</param>
+    public void HandleRetransmitRequest(string transferId, long expectedOffset)
+    {
+        if (!_outgoing.TryGetValue(transferId, out var transfer))
+        {
+            _logTransferCancelled(_logger, transferId, null);
+            return;
+        }
+
+        if (transfer.Completed || transfer.Cancelled)
+        {
+            return;
+        }
+
+        // Clamp to a valid range
+        if (expectedOffset < 0)
+        {
+            expectedOffset = 0;
+        }
+        if (expectedOffset > transfer.TotalSize)
+        {
+            expectedOffset = transfer.TotalSize;
+        }
+
+        // Reset the sent position to the requested offset.
+        // The next call to GetNextChunk will resume from there.
+        transfer.SentBytes = expectedOffset;
+        _logRetransmitRequest(_logger, transferId, expectedOffset, null);
     }
 
     /// <summary>Completes an outgoing transfer.</summary>
