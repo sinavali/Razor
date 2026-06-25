@@ -65,9 +65,16 @@ internal sealed class KernelService : IKernelService, IDisposable
         LoggerMessage.Define(LogLevel.Warning, 11, "ResumeLive not implemented; ignoring.");
     private static readonly Action<ILogger, string, string, Exception?> _logBacktestDataFetchFailed =
         LoggerMessage.Define<string, string>(LogLevel.Error, 12, "Failed to fetch historical data for symbol {Symbol} in backtest {TaskId}.");
+    private static readonly Action<ILogger, string, Exception?> _logLiveTickHandlerError =
+        LoggerMessage.Define<string>(LogLevel.Error, 13, "Error in live tick handler for symbol {Symbol}.");
+    private static readonly Action<ILogger, string, Exception?> _logFailedUnsubscribe =
+        LoggerMessage.Define<string>(LogLevel.Warning, 4, "Failed to unsubscribe from symbol {Symbol} during live stop.");
 
     private sealed record TaskState(
         CancellationTokenSource Cts,
+        IAdapterCapability? Adapter = null,
+        string[]? Symbols = null,
+        Action<string, Tick>? TickHandler = null,
         object? Result = null,
         LiveBroker? Broker = null,
         IStrategyCapability? Strategy = null,
@@ -427,9 +434,51 @@ internal sealed class KernelService : IKernelService, IDisposable
             await liveBroker.ConnectAndNotifyAsync(cancellationToken).ConfigureAwait(false);
             await liveBroker.InitializeLiveStateAsync(cancellationToken).ConfigureAwait(false);
 
+            // Subscribe to symbols and wire up tick handler
+            Action<string, Tick> tickHandler = (symbol, tick) =>
+            {
+                try
+                {
+                    // Forward the tick to the live broker.
+                    // This call is synchronous in the event handler; we wrap it in Task.Run
+                    // to avoid blocking the adapter's event loop, but the broker's OnTickAsync
+                    // is designed to be thread-safe.
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await liveBroker.OnTickAsync(symbol, tick).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logLiveTickHandlerError(_logger, symbol, ex);
+                        }
+                    }, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logLiveTickHandlerError(_logger, symbol, ex);
+                }
+            };
+
+            // Attach the handler to the adapter's event
+            adapter.OnTickReceived += tickHandler;
+
+            // Subscribe to each symbol
             foreach (var sym in input.Symbols)
             {
                 await adapter.SubscribeAsync(sym).ConfigureAwait(false);
+            }
+
+            // Update the task state with the adapter, symbols, and tick handler for cleanup
+            if (_activeTasks.TryGetValue(taskId, out var existingState))
+            {
+                _activeTasks[taskId] = existingState with
+                {
+                    Adapter = adapter,
+                    Symbols = input.Symbols,
+                    TickHandler = tickHandler
+                };
             }
 
             return taskId;
@@ -470,10 +519,34 @@ internal sealed class KernelService : IKernelService, IDisposable
     {
         if (_activeTasks.TryRemove(taskId, out var state) && state.Broker is LiveBroker broker)
         {
+            // Unsubscribe from the adapter's tick event
+            if (state.Adapter != null && state.TickHandler != null)
+            {
+                state.Adapter.OnTickReceived -= state.TickHandler;
+            }
+
+            // Unsubscribe from all symbols
+            if (state.Adapter != null && state.Symbols != null)
+            {
+                foreach (var sym in state.Symbols)
+                {
+                    try
+                    {
+                        await state.Adapter.UnsubscribeAsync(sym).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logFailedUnsubscribe(_logger, sym, ex);
+                    }
+                }
+            }
+
             state.DisposeCts();
             state.DisposeIndicatorRegistry();
+
             await broker.DisconnectAndNotifyAsync().ConfigureAwait(false);
             await broker.DisposeAsync().ConfigureAwait(false);
+
             _logLiveStopped(_logger, taskId, null);
         }
     }
