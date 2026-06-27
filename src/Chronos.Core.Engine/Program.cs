@@ -165,6 +165,7 @@ internal sealed class Program
         services.AddSingleton<IEngineTelemetry, EngineTelemetry>();
         services.AddSingleton<BinaryTransferManager>();
         services.AddSingleton<ILoggingService, LoggingService>();
+        services.AddSingleton<ConfigStore>();
 
         // Communication
         services.AddSingleton<ICloudConnector, CloudConnector>();

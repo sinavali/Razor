@@ -88,24 +88,27 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Build LiveInput from config (dummy for now)
+            // Parse configuration
+            var liveConfig = LiveConfiguration.Parse(config);
+
+            // Build LiveInput
             var liveInput = new LiveInput
             {
-                AdapterName = config?.GetType().GetProperty("AdapterName")?.GetValue(config)?.ToString() ?? "MockAdapter",
-                StrategyName = config?.GetType().GetProperty("StrategyName")?.GetValue(config)?.ToString() ?? "MockStrategy",
-                StrategyConfig = config ?? new object(),
-                MagicNumber = 12345,
-                Leverage = 100,
-                InitialBalance = 10000,
-                Symbols = new[] { "EURUSD" },
-                OrderGuardTimeoutSeconds = 5,
-                StopOutLevel = 0.5,
-                MaxOpenPositions = 5,
-                Genes = Array.Empty<double>(),
-                NeuralNetworkName = string.Empty
+                AdapterName = liveConfig.AdapterName,
+                StrategyName = liveConfig.StrategyName,
+                StrategyConfig = config, // pass through raw config for extensibility
+                MagicNumber = liveConfig.MagicNumber,
+                Leverage = liveConfig.Leverage,
+                InitialBalance = liveConfig.InitialBalance,
+                Symbols = liveConfig.Symbols,
+                OrderGuardTimeoutSeconds = liveConfig.OrderGuardTimeoutSeconds,
+                StopOutLevel = liveConfig.StopOutLevel,
+                MaxOpenPositions = liveConfig.MaxOpenPositions,
+                Genes = liveConfig.Genes,
+                NeuralNetworkName = liveConfig.NeuralNetworkName ?? string.Empty
             };
 
-            // Start via kernel service
+            // Start via kernel service (which uses active adapter/strategy from ExtensionManager)
             string kernelTaskId = await _kernelService.StartLiveAsync(liveInput, cancellationToken).ConfigureAwait(false);
 
             var task = new LiveTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<LiveTask>(), this, _kernelService, kernelTaskId);
@@ -137,11 +140,11 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 TaskId = taskId,
                 Config = config ?? new object(),
-                Genes = Array.Empty<double>(),
+                Genes = liveConfig.Genes,
                 StartTime = task.StartTime,
                 LastTickTime = null,
-                StrategyName = liveInput.StrategyName,
-                AdapterName = liveInput.AdapterName
+                StrategyName = liveConfig.StrategyName,
+                AdapterName = liveConfig.AdapterName
             };
             await _stateManager.SaveLiveStateAsync(state, cancellationToken).ConfigureAwait(false);
             return taskId;
