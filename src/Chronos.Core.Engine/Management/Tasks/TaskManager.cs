@@ -249,27 +249,42 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Build OptimizationInput (dummy)
+            // Parse configuration into OptimizationInput
+            if (config is not Dictionary<string, object> dict)
+            {
+                throw new ArgumentException("Configuration must be a dictionary.", nameof(config));
+            }
+
             var optInput = new OptimizationInput
             {
-                AdapterName = "MockAdapter",
-                StrategyName = "MockStrategy",
-                StrategyConfig = config ?? new object(),
-                Leverage = 100,
-                InitialBalance = 10000,
-                Symbols = new[] { "EURUSD" },
-                MasterSeed = 42,
-                Generations = 10,
-                PopulationSize = 50,
-                MutationRate = 0.1,
-                CrossoverRate = 0.5,
-                ElitismPct = 0.05,
-                TournamentSize = 3,
-                StagnationGenerationsBeforeHyper = 3,
-                MaxParallelThreads = 0,
-                NeuralNetworkName = string.Empty
+                AdapterName = GetString(dict, "AdapterName"),
+                StrategyName = GetString(dict, "StrategyName"),
+                StrategyConfig = config,
+                Leverage = GetDouble(dict, "Leverage", 100),
+                InitialBalance = GetDouble(dict, "InitialBalance", 10000),
+                Symbols = GetStringArray(dict, "Symbols", ["EURUSD"]),
+                MasterSeed = GetInt(dict, "MasterSeed", 42),
+                Generations = GetInt(dict, "Generations", 10),
+                PopulationSize = GetInt(dict, "PopulationSize", 50),
+                MutationRate = GetDouble(dict, "MutationRate", 0.1),
+                CrossoverRate = GetDouble(dict, "CrossoverRate", 0.5),
+                ElitismPct = GetDouble(dict, "ElitismPct", 0.05),
+                TournamentSize = GetInt(dict, "TournamentSize", 3),
+                StagnationGenerationsBeforeHyper = GetInt(dict, "StagnationGenerationsBeforeHyper", 3),
+                MaxParallelThreads = GetInt(dict, "MaxParallelThreads", 0),
+                NeuralNetworkName = GetString(dict, "NeuralNetworkName", string.Empty),
+                StartDate = GetDateTime(dict, "StartDate", DateTime.UtcNow.AddDays(-30)),
+                EndDate = GetDateTime(dict, "EndDate", DateTime.UtcNow),
+                Timeframes = GetStringArray(dict, "Timeframes", ["M1"])
             };
 
+            // Get active adapter and strategy
+            var adapter = _extensionManager.ActiveAdapter
+                ?? throw new InvalidOperationException("No active adapter found.");
+            var strategy = _extensionManager.ActiveStrategy
+                ?? throw new InvalidOperationException("No active strategy found.");
+
+            // Start via kernel service
             string kernelTaskId = await _kernelService.StartOptimizationAsync(optInput, cancellationToken).ConfigureAwait(false);
 
             var task = new OptimizationTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<OptimizationTask>(), this, _kernelService, kernelTaskId);
@@ -293,6 +308,99 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         {
             _lock.Release();
         }
+    }
+
+    // Helper methods for parsing config dictionary
+    private static string GetString(Dictionary<string, object> dict, string key, string fallback = "")
+    {
+        if (dict.TryGetValue(key, out object? value) && value is string s)
+        {
+            return s;
+        }
+        return fallback;
+    }
+
+    private static double GetDouble(Dictionary<string, object> dict, string key, double fallback = 0)
+    {
+        if (dict.TryGetValue(key, out object? value))
+        {
+            if (value is double d)
+            {
+                return d;
+            }
+
+            if (value is int i)
+            {
+                return i;
+            }
+
+            if (value is long l)
+            {
+                return l;
+            }
+
+            if (value is string s && double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+        return fallback;
+    }
+
+    private static int GetInt(Dictionary<string, object> dict, string key, int fallback = 0)
+    {
+        if (dict.TryGetValue(key, out object? value))
+        {
+            if (value is int i)
+            {
+                return i;
+            }
+
+            if (value is long l)
+            {
+                return (int)l;
+            }
+
+            if (value is string s && int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+        return fallback;
+    }
+
+    private static string[] GetStringArray(Dictionary<string, object> dict, string key, string[] fallback)
+    {
+        if (dict.TryGetValue(key, out object? value))
+        {
+            if (value is object[] arr)
+            {
+                return arr.Select(x => x.ToString()!).ToArray();
+            }
+
+            if (value is System.Text.Json.JsonElement jsonElement && jsonElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                return jsonElement.EnumerateArray().Select(x => x.GetString()!).ToArray();
+            }
+        }
+        return fallback;
+    }
+
+    private static DateTime GetDateTime(Dictionary<string, object> dict, string key, DateTime fallback)
+    {
+        if (dict.TryGetValue(key, out object? value))
+        {
+            if (value is DateTime dt)
+            {
+                return dt;
+            }
+
+            if (value is string s && DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed))
+            {
+                return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+            }
+        }
+        return fallback;
     }
 
     /// <inheritdoc/>

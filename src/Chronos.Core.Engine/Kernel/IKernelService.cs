@@ -85,6 +85,9 @@ internal sealed record OptimizationInput
     public required int StagnationGenerationsBeforeHyper { get; init; }
     public required int MaxParallelThreads { get; init; }
     public required string NeuralNetworkName { get; init; }
+    public required DateTime StartDate { get; init; }
+    public required DateTime EndDate { get; init; }
+    public required string[] Timeframes { get; init; }
 }
 
 /// <summary>Snapshot of live trading state.</summary>

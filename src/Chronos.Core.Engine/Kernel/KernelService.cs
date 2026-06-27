@@ -67,8 +67,10 @@ internal sealed class KernelService : IKernelService, IDisposable
         LoggerMessage.Define<string, string>(LogLevel.Error, 12, "Failed to fetch historical data for symbol {Symbol} in backtest {TaskId}.");
     private static readonly Action<ILogger, string, Exception?> _logLiveTickHandlerError =
         LoggerMessage.Define<string>(LogLevel.Error, 13, "Error in live tick handler for symbol {Symbol}.");
-    private static readonly Action<ILogger, string, Exception?> _logFailedUnsubscribe =
-        LoggerMessage.Define<string>(LogLevel.Warning, 4, "Failed to unsubscribe from symbol {Symbol} during live stop.");
+    private static readonly Action<ILogger, string, string, Exception?> _logOptimizationDataFetchFailed =
+        LoggerMessage.Define<string, string>(LogLevel.Error, 14, "Failed to fetch historical data for symbol {Symbol} in optimisation {TaskId}.");
+    private static readonly Action<ILogger, string, Exception?> _logUnsubscribeError =
+        LoggerMessage.Define<string>(LogLevel.Warning, 15, "Failed to unsubscribe from symbol {Symbol} during live stop.");
 
     private sealed record TaskState(
         CancellationTokenSource Cts,
@@ -536,7 +538,7 @@ internal sealed class KernelService : IKernelService, IDisposable
                     }
                     catch (Exception ex)
                     {
-                        _logFailedUnsubscribe(_logger, sym, ex);
+                        _logUnsubscribeError(_logger, sym, ex);
                     }
                 }
             }
@@ -587,131 +589,209 @@ internal sealed class KernelService : IKernelService, IDisposable
         var strategy = _extensionManager.ActiveStrategy
             ?? throw new InvalidOperationException("No active strategy found.");
 
+        // Fetch symbol properties and historical data once for the entire optimisation.
         var symbolProperties = new Dictionary<string, SymbolProperties>();
-        foreach (var sym in input.Symbols)
-        {
-            var props = await adapter.GetSymbolPropertiesAsync(sym, cancellationToken).ConfigureAwait(false);
-            if (props != null)
-            {
-                symbolProperties[sym] = props;
-            }
-            else
-            {
-                throw new InvalidOperationException($"Symbol properties for {sym} not available.");
-            }
-        }
-
-        var optSpec = new OptimizationSpecification
-        {
-            MasterSeed = input.MasterSeed,
-            Generations = input.Generations,
-            PopulationSize = input.PopulationSize,
-            MutationRate = input.MutationRate,
-            CrossoverRate = input.CrossoverRate,
-            ElitismPct = input.ElitismPct,
-            TournamentSize = input.TournamentSize,
-            StagnationGenerationsBeforeHyper = input.StagnationGenerationsBeforeHyper,
-            MaxParallelThreads = input.MaxParallelThreads
-        };
-
-        var schema = GeneInjector.ExtractSchema(strategy.GetType());
-
-        var runner = new OptimizationRunner(
-            optSpec,
-            schema,
-            (CoreMetrics)_metrics,
-            _hookRegistry.Optimization,
-            _extensionManager.ActiveNeuralNetwork,
-            _messageBus,
-            _hookRegistry
-        );
-
-        // Define fitness evaluator
-        async Task<double> EvaluateChromosome(ChromosomeKernel chromo, CancellationToken ct)
-        {
-            strategy.InjectGenes(chromo.Genes);
-
-            // Build backtest input
-            var backtestInput = new BacktestInput
-            {
-                TickStreams = Array.Empty<IReadOnlyList<Tick>>(),
-                Symbols = input.Symbols,
-                Strategy = strategy,
-                StrategySpecification = new StrategySpecification
-                {
-                    InitialBalance = input.InitialBalance,
-                    Leverage = input.Leverage,
-                    RequestedSymbols = input.Symbols.Select(s => new SymbolRequest(s, ImmutableArray.Create(TimeFrame.Tick))).ToImmutableArray()
-                },
-                ExecutionSpecification = new ExecutionSpecification
-                {
-                    StartDate = DateTime.UtcNow.AddDays(-30),
-                    EndDate = DateTime.UtcNow,
-                    WarmupWindowCount = 0,
-                    MaxOpenPositions = 5,
-                    StopOutLevel = 0.5,
-                    LatencyTicks = 0,
-                    MaxParallelThreads = 1
-                },
-                MarketCalculator = adapter.Calculator,
-                SymbolProperties = symbolProperties,
-                Genes = chromo.Genes,
-                NeuralNetwork = _extensionManager.ActiveNeuralNetwork,
-                MessageBus = _messageBus,
-                Metrics = _metrics,
-                HookRegistry = _hookRegistry
-            };
-
-            var runnerBt = new BacktestRunner();
-            var result = await runnerBt.RunAsync(backtestInput, ct).ConfigureAwait(false);
-            return result.Balance - input.InitialBalance;
-        }
-
-        // CA2000 is suppressed because the CTS is stored in the task state and disposed
-        // when the optimisation completes or is cancelled.
-        CancellationTokenSource cts;
-#pragma warning disable CA2000 // Dispose objects before losing scope
-        cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-#pragma warning restore CA2000
-        var taskState = new TaskState(cts, Runner: runner);
+        var tickStreams = new List<IReadOnlyList<Tick>>();
+        var mappedLists = new List<MemoryMappedTickList>();
 
         try
         {
-            _activeTasks[taskId] = taskState;
+            foreach (string symbol in input.Symbols)
+            {
+                var props = await adapter.GetSymbolPropertiesAsync(symbol, cancellationToken).ConfigureAwait(false);
+                if (props == null)
+                {
+                    _logOptimizationDataFetchFailed(_logger, symbol, taskId, null);
+                    throw new InvalidOperationException($"Symbol properties for {symbol} not available.");
+                }
+                symbolProperties[symbol] = props;
+
+                var request = new HistoricalDataRequest
+                {
+                    Symbol = symbol,
+                    StartTime = input.StartDate,
+                    EndTime = input.EndDate,
+                    RetentionPolicy = DataActionPolicy.DeleteAfterTask
+                };
+                var response = await adapter.FetchHistoryToBinaryFileAsync(request, cancellationToken).ConfigureAwait(false);
+                if (!response.Success)
+                {
+                    throw new InvalidOperationException($"Failed to fetch history for {symbol}: {response.ErrorMessage}");
+                }
+
+                var mmList = new MemoryMappedTickList(response.BinaryFilePath);
+                mappedLists.Add(mmList);
+                tickStreams.Add(mmList);
+            }
+
+            // Build the base StrategySpecification and ExecutionSpecification (shared across all evaluations).
+            var timeframeEnums = input.Timeframes
+                .Select(ParseTimeFrame)
+                .Distinct()
+                .ToArray();
+
+            var symbolRequests = input.Symbols.Select(s =>
+                new SymbolRequest(s, ImmutableArray.Create(timeframeEnums)))
+                .ToImmutableArray();
+
+            var strategySpec = new StrategySpecification
+            {
+                InitialBalance = input.InitialBalance,
+                Leverage = input.Leverage,
+                RequestedSymbols = symbolRequests
+            };
+            strategySpec.Validate();
+
+            var execSpec = new ExecutionSpecification
+            {
+                StartDate = input.StartDate,
+                EndDate = input.EndDate,
+                MaxParallelThreads = input.MaxParallelThreads,
+                LatencyTicks = 0,
+                WarmupWindowCount = 0,
+                MaxOpenPositions = 5,
+                StopOutLevel = 0.5,
+                GeneInitializationSeed = null
+            };
+            execSpec.Validate();
+
+            // Get neural network if requested
+            INeuralNetworkModel? nnModel = null;
+            if (!string.IsNullOrEmpty(input.NeuralNetworkName))
+            {
+                nnModel = _extensionManager.ActiveNeuralNetwork;
+                if (nnModel == null)
+                {
+                    throw new InvalidOperationException($"Neural network model '{input.NeuralNetworkName}' not active.");
+                }
+            }
+
+            // Build the optimisation specification.
+            var optSpec = new OptimizationSpecification
+            {
+                MasterSeed = input.MasterSeed,
+                Generations = input.Generations,
+                PopulationSize = input.PopulationSize,
+                MutationRate = input.MutationRate,
+                CrossoverRate = input.CrossoverRate,
+                ElitismPct = input.ElitismPct,
+                TournamentSize = input.TournamentSize,
+                StagnationGenerationsBeforeHyper = input.StagnationGenerationsBeforeHyper,
+                MaxParallelThreads = input.MaxParallelThreads
+            };
+
+            var schema = GeneInjector.ExtractSchema(strategy.GetType());
+
+            // Create the optimisation runner.
+            var runner = new OptimizationRunner(
+                optSpec,
+                schema,
+                (CoreMetrics)_metrics,
+                _hookRegistry.Optimization,
+                nnModel,
+                _messageBus,
+                _hookRegistry
+            );
+
+            // Define the fitness evaluator that uses the cached data.
+            async Task<double> EvaluateChromosome(ChromosomeKernel chromo, CancellationToken ct)
+            {
+                // Inject the chromosome's genes into the strategy.
+                strategy.InjectGenes(chromo.Genes);
+
+                // Build the backtest input for this specific chromosome.
+                var backtestInput = new BacktestInput
+                {
+                    TickStreams = tickStreams.ToArray(),
+                    Symbols = input.Symbols,
+                    Strategy = strategy,
+                    StrategySpecification = strategySpec,
+                    ExecutionSpecification = execSpec,
+                    MarketCalculator = adapter.Calculator,
+                    SymbolProperties = symbolProperties,
+                    Genes = chromo.Genes,
+                    GeneInitializationSeed = null,
+                    NeuralNetwork = nnModel,
+                    Progress = null,
+                    MessageBus = _messageBus,
+                    Metrics = _metrics,
+                    HookRegistry = _hookRegistry
+                };
+
+                // Run the backtest.
+                var runnerBt = new BacktestRunner();
+                var result = await runnerBt.RunAsync(backtestInput, ct).ConfigureAwait(false);
+
+                // Fitness = net profit.
+                return result.Balance - input.InitialBalance;
+            }
+
+            // Start the optimisation in the background.
+            // CA2000 is suppressed because the CTS is stored in the task state and disposed
+            // when the optimisation completes or is cancelled.
+            CancellationTokenSource cts;
+#pragma warning disable CA2000 // Dispose objects before losing scope
+            cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+#pragma warning restore CA2000
+            var taskState = new TaskState(cts, Runner: runner, MappedTickLists: mappedLists);
+
+            try
+            {
+                _activeTasks[taskId] = taskState;
+            }
+            catch
+            {
+                cts.Dispose();
+                throw;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var best = await runner.RunAsync(EvaluateChromosome, cts.Token).ConfigureAwait(false);
+                    _activeTasks[taskId] = _activeTasks[taskId] with { Result = best };
+                    _logOptimizationCompleted(_logger, taskId, null);
+                }
+                catch (OperationCanceledException)
+                {
+                    if (_activeTasks.TryRemove(taskId, out var state))
+                    {
+                        state.DisposeCts();
+                        state.DisposeMappedTickLists();
+                    }
+                    _logOptimizationCancelled(_logger, taskId, null);
+                }
+                catch (Exception ex)
+                {
+                    if (_activeTasks.TryRemove(taskId, out var state))
+                    {
+                        state.DisposeCts();
+                        state.DisposeMappedTickLists();
+                    }
+                    _logOptimizationFailed(_logger, taskId, ex);
+                }
+                finally
+                {
+                    // Ensure mapped lists are disposed even if task state was removed.
+                    if (_activeTasks.TryGetValue(taskId, out var state))
+                    {
+                        state.DisposeMappedTickLists();
+                    }
+                }
+            }, cts.Token);
+
+            return taskId;
         }
         catch
         {
-            cts.Dispose();
+            // If an error occurs before the task state is created, dispose the mapped lists.
+            foreach (var mm in mappedLists)
+            {
+                mm?.Dispose();
+            }
             throw;
         }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var best = await runner.RunAsync(EvaluateChromosome, cts.Token).ConfigureAwait(false);
-                _activeTasks[taskId] = _activeTasks[taskId] with { Result = best };
-                _logOptimizationCompleted(_logger, taskId, null);
-            }
-            catch (OperationCanceledException)
-            {
-                if (_activeTasks.TryRemove(taskId, out var state))
-                {
-                    state.DisposeCts();
-                }
-                _logOptimizationCancelled(_logger, taskId, null);
-            }
-            catch (Exception ex)
-            {
-                if (_activeTasks.TryRemove(taskId, out var state))
-                {
-                    state.DisposeCts();
-                }
-                _logOptimizationFailed(_logger, taskId, ex);
-            }
-        }, cts.Token);
-
-        return taskId;
     }
 
     /// <inheritdoc/>
