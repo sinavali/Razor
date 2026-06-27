@@ -32,11 +32,20 @@ internal sealed class TaskManager : ITaskManager, IDisposable
     private static readonly Action<ILogger, string, Exception?> _logTaskFaulted =
         LoggerMessage.Define<string>(LogLevel.Error, 0, "Task {TaskId} faulted.");
 
-    private static readonly Action<ILogger, Exception?> _logLiveTaskRestoreNotImplemented =
-        LoggerMessage.Define(LogLevel.Warning, 15, "Live task restoration not implemented with IKernelService; ignoring.");
-
     private static readonly Action<ILogger, string, Exception?> _logLiveThreadDidNotExit =
         LoggerMessage.Define<string>(LogLevel.Warning, 16, "Live thread {TaskId} did not exit within 5 seconds.");
+
+    private static readonly Action<ILogger, string, Exception?> _logRestoringLiveTask =
+        LoggerMessage.Define<string>(LogLevel.Information, 17, "Restoring live task from persisted state: {TaskId}");
+
+    private static readonly Action<ILogger, string, Exception?> _logLiveTaskRestored =
+        LoggerMessage.Define<string>(LogLevel.Information, 18, "Live task {TaskId} restored successfully.");
+
+    private static readonly Action<ILogger, Exception?> _logLiveTaskAlreadyRunning =
+        LoggerMessage.Define(LogLevel.Warning, 19, "A live task is already running; skipping restoration.");
+
+    private static readonly Action<ILogger, string, Exception?> _logLiveTaskRestoreFailed =
+        LoggerMessage.Define<string>(LogLevel.Error, 20, "Failed to restore live task {TaskId}.");
 
     /// <summary>Initialises a new instance of the <see cref="TaskManager"/> class.</summary>
     public TaskManager(
@@ -77,8 +86,77 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             return null;
         }
 
-        _logLiveTaskRestoreNotImplemented(_logger, null);
-        return null;
+        // Check if there is already a live task running (should not happen during startup)
+        if (_tasks.Values.Any(t => t.TaskType == "Live" && t.State != TaskState.Completed && t.State != TaskState.Canceled))
+        {
+            _logLiveTaskAlreadyRunning(_logger, null);
+            return null;
+        }
+
+        _logRestoringLiveTask(_logger, state.TaskId, null);
+
+        try
+        {
+            // Build LiveInput from persisted state
+            var liveInput = new LiveInput
+            {
+                AdapterName = state.AdapterName,
+                StrategyName = state.StrategyName,
+                StrategyConfig = state.Config, // use the stored config object
+                MagicNumber = state.MagicNumber,
+                Leverage = state.Leverage,
+                InitialBalance = state.InitialBalance,
+                Symbols = state.Symbols,
+                OrderGuardTimeoutSeconds = state.OrderGuardTimeoutSeconds,
+                StopOutLevel = state.StopOutLevel,
+                MaxOpenPositions = state.MaxOpenPositions,
+                Genes = state.Genes,
+                NeuralNetworkName = state.NeuralNetworkName ?? string.Empty
+            };
+
+            // Start a new live session via kernel service
+            string kernelTaskId = await _kernelService.StartLiveAsync(liveInput, cancellationToken).ConfigureAwait(false);
+
+            // Create a new LiveTask with the restored configuration
+            var task = new LiveTask(state.TaskId, state.Config, _loggerFactory.CreateLogger<LiveTask>(), this, _kernelService, kernelTaskId)
+            {
+                StrategyName = state.StrategyName,
+                AdapterName = state.AdapterName,
+                LastTickTime = state.LastTickTime,
+                StartTime = state.StartTime
+            };
+
+            _tasks[state.TaskId] = task;
+
+            // Start the live thread
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    ExecuteTaskAsync(task, cancellationToken).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logTaskFaulted(_logger, task.TaskId, ex);
+                }
+            })
+            {
+                Priority = ThreadPriority.Highest,
+                IsBackground = true,
+                Name = $"LiveThread-{state.TaskId}"
+            };
+
+            _liveThreads[state.TaskId] = thread;
+            thread.Start();
+
+            _logLiveTaskRestored(_logger, state.TaskId, null);
+            return state.TaskId;
+        }
+        catch (Exception ex)
+        {
+            _logLiveTaskRestoreFailed(_logger, state.TaskId, ex);
+            return null;
+        }
     }
 
     /// <inheritdoc/>
@@ -96,7 +174,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 AdapterName = liveConfig.AdapterName,
                 StrategyName = liveConfig.StrategyName,
-                StrategyConfig = config, // pass through raw config for extensibility
+                StrategyConfig = config,
                 MagicNumber = liveConfig.MagicNumber,
                 Leverage = liveConfig.Leverage,
                 InitialBalance = liveConfig.InitialBalance,
@@ -108,10 +186,14 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 NeuralNetworkName = liveConfig.NeuralNetworkName ?? string.Empty
             };
 
-            // Start via kernel service (which uses active adapter/strategy from ExtensionManager)
+            // Start via kernel service
             string kernelTaskId = await _kernelService.StartLiveAsync(liveInput, cancellationToken).ConfigureAwait(false);
 
-            var task = new LiveTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<LiveTask>(), this, _kernelService, kernelTaskId);
+            var task = new LiveTask(taskId, config ?? new object(), _loggerFactory.CreateLogger<LiveTask>(), this, _kernelService, kernelTaskId)
+            {
+                StrategyName = liveConfig.StrategyName,
+                AdapterName = liveConfig.AdapterName
+            };
             _tasks[taskId] = task;
 
             // Create a dedicated thread for live trading with high priority
@@ -135,16 +217,24 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             _liveThreads[taskId] = thread;
             thread.Start();
 
-            // Persist state (basic info)
+            // Persist complete state
             var state = new LiveState
             {
                 TaskId = taskId,
                 Config = config ?? new object(),
-                Genes = liveConfig.Genes,
-                StartTime = task.StartTime,
-                LastTickTime = null,
+                AdapterName = liveConfig.AdapterName,
                 StrategyName = liveConfig.StrategyName,
-                AdapterName = liveConfig.AdapterName
+                MagicNumber = liveConfig.MagicNumber,
+                Leverage = liveConfig.Leverage,
+                InitialBalance = liveConfig.InitialBalance,
+                Symbols = liveConfig.Symbols,
+                OrderGuardTimeoutSeconds = liveConfig.OrderGuardTimeoutSeconds,
+                StopOutLevel = liveConfig.StopOutLevel,
+                MaxOpenPositions = liveConfig.MaxOpenPositions,
+                NeuralNetworkName = liveConfig.NeuralNetworkName ?? string.Empty,
+                Genes = liveConfig.Genes,
+                LastTickTime = null,
+                StartTime = task.StartTime
             };
             await _stateManager.SaveLiveStateAsync(state, cancellationToken).ConfigureAwait(false);
             return taskId;
@@ -171,7 +261,6 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 {
                     if (thread.IsAlive)
                     {
-                        // Wait up to 5 seconds for graceful exit
                         if (!thread.Join(TimeSpan.FromSeconds(5)))
                         {
                             _logLiveThreadDidNotExit(_logger, taskId, null);
@@ -184,6 +273,9 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 {
                     await _kernelService.StopLiveAsync(liveTask.KernelTaskId, cancellationToken).ConfigureAwait(false);
                 }
+
+                // Delete persisted state
+                await _stateManager.DeleteLiveStateAsync(cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -599,18 +691,32 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 await liveTask.InjectGenesAsync(genes, cancellationToken).ConfigureAwait(false);
                 await _kernelService.InjectGenesAsync(liveTask.KernelTaskId, genes, cancellationToken).ConfigureAwait(false);
 
-                // Persist updated genes
-                var state = new LiveState
+                // Persist updated genes – load existing state, update genes, and save
+                var currentState = await _stateManager.LoadLiveStateAsync(cancellationToken).ConfigureAwait(false);
+                if (currentState != null)
                 {
-                    TaskId = liveTask.TaskId,
-                    Config = liveTask.Config,
-                    Genes = genes,
-                    LastTickTime = liveTask.LastTickTime,
-                    StartTime = liveTask.StartTime,
-                    StrategyName = liveTask.StrategyName,
-                    AdapterName = liveTask.AdapterName
-                };
-                await _stateManager.SaveLiveStateAsync(state, cancellationToken).ConfigureAwait(false);
+                    var updatedState = currentState with
+                    {
+                        Genes = genes,
+                        LastTickTime = liveTask.LastTickTime
+                    };
+                    await _stateManager.SaveLiveStateAsync(updatedState, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    // Fallback: create a minimal state
+                    var state = new LiveState
+                    {
+                        TaskId = liveTask.TaskId,
+                        Config = liveTask.Config,
+                        Genes = genes,
+                        LastTickTime = liveTask.LastTickTime,
+                        StartTime = liveTask.StartTime,
+                        StrategyName = liveTask.StrategyName,
+                        AdapterName = liveTask.AdapterName
+                    };
+                    await _stateManager.SaveLiveStateAsync(state, cancellationToken).ConfigureAwait(false);
+                }
             }
             else
             {

@@ -18,6 +18,9 @@ internal interface IStateManager
     /// <summary>Gets the engine's unique ID.</summary>
     string EngineId { get; }
 
+    /// <summary>Deletes the live trading state.</summary>
+    Task DeleteLiveStateAsync(CancellationToken cancellationToken);
+
     /// <summary>Sets the current session ID.</summary>
     Task SetSessionIdAsync(string sessionId, CancellationToken cancellationToken);
 
@@ -132,6 +135,24 @@ internal sealed class StateManager : IStateManager, IDisposable
         insertCmd.ExecuteNonQuery();
 
         _engineId = newId;
+    }
+
+    /// <inheritdoc/>
+    public async Task DeleteLiveStateAsync(CancellationToken cancellationToken)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            using var cmd = new SqliteCommand("DELETE FROM LiveState WHERE TaskId = 'current'", connection);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task EnqueueOutgoingMessageAsync(string messageType, string payloadJson, CancellationToken cancellationToken)
