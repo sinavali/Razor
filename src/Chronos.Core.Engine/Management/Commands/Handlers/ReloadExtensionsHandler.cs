@@ -16,11 +16,17 @@ using Microsoft.Extensions.Logging;
 internal sealed class ReloadExtensionsHandler : CommandHandlerBase
 {
     private readonly IExtensionManager _extensionManager;
+    private readonly ICloudConnector _cloudConnector;
 
-    public ReloadExtensionsHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher, IExtensionManager extensionManager, ILogger<ReloadExtensionsHandler> logger)
+    public ReloadExtensionsHandler(
+        ICloudConnector cloudConnector,
+        ICommandDispatcher dispatcher,
+        IExtensionManager extensionManager,
+        ILogger<ReloadExtensionsHandler> logger)
         : base(cloudConnector, dispatcher, logger)
     {
         _extensionManager = extensionManager;
+        _cloudConnector = cloudConnector;
     }
 
     public override int CommandId => 1400;
@@ -28,6 +34,12 @@ internal sealed class ReloadExtensionsHandler : CommandHandlerBase
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         await _extensionManager.ReloadExtensionsAsync(cancellationToken).ConfigureAwait(false);
-        await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { Message = "Extensions reloaded." }, cancellationToken).ConfigureAwait(false);
+
+        // Send updated manifest
+        var manifest = await _extensionManager.GetManifestAsync(cancellationToken).ConfigureAwait(false);
+        await _cloudConnector.SendExtensionManifestAsync(manifest, cancellationToken).ConfigureAwait(false);
+
+        await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { Message = "Extensions reloaded." }, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

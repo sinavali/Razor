@@ -169,6 +169,9 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     private static readonly Action<ILogger, string, Exception?> _logRetransmitRequest =
         LoggerMessage.Define<string>(LogLevel.Information, 45, "Retransmit requested for transfer {TransferId}.");
 
+    private static readonly Action<ILogger, Exception?> _logCannotSendManifest =
+        LoggerMessage.Define(LogLevel.Warning, 46, "Cannot send extension manifest: not connected.");
+
     /// <inheritdoc/>
     public bool IsConnected => _isConnected;
 
@@ -1050,6 +1053,25 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
                 _logSelfUpdateMetadataFailed(_logger, ex);
             }
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task SendExtensionManifestAsync(object manifest, CancellationToken cancellationToken)
+    {
+        if (!_isConnected || _webSocket == null)
+        {
+            _logCannotSendManifest(_logger, null);
+            return;
+        }
+
+        var message = new CloudMessage
+        {
+            MessageType = "ExtensionManifest",
+            Encrypted = true,
+            Payload = manifest
+        };
+
+        await this.SendAsync(message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task DisplayBroadcastMessageAsync(CloudMessage message, CancellationToken cancellationToken)

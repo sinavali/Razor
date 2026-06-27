@@ -242,6 +242,11 @@ internal sealed class Program
         var extensionManager = serviceProvider.GetRequiredService<IExtensionManager>();
         await extensionManager.DiscoverExtensionsAsync(cancellationToken).ConfigureAwait(false);
 
+        // Send manifest to Cloud
+        var manifest = await extensionManager.GetManifestAsync(cancellationToken).ConfigureAwait(false);
+        var cloudConnector = serviceProvider.GetRequiredService<ICloudConnector>();
+        await cloudConnector.SendExtensionManifestAsync(manifest, cancellationToken).ConfigureAwait(false);
+
         var securityManager = serviceProvider.GetRequiredService<ISecurityManager>();
 
         if (securityManager.IsDebuggerAttached())
@@ -260,35 +265,12 @@ internal sealed class Program
             Credentials.PromptForCredentials();
         }
 
-        var cloudConnector = serviceProvider.GetRequiredService<ICloudConnector>();
+        // Reuse the same cloud connector instance
         await cloudConnector.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RunAsServiceAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
-        var host = Host.CreateDefaultBuilder()
-            .UseWindowsService(options =>
-            {
-                options.ServiceName = "Chronos Engine";
-            })
-            .UseSystemd()
-            .ConfigureServices((_, services) =>
-            {
-                // The hosted service is already registered in BuildServiceProvider,
-                // but we need to copy the services from the existing provider.
-                // To avoid duplication, we use the existing provider as the root.
-            })
-            .Build();
-
-        // We need to copy the services from the existing provider into the host's DI,
-        // but the host has its own DI. To avoid complexity, we'll just run the engine
-        // as a hosted service directly, using the existing service provider.
-        // The EngineHostedService is already registered, but we need to start it.
-        // However, we are using the host's RunAsync which will start all hosted services.
-        // But we already built a service provider above. Instead, we can just use the
-        // host's container and not build our own.
-        // Simplest: use the host's container for service mode entirely.
-
         // Rebuild the host with our services.
         using var host2 = Host.CreateDefaultBuilder()
             .UseWindowsService(options =>

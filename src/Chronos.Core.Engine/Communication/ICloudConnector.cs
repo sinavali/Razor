@@ -39,4 +39,9 @@ internal interface ICloudConnector
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes when the file is fully sent.</returns>
     Task SendBinaryAsync(string filePath, string contentType, CancellationToken cancellationToken);
+
+    /// <summary>Sends the extension manifest to the cloud.</summary>
+    /// <param name="manifest">The manifest object (from IExtensionManager.GetManifestAsync).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task SendExtensionManifestAsync(object manifest, CancellationToken cancellationToken);
 }

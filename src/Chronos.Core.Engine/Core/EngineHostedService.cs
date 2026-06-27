@@ -115,6 +115,11 @@ internal sealed class EngineHostedService : IHostedService, IDisposable
             var extensionManager = sp.GetRequiredService<IExtensionManager>();
             await extensionManager.DiscoverExtensionsAsync(cancellationToken).ConfigureAwait(false);
 
+            // Send manifest
+            var manifest = await extensionManager.GetManifestAsync(cancellationToken).ConfigureAwait(false);
+            var cloudConnector = sp.GetRequiredService<ICloudConnector>();
+            await cloudConnector.SendExtensionManifestAsync(manifest, cancellationToken).ConfigureAwait(false);
+
             var securityManager = sp.GetRequiredService<ISecurityManager>();
             if (securityManager.IsDebuggerAttached())
             {
@@ -132,8 +137,8 @@ internal sealed class EngineHostedService : IHostedService, IDisposable
                 throw new InvalidOperationException("Credentials not provided. Use --auth=username,password,apikey when running as a service.");
             }
 
-            var cloudConnector = sp.GetRequiredService<ICloudConnector>();
-            await cloudConnector.RunAsync(cancellationToken).ConfigureAwait(false);
+            var cloudConnectorServices = sp.GetRequiredService<ICloudConnector>();
+            await cloudConnectorServices.RunAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
