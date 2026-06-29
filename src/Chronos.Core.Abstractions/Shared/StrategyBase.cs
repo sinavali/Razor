@@ -9,6 +9,7 @@ namespace Chronos.Core.Abstractions.Shared;
 public abstract class StrategyBase : IStrategyCapability, IDisposable
 {
     private readonly ReaderWriterLockSlim _geneLock = new(LockRecursionPolicy.SupportsRecursion);
+    private IBehaviorRecorder? _behaviorRecorder;
 
     /// <summary>Lock used to protect gene injection while the strategy is processing ticks.</summary>
     public ReaderWriterLockSlim GeneLock => _geneLock;
@@ -31,6 +32,9 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
 
     /// <summary>Optional neural network model, if the strategy uses one.</summary>
     public INeuralNetworkModel? NeuralNetwork { get; set; }
+
+    /// <summary>Whether behavior logging is currently enabled.</summary>
+    public bool IsBehaviorLoggingEnabled { get; internal set; }
 
     /// <inheritdoc/>
     public virtual int TotalGeneCount
@@ -131,39 +135,180 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
         TickWindow = tickWindow;
     }
 
+    internal void SetBehaviorRecorder(IBehaviorRecorder recorder)
+    {
+        _behaviorRecorder = recorder;
+    }
+
+    /// <summary>
+    /// Records a behavior log entry if logging is enabled.
+    /// </summary>
+    /// <param name="action">The action taken (e.g., "Buy", "Sell", "Close").</param>
+    /// <param name="state">Optional custom state dictionary. If null, a default state (equity, positions) is collected.</param>
+    /// <param name="reward">Optional reward signal.</param>
+    protected void RecordBehavior(string action, Dictionary<string, double>? state = null, double? reward = null)
+    {
+        if (!IsBehaviorLoggingEnabled || _behaviorRecorder == null)
+        {
+            return;
+        }
+
+        var record = CreateBehaviorRecord(action, state, reward);
+        _behaviorRecorder.Record(record);
+        OnBehaviorRecorded(record);
+    }
+
+    /// <summary>
+    /// Creates a <see cref="BehaviorRecord"/> from the given parameters.
+    /// Override this method to add custom fields or change the state collection.
+    /// </summary>
+    protected virtual BehaviorRecord CreateBehaviorRecord(string action, Dictionary<string, double>? state, double? reward)
+    {
+        var dict = state ?? BuildDefaultState();
+        return new BehaviorRecord
+        {
+            TimestampUtc = DateTime.UtcNow,
+            SessionId = SessionId ?? string.Empty,
+            StrategyName = GetType().Name,
+            Action = action,
+            Reward = reward,
+            State = dict
+        };
+    }
+
+    /// <summary>
+    /// Called after a behavior record is created. Override to perform additional logic (e.g., logging, telemetry).
+    /// </summary>
+    protected virtual void OnBehaviorRecorded(BehaviorRecord record)
+    {
+    }
+
+    private Dictionary<string, double> BuildDefaultState()
+    {
+        var dict = new Dictionary<string, double>
+        {
+            ["Balance"] = Broker.Balance,
+            ["Equity"] = Broker.Equity,
+            ["MarginUsed"] = Broker.MarginUsed,
+            ["FreeMargin"] = Broker.FreeMargin,
+            ["MaxDrawdown"] = Broker.MaxDrawdown,
+            ["MaxDailyDrawdown"] = Broker.MaxDailyDrawdown
+        };
+
+        // Add open positions count and total volume
+        var positions = Broker.GetOpenPositionsAsync().GetAwaiter().GetResult();
+        dict["OpenPositionsCount"] = positions.Count;
+        double totalVolume = 0;
+        foreach (var p in positions)
+        {
+            totalVolume += p.Volume;
+            // Optionally add per-symbol details
+        }
+        dict["TotalVolume"] = totalVolume;
+
+        return dict;
+    }
+
     /// <summary>Buys the primary symbol at market.</summary>
     protected Task<AdapterOrderResponse> BuyAsync(double volume, double? sl = null, double? tp = null,
         string? comment = null)
-        => Broker.ExecuteMarketOrderAsync(PrimarySymbol, OrderType.Buy, volume, sl ?? 0, tp ?? 0, comment ?? "");
+    {
+        var task = Broker.ExecuteMarketOrderAsync(PrimarySymbol, OrderType.Buy, volume, sl ?? 0, tp ?? 0, comment ?? "");
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("Buy", new Dictionary<string, double> { ["Volume"] = volume, ["Price"] = 0 }); // price unknown until response
+        }
+
+        return task;
+    }
 
     /// <summary>Buys the given symbol at market.</summary>
     protected Task<AdapterOrderResponse> BuyAsync(string symbol, double volume, double? sl = null, double? tp = null,
         string? comment = null)
-        => Broker.ExecuteMarketOrderAsync(symbol, OrderType.Buy, volume, sl ?? 0, tp ?? 0, comment ?? "");
+    {
+        var task = Broker.ExecuteMarketOrderAsync(symbol, OrderType.Buy, volume, sl ?? 0, tp ?? 0, comment ?? "");
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("Buy", new Dictionary<string, double> { ["Volume"] = volume, ["Symbol"] = 0 });
+        }
+
+        return task;
+    }
 
     /// <summary>Sells the primary symbol at market.</summary>
     protected Task<AdapterOrderResponse> SellAsync(double volume, double? sl = null, double? tp = null,
         string? comment = null)
-        => Broker.ExecuteMarketOrderAsync(PrimarySymbol, OrderType.Sell, volume, sl ?? 0, tp ?? 0, comment ?? "");
+    {
+        var task = Broker.ExecuteMarketOrderAsync(PrimarySymbol, OrderType.Sell, volume, sl ?? 0, tp ?? 0, comment ?? "");
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("Sell", new Dictionary<string, double> { ["Volume"] = volume });
+        }
+
+        return task;
+    }
 
     /// <summary>Sells the given symbol at market.</summary>
     protected Task<AdapterOrderResponse> SellAsync(string symbol, double volume, double? sl = null, double? tp = null,
         string? comment = null)
-        => Broker.ExecuteMarketOrderAsync(symbol, OrderType.Sell, volume, sl ?? 0, tp ?? 0, comment ?? "");
+    {
+        var task = Broker.ExecuteMarketOrderAsync(symbol, OrderType.Sell, volume, sl ?? 0, tp ?? 0, comment ?? "");
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("Sell", new Dictionary<string, double> { ["Volume"] = volume, ["Symbol"] = 0 });
+        }
+
+        return task;
+    }
 
     /// <summary>Modifies an existing order's stop loss, take profit, or price.</summary>
     protected Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null,
         double? price = null)
-        => Broker.ModifyOrderAsync(ticket, sl, tp, price);
+    {
+        var task = Broker.ModifyOrderAsync(ticket, sl, tp, price);
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("ModifyOrder", new Dictionary<string, double> { ["Ticket"] = ticket });
+        }
+
+        return task;
+    }
 
     /// <summary>Cancels a pending order by ticket.</summary>
-    protected Task<AdapterOrderResponse> CancelOrderAsync(long ticket) => Broker.CancelOrderAsync(ticket);
+    protected Task<AdapterOrderResponse> CancelOrderAsync(long ticket)
+    {
+        var task = Broker.CancelOrderAsync(ticket);
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("CancelOrder", new Dictionary<string, double> { ["Ticket"] = ticket });
+        }
+
+        return task;
+    }
 
     /// <summary>Closes all positions for the primary symbol.</summary>
-    protected Task CloseAllAsync(OrderType? type = null) => Broker.CloseAllAsync(PrimarySymbol, type);
+    protected Task CloseAllAsync(OrderType? type = null)
+    {
+        var task = Broker.CloseAllAsync(PrimarySymbol, type);
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("CloseAll", new Dictionary<string, double> { ["Symbol"] = 0 });
+        }
+
+        return task;
+    }
 
     /// <summary>Closes all positions for the given symbol.</summary>
-    protected Task CloseAllAsync(string symbol, OrderType? type = null) => Broker.CloseAllAsync(symbol, type);
+    protected Task CloseAllAsync(string symbol, OrderType? type = null)
+    {
+        var task = Broker.CloseAllAsync(symbol, type);
+        if (IsBehaviorLoggingEnabled)
+        {
+            RecordBehavior("CloseAll", new Dictionary<string, double> { ["Symbol"] = 0 });
+        }
+
+        return task;
+    }
 
     /// <inheritdoc/>
     public void Dispose()
@@ -180,4 +325,7 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
             _geneLock.Dispose();
         }
     }
+
+    // Placeholder for session ID (set by engine)
+    internal string? SessionId { get; set; }
 }
