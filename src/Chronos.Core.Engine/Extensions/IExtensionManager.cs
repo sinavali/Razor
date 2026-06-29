@@ -35,4 +35,24 @@ internal interface IExtensionManager
 
     /// <summary>Gets the hook registry containing all registered hook plugins.</summary>
     IHookRegistry HookRegistry { get; }
+
+    // ─── Transient instance support ──────────────────────────────
+
+    /// <summary>
+    /// Creates a new transient instance of the specified strategy type.
+    /// This instance is not tracked by the extension manager and must be disposed by the caller.
+    /// Used for multi-threaded evaluation (e.g., genetic algorithm) where each thread needs its own strategy.
+    /// </summary>
+    IStrategyCapability? CreateTransientStrategy(string strategyName);
+
+    // ─── Behavior logging support ──────────────────────────
+
+    /// <summary>Enables behavior logging on the active strategy.</summary>
+    void EnableBehaviorLoggingOnStrategy(string sessionId, int snapshotIntervalSeconds = 10);
+
+    /// <summary>Disables behavior logging on the active strategy.</summary>
+    void DisableBehaviorLoggingOnStrategy();
+
+    /// <summary>Records a snapshot on the active strategy if logging is enabled.</summary>
+    void RecordSnapshotOnStrategy();
 }

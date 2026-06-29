@@ -33,7 +33,7 @@ The `core` repository contains the heart of the Chronos ecosystem: the public SD
 |---------|-------------|------------|
 | `Chronos.Core.Abstractions` | Public SDK for building extensions (adapters, strategies, indicators, hook plugins, NN models) | NuGet package |
 | `Chronos.Core.Kernel` | Closed‑source engine implementing all trading logic | Private |
-| `Chronos.Engine` | Headless executable that hosts the Kernel and communicates with Chronos Cloud | Private |
+| `Chronos.Core.Engine` | Headless executable that hosts the Kernel and communicates with Chronos Cloud | Private |
 
 ## Quick Start – Extension Developers
 
@@ -73,4 +73,4 @@ dotnet test --configuration Release
 
 - `Chronos.Core.Abstractions` – Proprietary, freely redistributable.
 - `Chronos.Core.Kernel` – Closed‑source, all rights reserved.
-- `Chronos.Engine` – Closed‑source, distributed as part of the Chronos Engine binary.
+- `Chronos.Core.Engine` – Closed‑source, distributed as part of the Chronos Engine binary.

@@ -18,7 +18,7 @@ internal interface IEngineTelemetry
 /// <summary>Default implementation using System.Diagnostics.Metrics.</summary>
 internal sealed class EngineTelemetry : IEngineTelemetry, IDisposable
 {
-    private static readonly Meter Meter = new("Chronos.Engine", "1.0");
+    private static readonly Meter Meter = new("Chronos.Core.Engine", "1.0");
     private static readonly Counter<long> CommandCounter = Meter.CreateCounter<long>("engine.commands_total", description: "Total commands executed.");
     private static readonly Histogram<double> CommandDurationHistogram = Meter.CreateHistogram<double>("engine.command_duration_ms", "ms", "Command execution duration.");
     private static readonly Counter<long> TaskCounter = Meter.CreateCounter<long>("engine.tasks_total", description: "Total tasks started.");

@@ -1,7 +1,7 @@
+using Chronos.Core.Abstractions.Shared;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
-using Chronos.Core.Abstractions.Shared;
 
 namespace Chronos.Core.Kernel.Indicators;
 

@@ -1,31 +1,35 @@
-// -----------------------------------------------------------------------------
-// <copyright file="EnableBehaviorLoggingHandler.cs" company="Chronos Platform">
-//   Copyright (c) Chronos Platform. All rights reserved.
-// </copyright>
-// -----------------------------------------------------------------------------
-
-using Chronos.Core.Engine.Core;
+using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Communication;
-using Chronos.Core.Engine.Services.BehaviorRecorder;
+using Chronos.Core.Engine.Core;
+using Chronos.Core.Engine.Extensions;
+using Chronos.Core.Kernel.Behavior;
 using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Management.Commands.Handlers;
 
-// ─── Behavior Logging ──────────────────────────────────────────
-
+/// <summary>Handles the enable behavior logging command (2100).</summary>
 internal sealed class EnableBehaviorLoggingHandler : CommandHandlerBase
 {
     private readonly IBehaviorRecorder _behaviorRecorder;
+    private readonly IExtensionManager _extensionManager;
 
-    public EnableBehaviorLoggingHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher,
-        IBehaviorRecorder behaviorRecorder, ILogger<EnableBehaviorLoggingHandler> logger)
+    /// <summary>Initializes a new instance of the <see cref="EnableBehaviorLoggingHandler"/> class.</summary>
+    public EnableBehaviorLoggingHandler(
+        ICloudConnector cloudConnector,
+        ICommandDispatcher dispatcher,
+        IBehaviorRecorder behaviorRecorder,
+        IExtensionManager extensionManager,
+        ILogger<EnableBehaviorLoggingHandler> logger)
         : base(cloudConnector, dispatcher, logger)
     {
         _behaviorRecorder = behaviorRecorder;
+        _extensionManager = extensionManager;
     }
 
+    /// <inheritdoc/>
     public override int CommandId => 2100;
 
+    /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         if (command.Parameters is not Dictionary<string, object> dict ||
@@ -42,7 +46,6 @@ internal sealed class EnableBehaviorLoggingHandler : CommandHandlerBase
         string strategyName = strategyNameObj?.ToString()!;
         double[] genes = (genesObj as double[]) ?? Array.Empty<double>();
 
-        // Optional upload interval
         int uploadInterval = AppConstants.DefaultBehaviorUploadIntervalSeconds;
         if (dict.TryGetValue("UploadIntervalSeconds", out object? intervalObj) && intervalObj is int interval &&
             interval > 0)
@@ -50,7 +53,15 @@ internal sealed class EnableBehaviorLoggingHandler : CommandHandlerBase
             uploadInterval = interval;
         }
 
+        int snapshotInterval = 10;
+        if (dict.TryGetValue("SnapshotIntervalSeconds", out object? snapObj) && snapObj is int snap && snap > 0)
+        {
+            snapshotInterval = snap;
+        }
+
         _behaviorRecorder.Enable(sessionId, strategyName, genes, uploadInterval);
+        _extensionManager.EnableBehaviorLoggingOnStrategy(sessionId, snapshotInterval);
+
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { SessionId = sessionId }, cancellationToken)
             .ConfigureAwait(false);
     }

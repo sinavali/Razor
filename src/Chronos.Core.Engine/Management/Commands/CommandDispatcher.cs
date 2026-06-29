@@ -6,16 +6,17 @@
 
 namespace Chronos.Core.Engine.Management.Commands;
 
-using System.Collections.Concurrent;
+using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Extensions;
 using Chronos.Core.Engine.Management.Commands.Handlers;
 using Chronos.Core.Engine.Management.Scheduling;
 using Chronos.Core.Engine.Management.Tasks;
-using Chronos.Core.Engine.Services.BehaviorRecorder;
 using Chronos.Core.Engine.Services.Mining;
+using Chronos.Core.Kernel.Behavior;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 /// <summary>Command dispatcher that routes cloud commands to registered handlers.</summary>
 internal sealed class CommandDispatcher : ICommandDispatcher
@@ -159,8 +160,8 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         this.RegisterHandler(2001, new EmergencyStopHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<EmergencyStopHandler>()));
 
         // Behavior Logging (2100-2199)
-        this.RegisterHandler(2100, new EnableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<EnableBehaviorLoggingHandler>()));
-        this.RegisterHandler(2101, new DisableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<DisableBehaviorLoggingHandler>()));
+        this.RegisterHandler(2100, new EnableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _extensionManager, _loggerFactory.CreateLogger<EnableBehaviorLoggingHandler>()));
+        this.RegisterHandler(2101, new DisableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _extensionManager, _loggerFactory.CreateLogger<DisableBehaviorLoggingHandler>()));
         this.RegisterHandler(2102, new GetBehaviorLogsHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<GetBehaviorLogsHandler>()));
         this.RegisterHandler(2103, new DeleteBehaviorLogsHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<DeleteBehaviorLogsHandler>()));
     }

@@ -1,7 +1,5 @@
 #pragma warning disable CA1031 // Reason: Background tasks and event handlers must not crash the process (Principle 13)
 
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using Chronos.Core.Abstractions.Hooks;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Slots;
@@ -10,6 +8,8 @@ using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Brokers;
 
@@ -381,7 +381,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         if (!_lastPrices.TryGetValue(symbol, out var px) || !_symbolSpecs.TryGetValue(symbol, out var spec))
         {
             return new AdapterOrderResponse
-                { Success = false, ErrorMessage = "Price or symbol properties not available" };
+            { Success = false, ErrorMessage = "Price or symbol properties not available" };
         }
 
         double refPrice = type == OrderType.Buy ? px.Ask : px.Bid;

@@ -6,12 +6,12 @@
 
 namespace Chronos.Core.Engine.Management.Commands.Handlers;
 
-using System.Diagnostics;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Management.Commands;
 using Chronos.Core.Engine.Management.Tasks;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 /// <summary>Handler for gracefully restarting the engine.</summary>
 internal sealed class RestartHandler : CommandHandlerBase

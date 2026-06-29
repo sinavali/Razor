@@ -6,10 +6,9 @@
 
 namespace Chronos.Core.Engine.Communication;
 
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
 
 /// <summary>Manages state for ongoing binary transfers.</summary>
 internal sealed class BinaryTransferManager : IDisposable
@@ -61,6 +60,7 @@ internal sealed class BinaryTransferManager : IDisposable
             throw new InvalidOperationException($"Transfer {transferId} already exists.");
         }
 
+        var tempPath = Path.Combine(Path.GetTempPath(), $"chronos_incoming_{transferId}.tmp");
         var transfer = new IncomingTransfer
         {
             TransferId = transferId,
@@ -68,8 +68,9 @@ internal sealed class BinaryTransferManager : IDisposable
             TotalSize = totalSize,
             Checksum = checksum,
             ContentType = contentType,
+            TempFilePath = tempPath,
+            FileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, FileOptions.SequentialScan),
             ReceivedBytes = 0,
-            Data = new byte[totalSize],
             Completed = false,
             Cancelled = false
         };
@@ -95,26 +96,37 @@ internal sealed class BinaryTransferManager : IDisposable
         // Validate offset
         if (offset != transfer.ReceivedBytes)
         {
-            // Out of order – we will request retransmission later (in CloudConnector).
-            // We log and return false; the caller will send a retransmit request.
             _logOutOfOrderChunk(_logger, transferId, transfer.ReceivedBytes, offset, null);
             return false;
         }
 
-        // Copy data
-        Array.Copy(data, 0, transfer.Data, offset, data.Length);
+        // Ensure file stream is not null
+        if (transfer.FileStream == null)
+        {
+            throw new InvalidOperationException($"FileStream for transfer {transferId} is null.");
+        }
+
+        // Write chunk to disk
+        transfer.FileStream.Write(data, 0, data.Length);
         transfer.ReceivedBytes += data.Length;
         _logChunkReceived(_logger, transferId, data.Length, offset, null);
 
         if (transfer.ReceivedBytes == transfer.TotalSize)
         {
-            // Verify checksum using static HashData for efficiency
-            var computed = Convert.ToHexString(SHA256.HashData(transfer.Data));
+            transfer.FileStream.Flush();
+            transfer.FileStream.Close();
+            transfer.FileStream.Dispose();
+
+            // Verify checksum
+            using var sha = SHA256.Create();
+            using var fs = File.OpenRead(transfer.TempFilePath);
+            var computed = Convert.ToHexString(sha.ComputeHash(fs));
             if (!computed.Equals(transfer.Checksum, StringComparison.OrdinalIgnoreCase))
             {
                 _logTransferFailed(_logger, transferId, null);
                 transfer.Completed = false;
                 transfer.Cancelled = true;
+                File.Delete(transfer.TempFilePath);
                 throw new InvalidOperationException($"Checksum mismatch for {transferId}: expected {transfer.Checksum}, got {computed}");
             }
 
@@ -142,6 +154,11 @@ internal sealed class BinaryTransferManager : IDisposable
         if (_incoming.TryRemove(transferId, out var transfer))
         {
             transfer.Cancelled = true;
+            transfer.FileStream?.Dispose();
+            if (File.Exists(transfer.TempFilePath))
+            {
+                File.Delete(transfer.TempFilePath);
+            }
             _logTransferCancelled(_logger, transferId, null);
         }
     }
@@ -287,7 +304,11 @@ internal sealed class BinaryTransferManager : IDisposable
 
         foreach (var kv in _incoming)
         {
-            kv.Value.Cancelled = true;
+            kv.Value.FileStream?.Dispose();
+            if (File.Exists(kv.Value.TempFilePath))
+            {
+                try { File.Delete(kv.Value.TempFilePath); } catch { }
+            }
         }
         _incoming.Clear();
 
@@ -306,8 +327,9 @@ internal sealed class BinaryTransferManager : IDisposable
         public long TotalSize { get; init; }
         public string Checksum { get; init; } = string.Empty;
         public string ContentType { get; init; } = string.Empty;
+        public string TempFilePath { get; init; } = string.Empty;
+        public FileStream? FileStream { get; set; }
         public long ReceivedBytes { get; set; }
-        public byte[] Data { get; set; } = Array.Empty<byte>();
         public bool Completed { get; set; }
         public bool Cancelled { get; set; }
     }

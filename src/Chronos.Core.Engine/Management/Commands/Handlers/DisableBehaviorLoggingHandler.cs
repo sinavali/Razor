@@ -1,31 +1,40 @@
-// -----------------------------------------------------------------------------
-// <copyright file="DisableBehaviorLoggingHandler.cs" company="Chronos Platform">
-//   Copyright (c) Chronos Platform. All rights reserved.
-// </copyright>
-// -----------------------------------------------------------------------------
+using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Engine.Communication;
+using Chronos.Core.Engine.Extensions;
+using Chronos.Core.Kernel.Behavior;
+using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Management.Commands.Handlers;
 
-using Chronos.Core.Engine.Communication;
-using Chronos.Core.Engine.Management.Commands;
-using Chronos.Core.Engine.Services.BehaviorRecorder;
-using Microsoft.Extensions.Logging;
-
+/// <summary>Handles the disable behavior logging command (2101).</summary>
 internal sealed class DisableBehaviorLoggingHandler : CommandHandlerBase
 {
     private readonly IBehaviorRecorder _behaviorRecorder;
+    private readonly IExtensionManager _extensionManager;
 
-    public DisableBehaviorLoggingHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher, IBehaviorRecorder behaviorRecorder, ILogger<DisableBehaviorLoggingHandler> logger)
+    /// <summary>Initializes a new instance of the <see cref="DisableBehaviorLoggingHandler"/> class.</summary>
+    public DisableBehaviorLoggingHandler(
+        ICloudConnector cloudConnector,
+        ICommandDispatcher dispatcher,
+        IBehaviorRecorder behaviorRecorder,
+        IExtensionManager extensionManager,
+        ILogger<DisableBehaviorLoggingHandler> logger)
         : base(cloudConnector, dispatcher, logger)
     {
         _behaviorRecorder = behaviorRecorder;
+        _extensionManager = extensionManager;
     }
 
+    /// <inheritdoc/>
     public override int CommandId => 2101;
 
+    /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         _behaviorRecorder.Disable();
-        await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { Message = "Behavior logging disabled." }, cancellationToken).ConfigureAwait(false);
+        _extensionManager.DisableBehaviorLoggingOnStrategy();
+
+        await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { Message = "Behavior logging disabled." }, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

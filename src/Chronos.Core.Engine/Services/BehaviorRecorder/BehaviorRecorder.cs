@@ -1,21 +1,21 @@
-using System.Collections.Concurrent;
-using System.IO.Compression;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Core;
+using Chronos.Core.Kernel.Behavior;
 using MessagePack;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.IO.Compression;
 
 namespace Chronos.Core.Engine.Services.BehaviorRecorder;
 
 /// <summary>
-/// Default implementation of <see cref="IBehaviorRecorder"/>.
+/// Default implementation of the internal <see cref="IBehaviorRecorder"/>.
 /// Buffers records in memory and flushes them to compressed binary files.
 /// </summary>
-public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
+internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
 {
     private readonly ILogger<BehaviorRecorder> _logger;
-    private readonly ICloudConnector _cloudConnector;
     private readonly string _baseDirectory;
     private readonly ConcurrentQueue<BehaviorRecord> _buffer = new();
     private readonly Timer _flushTimer;
@@ -49,18 +49,25 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
     private static readonly Action<ILogger, Exception?> _logUploadTimerStopped =
         LoggerMessage.Define(LogLevel.Information, 9, "Behavior log upload timer stopped.");
 
+    /// <inheritdoc/>
     public bool IsEnabled => _isEnabled;
 
-    public BehaviorRecorder(ILogger<BehaviorRecorder> logger, ICloudConnector cloudConnector)
+    private readonly Lazy<ICloudConnector> _cloudConnectorLazy;
+
+    /// <summary>Initializes a new instance of the <see cref="BehaviorRecorder"/> class.</summary>
+    public BehaviorRecorder(
+        ILogger<BehaviorRecorder> logger,
+        Lazy<ICloudConnector> cloudConnectorLazy)
     {
         _logger = logger;
-        _cloudConnector = cloudConnector;
+        _cloudConnectorLazy = cloudConnectorLazy;
         _baseDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "behavior_logs");
         Directory.CreateDirectory(_baseDirectory);
         _flushTimer = new Timer(async _ => await FlushAsync(CancellationToken.None).ConfigureAwait(false), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
-    public void Enable(string sessionId, string strategyName, double[] genes, int uploadIntervalSeconds = AppConstants.DefaultBehaviorUploadIntervalSeconds)
+    /// <inheritdoc/>
+    public void Enable(string sessionId, string strategyName, double[] genes, int uploadIntervalSeconds)
     {
         _sessionId = sessionId;
         _strategyName = strategyName;
@@ -73,6 +80,7 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         StartUploadTimer();
     }
 
+    /// <inheritdoc/>
     public void Disable()
     {
         if (!_isEnabled)
@@ -120,7 +128,8 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
             return;
         }
 
-        if (!_cloudConnector.IsConnected)
+        var cloudConnector = _cloudConnectorLazy.Value;
+        if (!cloudConnector.IsConnected)
         {
             return;
         }
@@ -136,7 +145,7 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
             try
             {
                 _logUploadingBehaviorLog(_logger, Path.GetFileName(file), null);
-                await _cloudConnector.SendBinaryAsync(file, "application/octet-stream", cancellationToken).ConfigureAwait(false);
+                await cloudConnector.SendBinaryAsync(file, "application/octet-stream", cancellationToken).ConfigureAwait(false);
                 File.Delete(file);
                 _logUploadedBehaviorLog(_logger, Path.GetFileName(file), null);
             }
@@ -147,6 +156,7 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public void Record(BehaviorRecord record)
     {
         if (!_isEnabled)
@@ -156,7 +166,6 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
 
         ArgumentNullException.ThrowIfNull(record);
 
-        // Ensure session ID and strategy name are set
         if (string.IsNullOrEmpty(record.SessionId))
         {
             record = record with { SessionId = _sessionId };
@@ -174,6 +183,7 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public async Task FlushAsync(CancellationToken cancellationToken)
     {
         if (_buffer.IsEmpty)
@@ -197,8 +207,8 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
 
             var filePath = Path.Combine(_baseDirectory, $"behavior_{_sessionId}_{DateTime.UtcNow:yyyy-MM-dd}.bin.gz");
             var data = MessagePackSerializer.Serialize(records, cancellationToken: cancellationToken);
-            await using var fs = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.None);
-            await using var gz = new GZipStream(fs, CompressionLevel.Optimal);
+            using var fs = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.None);
+            using var gz = new GZipStream(fs, CompressionLevel.Optimal);
             await gz.WriteAsync(data, cancellationToken).ConfigureAwait(false);
             _recordCount = 0;
             _logFlushedRecords(_logger, records.Count, filePath, null);
@@ -209,6 +219,7 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public async Task<object> GetLogsAsync(string sessionId, CancellationToken cancellationToken)
     {
         await FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -229,6 +240,7 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         return new { SessionId = sessionId, Logs = logFiles };
     }
 
+    /// <inheritdoc/>
     public async Task DeleteLogsAsync(string sessionId, CancellationToken cancellationToken)
     {
         await FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -241,6 +253,7 @@ public sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)

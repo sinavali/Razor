@@ -6,17 +6,17 @@
 
 namespace Chronos.Core.Engine.Communication;
 
+using Core;
+using Core.Exceptions;
+using Management.Tasks;
+using Microsoft.Extensions.Logging;
+using Services.Update;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Core;
-using Core.Exceptions;
-using Management.Tasks;
-using Services.Update;
-using Microsoft.Extensions.Logging;
 
 /// <summary>Default implementation of <see cref="ICloudConnector"/>.</summary>
 internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
@@ -903,8 +903,15 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
                         string outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "downloads");
                         Directory.CreateDirectory(outputDir);
                         string outputPath = Path.Combine(outputDir, transfer.FileName);
-                        await File.WriteAllBytesAsync(outputPath, transfer.Data, cancellationToken).ConfigureAwait(false);
-                        _logBinaryTransferSaved(_logger, endTransferId, outputPath, null);
+                        if (File.Exists(transfer.TempFilePath))
+                        {
+                            File.Move(transfer.TempFilePath, outputPath, true);
+                            _logBinaryTransferSaved(_logger, endTransferId, outputPath, null);
+                        }
+                        else
+                        {
+                            _logBinaryTransferNotFound(_logger, endTransferId, null);
+                        }
                     }
                     else
                     {

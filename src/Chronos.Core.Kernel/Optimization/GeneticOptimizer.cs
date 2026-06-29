@@ -1,9 +1,9 @@
-using System.Diagnostics;
 using Chronos.Core.Abstractions.Hooks;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Telemetry;
+using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Optimization;
 

@@ -1,9 +1,9 @@
+using Microsoft.Extensions.Logging;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Services.Mining;
 

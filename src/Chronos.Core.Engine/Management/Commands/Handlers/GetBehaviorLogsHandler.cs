@@ -1,28 +1,26 @@
-// -----------------------------------------------------------------------------
-// <copyright file="GetBehaviorLogsHandler.cs" company="Chronos Platform">
-//   Copyright (c) Chronos Platform. All rights reserved.
-// </copyright>
-// -----------------------------------------------------------------------------
+using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Engine.Communication;
+using Chronos.Core.Kernel.Behavior;
+using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Management.Commands.Handlers;
 
-using Chronos.Core.Engine.Communication;
-using Chronos.Core.Engine.Management.Commands;
-using Chronos.Core.Engine.Services.BehaviorRecorder;
-using Microsoft.Extensions.Logging;
-
+/// <summary>Handles the get behavior logs command (2102).</summary>
 internal sealed class GetBehaviorLogsHandler : CommandHandlerBase
 {
     private readonly IBehaviorRecorder _behaviorRecorder;
 
+    /// <summary>Initializes a new instance of the <see cref="GetBehaviorLogsHandler"/> class.</summary>
     public GetBehaviorLogsHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher, IBehaviorRecorder behaviorRecorder, ILogger<GetBehaviorLogsHandler> logger)
         : base(cloudConnector, dispatcher, logger)
     {
         _behaviorRecorder = behaviorRecorder;
     }
 
+    /// <inheritdoc/>
     public override int CommandId => 2102;
 
+    /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         if (command.Parameters is not Dictionary<string, object> dict ||

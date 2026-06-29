@@ -8,6 +8,7 @@ namespace Chronos.Core.Engine;
 
 using Abstractions.Hooks;
 using Chronos.Core.Engine.Kernel;
+using Chronos.Core.Kernel.Behavior;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
@@ -169,6 +170,8 @@ internal sealed class Program
 
         // Communication
         services.AddSingleton<ICloudConnector, CloudConnector>();
+        services.AddSingleton<Lazy<ICloudConnector>>(sp =>
+            new Lazy<ICloudConnector>(() => sp.GetRequiredService<ICloudConnector>()));
 
         // Management
         services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
@@ -186,10 +189,7 @@ internal sealed class Program
         services.AddSingleton<IKernelService, KernelService>();
 
         // Services
-        services.AddSingleton<IBehaviorRecorder>(sp =>
-            new BehaviorRecorder(
-                sp.GetRequiredService<ILogger<BehaviorRecorder>>(),
-                sp.GetRequiredService<ICloudConnector>()));
+        services.AddSingleton<IBehaviorRecorder, BehaviorRecorder>();
         services.AddSingleton<IMiningIntegration, MiningIntegration>();
         services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
 
@@ -203,7 +203,7 @@ internal sealed class Program
             builder.AddSerilog(dispose: true);
         });
 
-        // Hosted service (for service mode)
+        // Hosted service
         services.AddHostedService<EngineHostedService>();
 
         return services.BuildServiceProvider();
@@ -287,6 +287,8 @@ internal sealed class Program
                 services.AddSingleton<BinaryTransferManager>();
                 services.AddSingleton<ILoggingService, LoggingService>();
                 services.AddSingleton<ICloudConnector, CloudConnector>();
+                services.AddSingleton<Lazy<ICloudConnector>>(sp =>
+                    new Lazy<ICloudConnector>(() => sp.GetRequiredService<ICloudConnector>()));
                 services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
                 services.AddSingleton<Lazy<ICommandDispatcher>>(sp =>
                     new Lazy<ICommandDispatcher>(() => sp.GetRequiredService<ICommandDispatcher>()));
@@ -296,10 +298,7 @@ internal sealed class Program
                 services.AddSingleton<IMessageBus, MessageBus>();
                 services.AddSingleton<ICoreMetrics>(sp => new CoreMetrics("engine"));
                 services.AddSingleton<IKernelService, KernelService>();
-                services.AddSingleton<IBehaviorRecorder>(sp =>
-                    new BehaviorRecorder(
-                        sp.GetRequiredService<ILogger<BehaviorRecorder>>(),
-                        sp.GetRequiredService<ICloudConnector>()));
+                services.AddSingleton<IBehaviorRecorder, BehaviorRecorder>();
                 services.AddSingleton<IMiningIntegration, MiningIntegration>();
                 services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
                 services.AddSingleton<IHookRegistry, HookRegistry>();
@@ -426,7 +425,7 @@ internal sealed class Program
     private static void PrintHelp()
     {
         Console.WriteLine("Chronos Engine v" + AppConstants.EngineVersion);
-        Console.WriteLine("Usage: Chronos.Engine [options]");
+        Console.WriteLine("Usage: Chronos.Core.Engine [options]");
         Console.WriteLine("Options:");
         Console.WriteLine("  --auth=username,password,apikey   Set credentials via command line (required for service mode)");
         Console.WriteLine("  --help, -h                       Show this help message");
@@ -435,11 +434,11 @@ internal sealed class Program
         Console.WriteLine("  --development                    Run in development mode (disable some security checks)");
         Console.WriteLine("  --command=restart                Internal use for self-update");
         Console.WriteLine("\nService installation (Windows):");
-        Console.WriteLine("  sc create ChronosEngine binPath= \"C:\\Path\\Chronos.Engine.exe --service --auth=user,pass,key\"");
+        Console.WriteLine("  sc create ChronosEngine binPath= \"C:\\Path\\Chronos.Core.Engine.exe --service --auth=user,pass,key\"");
         Console.WriteLine("\nService installation (Linux):");
         Console.WriteLine("  Create /etc/systemd/system/chronos.service with:");
         Console.WriteLine("  [Service]");
-        Console.WriteLine("  ExecStart=/opt/chronos/Chronos.Engine --service --auth=user,pass,key");
+        Console.WriteLine("  ExecStart=/opt/chronos/Chronos.Core.Engine --service --auth=user,pass,key");
         Console.WriteLine("  WorkingDirectory=/opt/chronos");
     }
 

@@ -6,11 +6,11 @@
 
 namespace Chronos.Core.Engine.Core;
 
-using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using System.Globalization;
 
 /// <summary>Service that initialises and manages Serilog logging.</summary>
 internal interface ILoggingService

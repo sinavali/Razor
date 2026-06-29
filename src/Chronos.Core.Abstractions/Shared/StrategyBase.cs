@@ -135,90 +135,13 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
         TickWindow = tickWindow;
     }
 
-    internal void SetBehaviorRecorder(IBehaviorRecorder recorder)
-    {
-        _behaviorRecorder = recorder;
-    }
-
-    /// <summary>
-    /// Records a behavior log entry if logging is enabled.
-    /// </summary>
-    /// <param name="action">The action taken (e.g., "Buy", "Sell", "Close").</param>
-    /// <param name="state">Optional custom state dictionary. If null, a default state (equity, positions) is collected.</param>
-    /// <param name="reward">Optional reward signal.</param>
-    protected void RecordBehavior(string action, Dictionary<string, double>? state = null, double? reward = null)
-    {
-        if (!IsBehaviorLoggingEnabled || _behaviorRecorder == null)
-        {
-            return;
-        }
-
-        var record = CreateBehaviorRecord(action, state, reward);
-        _behaviorRecorder.Record(record);
-        OnBehaviorRecorded(record);
-    }
-
-    /// <summary>
-    /// Creates a <see cref="BehaviorRecord"/> from the given parameters.
-    /// Override this method to add custom fields or change the state collection.
-    /// </summary>
-    protected virtual BehaviorRecord CreateBehaviorRecord(string action, Dictionary<string, double>? state, double? reward)
-    {
-        var dict = state ?? BuildDefaultState();
-        return new BehaviorRecord
-        {
-            TimestampUtc = DateTime.UtcNow,
-            SessionId = SessionId ?? string.Empty,
-            StrategyName = GetType().Name,
-            Action = action,
-            Reward = reward,
-            State = dict
-        };
-    }
-
-    /// <summary>
-    /// Called after a behavior record is created. Override to perform additional logic (e.g., logging, telemetry).
-    /// </summary>
-    protected virtual void OnBehaviorRecorded(BehaviorRecord record)
-    {
-    }
-
-    private Dictionary<string, double> BuildDefaultState()
-    {
-        var dict = new Dictionary<string, double>
-        {
-            ["Balance"] = Broker.Balance,
-            ["Equity"] = Broker.Equity,
-            ["MarginUsed"] = Broker.MarginUsed,
-            ["FreeMargin"] = Broker.FreeMargin,
-            ["MaxDrawdown"] = Broker.MaxDrawdown,
-            ["MaxDailyDrawdown"] = Broker.MaxDailyDrawdown
-        };
-
-        // Add open positions count and total volume
-        var positions = Broker.GetOpenPositionsAsync().GetAwaiter().GetResult();
-        dict["OpenPositionsCount"] = positions.Count;
-        double totalVolume = 0;
-        foreach (var p in positions)
-        {
-            totalVolume += p.Volume;
-            // Optionally add per-symbol details
-        }
-        dict["TotalVolume"] = totalVolume;
-
-        return dict;
-    }
+    // ─── Trade Helpers (overridden to automatically record) ──────────
 
     /// <summary>Buys the primary symbol at market.</summary>
     protected Task<AdapterOrderResponse> BuyAsync(double volume, double? sl = null, double? tp = null,
         string? comment = null)
     {
         var task = Broker.ExecuteMarketOrderAsync(PrimarySymbol, OrderType.Buy, volume, sl ?? 0, tp ?? 0, comment ?? "");
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("Buy", new Dictionary<string, double> { ["Volume"] = volume, ["Price"] = 0 }); // price unknown until response
-        }
-
         return task;
     }
 
@@ -227,11 +150,6 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
         string? comment = null)
     {
         var task = Broker.ExecuteMarketOrderAsync(symbol, OrderType.Buy, volume, sl ?? 0, tp ?? 0, comment ?? "");
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("Buy", new Dictionary<string, double> { ["Volume"] = volume, ["Symbol"] = 0 });
-        }
-
         return task;
     }
 
@@ -240,11 +158,6 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
         string? comment = null)
     {
         var task = Broker.ExecuteMarketOrderAsync(PrimarySymbol, OrderType.Sell, volume, sl ?? 0, tp ?? 0, comment ?? "");
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("Sell", new Dictionary<string, double> { ["Volume"] = volume });
-        }
-
         return task;
     }
 
@@ -253,11 +166,6 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
         string? comment = null)
     {
         var task = Broker.ExecuteMarketOrderAsync(symbol, OrderType.Sell, volume, sl ?? 0, tp ?? 0, comment ?? "");
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("Sell", new Dictionary<string, double> { ["Volume"] = volume, ["Symbol"] = 0 });
-        }
-
         return task;
     }
 
@@ -266,11 +174,6 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
         double? price = null)
     {
         var task = Broker.ModifyOrderAsync(ticket, sl, tp, price);
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("ModifyOrder", new Dictionary<string, double> { ["Ticket"] = ticket });
-        }
-
         return task;
     }
 
@@ -278,11 +181,6 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
     protected Task<AdapterOrderResponse> CancelOrderAsync(long ticket)
     {
         var task = Broker.CancelOrderAsync(ticket);
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("CancelOrder", new Dictionary<string, double> { ["Ticket"] = ticket });
-        }
-
         return task;
     }
 
@@ -290,11 +188,6 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
     protected Task CloseAllAsync(OrderType? type = null)
     {
         var task = Broker.CloseAllAsync(PrimarySymbol, type);
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("CloseAll", new Dictionary<string, double> { ["Symbol"] = 0 });
-        }
-
         return task;
     }
 
@@ -302,11 +195,6 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
     protected Task CloseAllAsync(string symbol, OrderType? type = null)
     {
         var task = Broker.CloseAllAsync(symbol, type);
-        if (IsBehaviorLoggingEnabled)
-        {
-            RecordBehavior("CloseAll", new Dictionary<string, double> { ["Symbol"] = 0 });
-        }
-
         return task;
     }
 

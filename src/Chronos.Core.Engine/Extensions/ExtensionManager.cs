@@ -2,6 +2,7 @@ using Chronos.Core.Abstractions.Hooks;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Engine.Core;
+using Chronos.Core.Kernel.Behavior;
 using Chronos.Core.Kernel.Hooks;
 using Microsoft.Extensions.Logging;
 
@@ -15,6 +16,7 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
     private readonly string _basePath;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IHookRegistry _hookRegistry;
+    private readonly IBehaviorRecorder _behaviorRecorder;
     private ExtensionCatalog? _catalog;
     private readonly List<string> _activeExtensionNames = new();
     private bool _disposed;
@@ -52,22 +54,26 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
     private static readonly Action<ILogger, string, Exception?> _logUnusedNeuralNetwork =
         LoggerMessage.Define<string>(LogLevel.Warning, 13, "Strategy {StrategyName} does not require a neural network, but one was provided. It will be ignored.");
 
+    // Behavior recording hook – registered internally by the engine.
+    private InternalBehaviorHook? _behaviorHook;
+
     public IAdapterCapability? ActiveAdapter => _activeAdapter;
     public IStrategyCapability? ActiveStrategy => _activeStrategy;
     public INeuralNetworkModel? ActiveNeuralNetwork => _activeNeuralNetwork;
     public IHookRegistry HookRegistry => _hookRegistry;
 
-    /// <summary>Initialises a new instance of the <see cref="ExtensionManager"/> class.</summary>
     public ExtensionManager(
         ILogger<ExtensionManager> logger,
         IStateManager stateManager,
         ILoggerFactory loggerFactory,
-        IHookRegistry hookRegistry)
+        IHookRegistry hookRegistry,
+        IBehaviorRecorder behaviorRecorder)
     {
         _logger = logger;
         _stateManager = stateManager;
         _loggerFactory = loggerFactory;
         _hookRegistry = hookRegistry ?? throw new ArgumentNullException(nameof(hookRegistry));
+        _behaviorRecorder = behaviorRecorder ?? throw new ArgumentNullException(nameof(behaviorRecorder));
         _basePath = AppDomain.CurrentDomain.BaseDirectory;
     }
 
@@ -139,7 +145,6 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
             _activeNeuralNetwork = _catalog.CreateNeuralNetworkModel(nnModelName);
             _logExtensionActivated(_logger, $"NN Model: {nnModelName}", null);
 
-            // Inject NN into strategy if the strategy supports it
             if (_activeStrategy is IStrategyCapability strategy)
             {
                 strategy.NeuralNetwork = _activeNeuralNetwork;
@@ -195,22 +200,18 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
             throw new InvalidOperationException("Both adapter and strategy must be active.");
         }
 
-        // Check neural network consistency
         if (_activeStrategy.RequiresNeuralNetwork && _activeNeuralNetwork == null)
         {
             throw new InvalidOperationException("Strategy requires a neural network but none was provided.");
         }
         if (!_activeStrategy.RequiresNeuralNetwork && _activeNeuralNetwork != null)
         {
-            // It's not required, but we can allow it; we'll just log a warning.
             _logUnusedNeuralNetwork(_logger, _activeStrategy.GetType().Name, null);
         }
 
-        // Validate symbol/timeframes support
         var spec = _activeStrategy.GetType().GetProperty("Spec")?.GetValue(_activeStrategy) as StrategySpecification;
         if (spec == null)
         {
-            // Some strategies might not expose Spec; we'll assume they are compatible.
             _logStrategyDoesNotExposeSpec(_logger, _activeStrategy.GetType().Name, null);
             return;
         }
@@ -220,7 +221,6 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
             var supported = _activeAdapter.GetSupportedTimeframes(symbolRequest.Symbol);
             if (supported != null)
             {
-                // Adapter returns a list of supported timeframes; verify all requested are in that list.
                 foreach (var tf in symbolRequest.TimeFrames)
                 {
                     if (!supported.Contains(tf))
@@ -230,7 +230,6 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
                     }
                 }
             }
-            // If supported is null, all timeframes are supported.
         }
     }
 
@@ -293,6 +292,58 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
     }
 
     /// <inheritdoc/>
+    public IStrategyCapability? CreateTransientStrategy(string strategyName)
+    {
+        if (_catalog == null)
+        {
+            throw new InvalidOperationException("Catalog not initialized.");
+        }
+
+        if (!_catalog.StrategyNames.Contains(strategyName))
+        {
+            _logExtensionNotFound(_logger, strategyName, null);
+            return null;
+        }
+
+        var strategy = _catalog.CreateStrategy(strategyName);
+
+        // If the active strategy had a neural network, we need to propagate it? 
+        // But for transient evaluation, we may not need it because we can set it from the caller.
+        // The caller can set NeuralNetwork property if needed.
+        // We'll leave it unset, and the caller can set it.
+
+        return strategy;
+    }
+
+    // ─── Behavior logging support (via internal hook) ──────────
+
+    /// <inheritdoc/>
+    public void EnableBehaviorLoggingOnStrategy(string sessionId, int snapshotIntervalSeconds = 10)
+    {
+        if (_behaviorHook == null)
+        {
+            _behaviorHook = new InternalBehaviorHook(_behaviorRecorder, snapshotIntervalSeconds);
+            _hookRegistry.Backtest.OnTickStrategyAfter.Register(
+                (tick, ctx) => _behaviorHook.OnTickAfter(tick, ctx),
+                priority: int.MinValue); // run first, before user hooks
+        }
+        _behaviorHook.Enable(sessionId);
+    }
+
+    /// <inheritdoc/>
+    public void DisableBehaviorLoggingOnStrategy()
+    {
+        _behaviorHook?.Disable();
+        // The hook remains registered, but it will no‑op while disabled.
+    }
+
+    /// <inheritdoc/>
+    public void RecordSnapshotOnStrategy()
+    {
+        _behaviorHook?.RecordSnapshot();
+    }
+
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
@@ -302,13 +353,74 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
 
         _disposed = true;
         _catalog?.Dispose();
-        // Dispose active instances if they are disposable
         (_activeAdapter as IDisposable)?.Dispose();
         (_activeStrategy as IDisposable)?.Dispose();
         (_activeNeuralNetwork as IDisposable)?.Dispose();
         foreach (var hook in _activeHookManifests)
         {
             (hook as IDisposable)?.Dispose();
+        }
+    }
+
+    // ─── Nested internal hook class ─────────────────────────────
+
+    private sealed class InternalBehaviorHook
+    {
+        private readonly IBehaviorRecorder _recorder;
+        private readonly int _snapshotIntervalSeconds;
+        private string _sessionId = string.Empty;
+        private bool _enabled;
+        private long _lastSnapshotTicks;
+
+        public InternalBehaviorHook(IBehaviorRecorder recorder, int snapshotIntervalSeconds)
+        {
+            _recorder = recorder;
+            _snapshotIntervalSeconds = snapshotIntervalSeconds;
+        }
+
+        public void Enable(string sessionId)
+        {
+            _sessionId = sessionId;
+            _enabled = true;
+            _lastSnapshotTicks = DateTime.UtcNow.Ticks;
+        }
+
+        public void Disable()
+        {
+            _enabled = false;
+        }
+
+        public void RecordSnapshot()
+        {
+            if (!_enabled)
+            {
+                return;
+            }
+
+            long now = DateTime.UtcNow.Ticks;
+            long interval = _snapshotIntervalSeconds * TimeSpan.TicksPerSecond;
+            if (now - _lastSnapshotTicks < interval)
+            {
+                return;
+            }
+            _lastSnapshotTicks = now;
+
+            var record = new BehaviorRecord
+            {
+                TimestampUtc = DateTime.UtcNow,
+                SessionId = _sessionId,
+                Action = "Snapshot"
+            };
+            _recorder.Record(record);
+        }
+
+        public void OnTickAfter(Tick tick, IHookContext context)
+        {
+            // Called after the strategy processes the tick.
+            if (_enabled && _recorder.IsEnabled)
+            {
+                RecordSnapshot();
+            }
         }
     }
 }

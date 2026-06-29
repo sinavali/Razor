@@ -1,28 +1,26 @@
-// -----------------------------------------------------------------------------
-// <copyright file="DeleteBehaviorLogsHandler.cs" company="Chronos Platform">
-//   Copyright (c) Chronos Platform. All rights reserved.
-// </copyright>
-// -----------------------------------------------------------------------------
+using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Engine.Communication;
+using Chronos.Core.Kernel.Behavior;
+using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Management.Commands.Handlers;
 
-using Chronos.Core.Engine.Communication;
-using Chronos.Core.Engine.Management.Commands;
-using Chronos.Core.Engine.Services.BehaviorRecorder;
-using Microsoft.Extensions.Logging;
-
+/// <summary>Handles the delete behavior logs command (2103).</summary>
 internal sealed class DeleteBehaviorLogsHandler : CommandHandlerBase
 {
     private readonly IBehaviorRecorder _behaviorRecorder;
 
+    /// <summary>Initializes a new instance of the <see cref="DeleteBehaviorLogsHandler"/> class.</summary>
     public DeleteBehaviorLogsHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher, IBehaviorRecorder behaviorRecorder, ILogger<DeleteBehaviorLogsHandler> logger)
         : base(cloudConnector, dispatcher, logger)
     {
         _behaviorRecorder = behaviorRecorder;
     }
 
+    /// <inheritdoc/>
     public override int CommandId => 2103;
 
+    /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         if (command.Parameters is not Dictionary<string, object> dict ||

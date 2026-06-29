@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using Chronos.Core.Abstractions.Hooks;
+using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Hooks;
 

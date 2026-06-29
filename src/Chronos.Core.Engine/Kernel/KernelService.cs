@@ -82,6 +82,7 @@ internal sealed class KernelService : IKernelService, IDisposable
         IStrategyCapability? Strategy = null,
         OptimizationRunner? Runner = null,
         IIndicatorRegistry? IndicatorRegistry = null,
+        TickWindow? TickWindow = null,
         List<MemoryMappedTickList>? MappedTickLists = null)
     {
         public void DisposeCts()
@@ -110,6 +111,11 @@ internal sealed class KernelService : IKernelService, IDisposable
             {
                 method.Invoke(IndicatorRegistry, null);
             }
+        }
+
+        public void DisposeTickWindow()
+        {
+            TickWindow?.Dispose();
         }
 
         public void DisposeMappedTickLists()
@@ -364,6 +370,9 @@ internal sealed class KernelService : IKernelService, IDisposable
 #pragma warning restore CA2000
         LiveBroker? liveBroker = null;
 
+        // We need to keep the TickWindow alive; we'll store it in the task state.
+        TickWindow? tickWindow = null;
+
         try
         {
 #pragma warning disable CA2000 // LiveBroker is stored in the task state and disposed when the live session stops
@@ -395,40 +404,42 @@ internal sealed class KernelService : IKernelService, IDisposable
             };
             await strategy.OnConfigureAsync(spec).ConfigureAwait(false);
 
-            // Create and store the indicator registry for later disposal
-            using (var tickWindow = new TickWindow(input.Symbols, new[] { TimeFrame.Tick }))
+            // Create the tick window and indicator registry.
+            // Do not dispose the tick window here; it will be disposed when the live task stops.
+#pragma warning disable CA2000 // TickWindow is stored in task state and disposed in StopLiveAsync
+            tickWindow = new TickWindow(input.Symbols, new[] { TimeFrame.Tick });
+#pragma warning restore CA2000
+            var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
+            try
             {
-                var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
+                await strategy.OnStartAsync(indicatorRegistry).ConfigureAwait(false);
+                // Store the registry and tick window in the task state
+                var taskState = new TaskState(cts, Broker: liveBroker, Strategy: strategy, IndicatorRegistry: indicatorRegistry, TickWindow: tickWindow);
                 try
                 {
-                    await strategy.OnStartAsync(indicatorRegistry).ConfigureAwait(false);
-                    // Store the registry in the task state
-                    var taskState = new TaskState(cts, Broker: liveBroker, Strategy: strategy, IndicatorRegistry: indicatorRegistry);
-                    try
-                    {
-                        _activeTasks[taskId] = taskState;
-                    }
-                    catch
-                    {
-                        cts.Dispose();
-                        throw;
-                    }
+                    _activeTasks[taskId] = taskState;
                 }
                 catch
                 {
-                    // If an error occurs, dispose the registry
-                    if (indicatorRegistry is IDisposable disposable)
-                    {
-                        disposable.Dispose();
-                    }
-                    else
-                    {
-                        // Fallback: call DisposeAll via reflection
-                        var method = indicatorRegistry.GetType().GetMethod("DisposeAll");
-                        method?.Invoke(indicatorRegistry, null);
-                    }
+                    cts.Dispose();
                     throw;
                 }
+            }
+            catch
+            {
+                // If an error occurs, dispose the registry and tick window
+                if (indicatorRegistry is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+                else
+                {
+                    // Fallback: call DisposeAll via reflection
+                    var method = indicatorRegistry.GetType().GetMethod("DisposeAll");
+                    method?.Invoke(indicatorRegistry, null);
+                }
+                tickWindow!.Dispose();
+                throw;
             }
 
             strategy.InjectGenes(input.Genes);
@@ -437,25 +448,18 @@ internal sealed class KernelService : IKernelService, IDisposable
             await liveBroker.InitializeLiveStateAsync(cancellationToken).ConfigureAwait(false);
 
             // Subscribe to symbols and wire up tick handler
+            // Process ticks synchronously to guarantee thread safety and avoid concurrency issues.
             Action<string, Tick> tickHandler = (symbol, tick) =>
             {
                 try
                 {
-                    // Forward the tick to the live broker.
-                    // This call is synchronous in the event handler; we wrap it in Task.Run
-                    // to avoid blocking the adapter's event loop, but the broker's OnTickAsync
-                    // is designed to be thread-safe.
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await liveBroker.OnTickAsync(symbol, tick).ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logLiveTickHandlerError(_logger, symbol, ex);
-                        }
-                    }, CancellationToken.None);
+                    // Push tick into the tick window.
+                    // The adapter's event loop is single-threaded, so this is safe.
+                    tickWindow.PushTick(symbol, tick);
+
+                    // Forward the tick to the live broker synchronously.
+                    // We use GetAwaiter().GetResult() to block and ensure sequential processing.
+                    liveBroker.OnTickAsync(symbol, tick).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {
@@ -493,6 +497,9 @@ internal sealed class KernelService : IKernelService, IDisposable
                 await liveBroker.DisposeAsync().ConfigureAwait(false);
             }
             cts.Dispose();
+#pragma warning disable CA1508 // 'tickWindow' is never 'null' (false positive due to possible exception in constructor)
+            tickWindow?.Dispose();
+#pragma warning restore CA1508
             throw;
         }
     }
@@ -545,6 +552,7 @@ internal sealed class KernelService : IKernelService, IDisposable
 
             state.DisposeCts();
             state.DisposeIndicatorRegistry();
+            state.DisposeTickWindow();  // dispose the TickWindow
 
             await broker.DisconnectAndNotifyAsync().ConfigureAwait(false);
             await broker.DisposeAsync().ConfigureAwait(false);
@@ -694,36 +702,52 @@ internal sealed class KernelService : IKernelService, IDisposable
             );
 
             // Define the fitness evaluator that uses the cached data.
+            // To avoid race conditions, create a fresh strategy instance per chromosome.
             async Task<double> EvaluateChromosome(ChromosomeKernel chromo, CancellationToken ct)
             {
-                // Inject the chromosome's genes into the strategy.
-                strategy.InjectGenes(chromo.Genes);
-
-                // Build the backtest input for this specific chromosome.
-                var backtestInput = new BacktestInput
+                // Create a transient strategy instance (same type, new instance).
+                var transientStrategy = _extensionManager.CreateTransientStrategy(input.StrategyName);
+                if (transientStrategy == null)
                 {
-                    TickStreams = tickStreams.ToArray(),
-                    Symbols = input.Symbols,
-                    Strategy = strategy,
-                    StrategySpecification = strategySpec,
-                    ExecutionSpecification = execSpec,
-                    MarketCalculator = adapter.Calculator,
-                    SymbolProperties = symbolProperties,
-                    Genes = chromo.Genes,
-                    GeneInitializationSeed = null,
-                    NeuralNetwork = nnModel,
-                    Progress = null,
-                    MessageBus = _messageBus,
-                    Metrics = _metrics,
-                    HookRegistry = _hookRegistry
-                };
+                    throw new InvalidOperationException($"Could not create transient strategy '{input.StrategyName}'.");
+                }
 
-                // Run the backtest.
-                var runnerBt = new BacktestRunner();
-                var result = await runnerBt.RunAsync(backtestInput, ct).ConfigureAwait(false);
+                try
+                {
+                    // Inject the chromosome's genes into the transient strategy.
+                    transientStrategy.InjectGenes(chromo.Genes);
 
-                // Fitness = net profit.
-                return result.Balance - input.InitialBalance;
+                    // Build the backtest input for this specific chromosome.
+                    var backtestInput = new BacktestInput
+                    {
+                        TickStreams = tickStreams.ToArray(),
+                        Symbols = input.Symbols,
+                        Strategy = transientStrategy,
+                        StrategySpecification = strategySpec,
+                        ExecutionSpecification = execSpec,
+                        MarketCalculator = adapter.Calculator,
+                        SymbolProperties = symbolProperties,
+                        Genes = chromo.Genes,
+                        GeneInitializationSeed = null,
+                        NeuralNetwork = nnModel,
+                        Progress = null,
+                        MessageBus = _messageBus,
+                        Metrics = _metrics,
+                        HookRegistry = _hookRegistry
+                    };
+
+                    // Run the backtest.
+                    var runnerBt = new BacktestRunner();
+                    var result = await runnerBt.RunAsync(backtestInput, ct).ConfigureAwait(false);
+
+                    // Fitness = net profit.
+                    return result.Balance - input.InitialBalance;
+                }
+                finally
+                {
+                    // Dispose the transient strategy if it implements IDisposable.
+                    (transientStrategy as IDisposable)?.Dispose();
+                }
             }
 
             // Start the optimisation in the background.
@@ -849,6 +873,7 @@ internal sealed class KernelService : IKernelService, IDisposable
         {
             kv.Value.DisposeCts();
             kv.Value.DisposeIndicatorRegistry();
+            kv.Value.DisposeTickWindow();
             kv.Value.DisposeMappedTickLists();
         }
         _activeTasks.Clear();

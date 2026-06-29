@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -11,6 +11,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Chronos.Core.Kernel" />
+        <InternalsVisibleTo Include="Chronos.Core.Engine" />
         <InternalsVisibleTo Include="Chronos.Core.Abstractions.UnitTests" />
         <InternalsVisibleTo Include="Chronos.Core.Abstractions.IntegrationTests" />
     </ItemGroup>

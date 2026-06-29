@@ -111,7 +111,8 @@ public sealed class MemoryMappedTickList : IReadOnlyList<Tick>, IDisposable
                 throw new ArgumentOutOfRangeException(nameof(index));
             }
 
-            return Unsafe.Read<Tick>(_basePointer + index * Unsafe.SizeOf<Tick>());
+            // Use nuint to avoid 32‑bit overflow when index * tickSize exceeds int.MaxValue.
+            return Unsafe.Read<Tick>(_basePointer + (nuint)index * (nuint)Unsafe.SizeOf<Tick>());
         }
     }
 

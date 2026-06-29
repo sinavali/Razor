@@ -155,20 +155,20 @@ public sealed class SimulatedBroker : IBroker
         if (!InvokeOrderValidationFilter(request, out var filteredRequest, out var rejectionReason))
         {
             return Task.FromResult(new AdapterOrderResponse
-                { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
+            { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
         }
 
         // Filter: before execute
         if (!InvokeOrderBeforeExecuteFilter(filteredRequest, out filteredRequest, out rejectionReason))
         {
             return Task.FromResult(new AdapterOrderResponse
-                { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
+            { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
         }
 
         if (IsWarmup)
         {
             return Task.FromResult(new AdapterOrderResponse
-                { Success = false, ErrorMessage = "Orders not allowed during warmup." });
+            { Success = false, ErrorMessage = "Orders not allowed during warmup." });
         }
 
         lock (_stateLock)
@@ -176,7 +176,7 @@ public sealed class SimulatedBroker : IBroker
             if (_positions.Count >= _maxOpenPositions)
             {
                 return Task.FromResult(new AdapterOrderResponse
-                    { Success = false, ErrorMessage = "Max open positions reached" });
+                { Success = false, ErrorMessage = "Max open positions reached" });
             }
 
             AdapterOrderResponse response;
@@ -223,19 +223,19 @@ public sealed class SimulatedBroker : IBroker
         if (!InvokeOrderValidationFilter(request, out var filteredRequest, out var rejectionReason))
         {
             return Task.FromResult(new AdapterOrderResponse
-                { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
+            { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
         }
 
         if (!InvokeOrderBeforeExecuteFilter(filteredRequest, out filteredRequest, out rejectionReason))
         {
             return Task.FromResult(new AdapterOrderResponse
-                { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
+            { Success = false, ErrorMessage = rejectionReason ?? "Order rejected by filter" });
         }
 
         if (IsWarmup)
         {
             return Task.FromResult(new AdapterOrderResponse
-                { Success = false, ErrorMessage = "Orders not allowed during warmup." });
+            { Success = false, ErrorMessage = "Orders not allowed during warmup." });
         }
 
         lock (_stateLock)
@@ -243,14 +243,14 @@ public sealed class SimulatedBroker : IBroker
             if (!_symbolSpecs.TryGetValue(symbol, out var spec))
             {
                 return Task.FromResult(new AdapterOrderResponse
-                    { Success = false, ErrorMessage = "Symbol properties not available" });
+                { Success = false, ErrorMessage = "Symbol properties not available" });
             }
 
             double requiredMargin = _calculator.CalculateRequiredMargin(spec, price, volume, _leverage);
             if (FreeMargin < requiredMargin - 1e-8)
             {
                 return Task.FromResult(new AdapterOrderResponse
-                    { Success = false, ErrorMessage = "Insufficient margin" });
+                { Success = false, ErrorMessage = "Insufficient margin" });
             }
 
             _marginUsed += requiredMargin;
@@ -258,8 +258,14 @@ public sealed class SimulatedBroker : IBroker
             var ticket = _ticketCounter++;
             _pendingOrders.Add(new Order
             {
-                Ticket = ticket, Symbol = symbol, Type = type, Volume = volume,
-                Price = price, SL = sl, TP = tp, Comment = comment
+                Ticket = ticket,
+                Symbol = symbol,
+                Type = type,
+                Volume = volume,
+                Price = price,
+                SL = sl,
+                TP = tp,
+                Comment = comment
             });
 
             var response = new AdapterOrderResponse { Success = true, Ticket = ticket };
@@ -275,7 +281,7 @@ public sealed class SimulatedBroker : IBroker
         if (IsWarmup)
         {
             return Task.FromResult(new AdapterOrderResponse
-                { Success = false, ErrorMessage = "Orders not allowed during warmup." });
+            { Success = false, ErrorMessage = "Orders not allowed during warmup." });
         }
 
         lock (_stateLock)
@@ -287,7 +293,7 @@ public sealed class SimulatedBroker : IBroker
                     if (price.HasValue)
                     {
                         return Task.FromResult(new AdapterOrderResponse
-                            { Success = false, ErrorMessage = "Cannot modify price of an open position" });
+                        { Success = false, ErrorMessage = "Cannot modify price of an open position" });
                     }
 
                     if (sl.HasValue)
@@ -366,7 +372,7 @@ public sealed class SimulatedBroker : IBroker
                     if (!_marketPrices.TryGetValue(_positions[i].Symbol, out _))
                     {
                         return Task.FromResult(new AdapterOrderResponse
-                            { Success = false, ErrorMessage = "Price not available" });
+                        { Success = false, ErrorMessage = "Price not available" });
                     }
 
                     var px = _marketPrices[_positions[i].Symbol];
@@ -533,7 +539,7 @@ public sealed class SimulatedBroker : IBroker
                 "backtest.position.opened"));
 
         return new AdapterOrderResponse
-            { Success = true, Ticket = ticket, ExecutedPrice = execPrice, ExecutedVolume = volume };
+        { Success = true, Ticket = ticket, ExecutedPrice = execPrice, ExecutedVolume = volume };
     }
 
     private void ProcessExecutionQueue()

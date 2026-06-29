@@ -11,7 +11,7 @@
         <WarningsNotAsErrors>NU1903</WarningsNotAsErrors>
         <NoWarn>$(NoWarn);NU1900;NU1903</NoWarn>
         <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
-        <AssemblyName>Chronos.Engine</AssemblyName>
+        <AssemblyName>Chronos.Core.Engine</AssemblyName>
     </PropertyGroup>
 
     <ItemGroup>
