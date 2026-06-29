@@ -76,7 +76,6 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         return liveTask?.LastTickTime;
     }
 
-    /// <inheritdoc/>
     public async Task<string?> RestoreLiveTaskAsync(LiveState state, CancellationToken cancellationToken)
     {
         if (state == null)
@@ -109,7 +108,8 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 StopOutLevel = state.StopOutLevel,
                 MaxOpenPositions = state.MaxOpenPositions,
                 Genes = state.Genes,
-                NeuralNetworkName = state.NeuralNetworkName ?? string.Empty
+                NeuralNetworkName = state.NeuralNetworkName ?? string.Empty,
+                AccountCurrency = "USD" // TODO: persist and retrieve AccountCurrency from LiveState
             };
 
             // Start a new live session via kernel service
@@ -181,7 +181,8 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 StopOutLevel = liveConfig.StopOutLevel,
                 MaxOpenPositions = liveConfig.MaxOpenPositions,
                 Genes = liveConfig.Genes,
-                NeuralNetworkName = liveConfig.NeuralNetworkName ?? string.Empty
+                NeuralNetworkName = liveConfig.NeuralNetworkName ?? string.Empty,
+                AccountCurrency = liveConfig.AccountCurrency
             };
 
             // Start via kernel service
@@ -368,7 +369,8 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 NeuralNetworkName = GetString(dict, "NeuralNetworkName", string.Empty),
                 StartDate = GetDateTime(dict, "StartDate", DateTime.UtcNow.AddDays(-30)),
                 EndDate = GetDateTime(dict, "EndDate", DateTime.UtcNow),
-                Timeframes = GetStringArray(dict, "Timeframes", ["M1"])
+                Timeframes = GetStringArray(dict, "Timeframes", ["M1"]),
+                AccountCurrency = GetString(dict, "AccountCurrency", "USD")
             };
 
             // Get active adapter and strategy

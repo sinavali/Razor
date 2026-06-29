@@ -14,7 +14,6 @@ using Chronos.Core.Engine.Management.Commands.Handlers;
 using Chronos.Core.Engine.Management.Scheduling;
 using Chronos.Core.Engine.Management.Tasks;
 using Chronos.Core.Engine.Services.Mining;
-using Chronos.Core.Kernel.Behavior;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 

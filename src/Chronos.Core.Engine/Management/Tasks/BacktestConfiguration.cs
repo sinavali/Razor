@@ -30,6 +30,7 @@ internal sealed record BacktestConfiguration
     public int? GeneInitializationSeed { get; init; }
     public string? NeuralNetworkName { get; init; }
     public required string[] Timeframes { get; init; }
+    public required string AccountCurrency { get; init; }   // base account currency
 
     /// <summary>
     /// Parses a Cloud command parameter object into a <see cref="BacktestConfiguration"/>.
@@ -60,6 +61,7 @@ internal sealed record BacktestConfiguration
         int? geneInitializationSeed = dict.TryGetValue("GeneInitializationSeed", out object? seedObj) && seedObj is int seed ? seed : (int?)null;
         string? neuralNetworkName = dict.TryGetValue("NeuralNetworkName", out object? nnObj) ? nnObj?.ToString() : null;
         string[] timeframes = GetStringArray(dict, "Timeframes", Array.Empty<string>());
+        string accountCurrency = GetString(dict, "AccountCurrency", "USD");
 
         return new BacktestConfiguration
         {
@@ -78,17 +80,18 @@ internal sealed record BacktestConfiguration
             Genes = genes,
             GeneInitializationSeed = geneInitializationSeed,
             NeuralNetworkName = neuralNetworkName,
-            Timeframes = timeframes
+            Timeframes = timeframes,
+            AccountCurrency = accountCurrency
         };
     }
 
-    private static string GetString(Dictionary<string, object> dict, string key)
+    private static string GetString(Dictionary<string, object> dict, string key, string fallback = "")
     {
         if (dict.TryGetValue(key, out object? value) && value is string s)
         {
             return s;
         }
-        throw new ArgumentException($"Missing or invalid string field: {key}");
+        return fallback;
     }
 
     private static string[] GetStringArray(Dictionary<string, object> dict, string key, string[]? fallback = null)

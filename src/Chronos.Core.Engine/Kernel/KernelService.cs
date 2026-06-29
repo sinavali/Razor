@@ -34,6 +34,7 @@ internal sealed class KernelService : IKernelService, IDisposable
     private readonly IMessageBus _messageBus;
     private readonly ICoreMetrics _metrics;
     private readonly ILogger<KernelService> _logger;
+    private readonly ILoggerFactory _loggerFactory;  // added
     private readonly ConcurrentDictionary<string, TaskState> _activeTasks = new();
     private readonly SemaphoreSlim _taskLock = new(1, 1);
     private bool _disposed;
@@ -98,25 +99,17 @@ internal sealed class KernelService : IKernelService, IDisposable
                 return;
             }
 
-            // Try to dispose via IDisposable if implemented
             if (IndicatorRegistry is IDisposable disposable)
             {
                 disposable.Dispose();
                 return;
             }
 
-            // Fallback: call DisposeAll via reflection (IndicatorRegistry has this method)
             var method = IndicatorRegistry.GetType().GetMethod("DisposeAll", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            if (method != null)
-            {
-                method.Invoke(IndicatorRegistry, null);
-            }
+            method?.Invoke(IndicatorRegistry, null);
         }
 
-        public void DisposeTickWindow()
-        {
-            TickWindow?.Dispose();
-        }
+        public void DisposeTickWindow() => TickWindow?.Dispose();
 
         public void DisposeMappedTickLists()
         {
@@ -129,6 +122,7 @@ internal sealed class KernelService : IKernelService, IDisposable
             {
                 mm?.Dispose();
             }
+
             MappedTickLists.Clear();
         }
     }
@@ -138,13 +132,15 @@ internal sealed class KernelService : IKernelService, IDisposable
         IHookRegistry hookRegistry,
         IMessageBus messageBus,
         ICoreMetrics metrics,
-        ILogger<KernelService> logger)
+        ILogger<KernelService> logger,
+        ILoggerFactory loggerFactory)
     {
         _extensionManager = extensionManager ?? throw new ArgumentNullException(nameof(extensionManager));
         _hookRegistry = hookRegistry ?? throw new ArgumentNullException(nameof(hookRegistry));
         _messageBus = messageBus ?? throw new ArgumentNullException(nameof(messageBus));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
     /// <inheritdoc/>
@@ -161,10 +157,8 @@ internal sealed class KernelService : IKernelService, IDisposable
         string taskId = $"bt_{Guid.NewGuid():N}";
         _logBacktestStarted(_logger, taskId, null);
 
-        // CA2000 is suppressed because the CTS is stored in the task state and disposed
-        // when the task completes or is cancelled.
         CancellationTokenSource cts;
-#pragma warning disable CA2000 // Dispose objects before losing scope
+#pragma warning disable CA2000
         cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 #pragma warning restore CA2000
         var mappedLists = new List<MemoryMappedTickList>();
@@ -184,7 +178,6 @@ internal sealed class KernelService : IKernelService, IDisposable
         {
             try
             {
-                // 1. Fetch historical data for each symbol
                 var symbolProperties = new Dictionary<string, SymbolProperties>();
                 var tickStreams = new List<IReadOnlyList<Tick>>();
 
@@ -198,7 +191,6 @@ internal sealed class KernelService : IKernelService, IDisposable
                     }
                     symbolProperties[symbol] = props;
 
-                    // Fetch history
                     var request = new HistoricalDataRequest
                     {
                         Symbol = symbol,
@@ -212,13 +204,11 @@ internal sealed class KernelService : IKernelService, IDisposable
                         throw new InvalidOperationException($"Failed to fetch history for {symbol}: {response.ErrorMessage}");
                     }
 
-                    // Map the binary file to a memory-mapped list
                     var mmList = new MemoryMappedTickList(response.BinaryFilePath);
                     mappedLists.Add(mmList);
                     tickStreams.Add(mmList);
                 }
 
-                // 2. Build StrategySpecification
                 var timeframeEnums = config.Timeframes
                     .Select(ParseTimeFrame)
                     .Distinct()
@@ -236,7 +226,6 @@ internal sealed class KernelService : IKernelService, IDisposable
                 };
                 strategySpec.Validate();
 
-                // 3. Build ExecutionSpecification
                 var execSpec = new ExecutionSpecification
                 {
                     StartDate = config.StartDate,
@@ -250,7 +239,6 @@ internal sealed class KernelService : IKernelService, IDisposable
                 };
                 execSpec.Validate();
 
-                // 4. Get neural network if requested
                 INeuralNetworkModel? nnModel = null;
                 if (!string.IsNullOrEmpty(config.NeuralNetworkName))
                 {
@@ -261,7 +249,13 @@ internal sealed class KernelService : IKernelService, IDisposable
                     }
                 }
 
-                // 5. Build BacktestInput
+                // Get currency converter if supported
+                ICurrencyConverter? converter = null;
+                if (adapter is IHasCurrencyConverter hasConverter)
+                {
+                    converter = hasConverter.CurrencyConverter;
+                }
+
                 var backtestInput = new BacktestInput
                 {
                     TickStreams = tickStreams.ToArray(),
@@ -277,14 +271,14 @@ internal sealed class KernelService : IKernelService, IDisposable
                     Progress = null,
                     MessageBus = _messageBus,
                     Metrics = _metrics,
-                    HookRegistry = _hookRegistry
+                    HookRegistry = _hookRegistry,
+                    CurrencyConverter = converter,
+                    AccountCurrency = config.AccountCurrency
                 };
 
-                // 6. Run backtest
                 var runner = new BacktestRunner();
                 var result = await runner.RunAsync(backtestInput, cts.Token).ConfigureAwait(false);
 
-                // 7. Store result
                 if (_activeTasks.TryGetValue(taskId, out var state))
                 {
                     _activeTasks[taskId] = state with { Result = result };
@@ -312,7 +306,6 @@ internal sealed class KernelService : IKernelService, IDisposable
             }
             finally
             {
-                // Ensure mapped lists are disposed even if task state was removed
                 if (_activeTasks.TryGetValue(taskId, out var state))
                 {
                     state.DisposeMappedTickLists();
@@ -330,6 +323,7 @@ internal sealed class KernelService : IKernelService, IDisposable
         {
             return Task.FromResult(result);
         }
+
         return Task.FromResult(new BacktestResult { Balance = 0, Equity = 0, Drawdown = 0, DailyDrawdown = 0, TotalTrades = 0 });
     }
 
@@ -349,33 +343,36 @@ internal sealed class KernelService : IKernelService, IDisposable
         foreach (var sym in input.Symbols)
         {
             var props = await adapter.GetSymbolPropertiesAsync(sym, cancellationToken).ConfigureAwait(false);
-            if (props != null)
-            {
-                symbolProperties[sym] = props;
-            }
-            else
+            if (props == null)
             {
                 throw new InvalidOperationException($"Symbol properties for {sym} not available.");
             }
+
+            symbolProperties[sym] = props;
         }
 
         var marketClock = new TickClock();
         var wallClock = new SystemClock();
 
-        // CA2000 is suppressed because the CTS is stored in the task state and disposed
-        // when the live session stops.
         CancellationTokenSource cts;
-#pragma warning disable CA2000 // Dispose objects before losing scope
+#pragma warning disable CA2000
         cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 #pragma warning restore CA2000
         LiveBroker? liveBroker = null;
-
-        // We need to keep the TickWindow alive; we'll store it in the task state.
         TickWindow? tickWindow = null;
 
         try
         {
-#pragma warning disable CA2000 // LiveBroker is stored in the task state and disposed when the live session stops
+            // Get currency converter if supported
+            ICurrencyConverter? converter = null;
+            if (adapter is IHasCurrencyConverter hasConverter)
+            {
+                converter = hasConverter.CurrencyConverter;
+            }
+
+            var liveBrokerLogger = _loggerFactory.CreateLogger<LiveBroker>();  // create the correct logger
+
+#pragma warning disable CA2000
             liveBroker = new LiveBroker(
                 adapter,
                 input.MagicNumber,
@@ -387,8 +384,10 @@ internal sealed class KernelService : IKernelService, IDisposable
                 _hookRegistry.Live,
                 input.OrderGuardTimeoutSeconds,
                 input.StopOutLevel,
-                syncIntervalTicks: TimeSpan.TicksPerMinute
-            );
+                syncIntervalTicks: TimeSpan.TicksPerMinute,
+                logger: liveBrokerLogger,
+                currencyConverter: converter,
+                accountCurrency: input.AccountCurrency);
 #pragma warning restore CA2000
 
             foreach (var kv in symbolProperties)
@@ -404,16 +403,13 @@ internal sealed class KernelService : IKernelService, IDisposable
             };
             await strategy.OnConfigureAsync(spec).ConfigureAwait(false);
 
-            // Create the tick window and indicator registry.
-            // Do not dispose the tick window here; it will be disposed when the live task stops.
-#pragma warning disable CA2000 // TickWindow is stored in task state and disposed in StopLiveAsync
+#pragma warning disable CA2000
             tickWindow = new TickWindow(input.Symbols, new[] { TimeFrame.Tick });
 #pragma warning restore CA2000
             var indicatorRegistry = IndicatorRegistryFactory.Create(tickWindow);
             try
             {
                 await strategy.OnStartAsync(indicatorRegistry).ConfigureAwait(false);
-                // Store the registry and tick window in the task state
                 var taskState = new TaskState(cts, Broker: liveBroker, Strategy: strategy, IndicatorRegistry: indicatorRegistry, TickWindow: tickWindow);
                 try
                 {
@@ -427,14 +423,12 @@ internal sealed class KernelService : IKernelService, IDisposable
             }
             catch
             {
-                // If an error occurs, dispose the registry and tick window
                 if (indicatorRegistry is IDisposable disposable)
                 {
                     disposable.Dispose();
                 }
                 else
                 {
-                    // Fallback: call DisposeAll via reflection
                     var method = indicatorRegistry.GetType().GetMethod("DisposeAll");
                     method?.Invoke(indicatorRegistry, null);
                 }
@@ -447,18 +441,11 @@ internal sealed class KernelService : IKernelService, IDisposable
             await liveBroker.ConnectAndNotifyAsync(cancellationToken).ConfigureAwait(false);
             await liveBroker.InitializeLiveStateAsync(cancellationToken).ConfigureAwait(false);
 
-            // Subscribe to symbols and wire up tick handler
-            // Process ticks synchronously to guarantee thread safety and avoid concurrency issues.
             Action<string, Tick> tickHandler = (symbol, tick) =>
             {
                 try
                 {
-                    // Push tick into the tick window.
-                    // The adapter's event loop is single-threaded, so this is safe.
                     tickWindow.PushTick(symbol, tick);
-
-                    // Forward the tick to the live broker synchronously.
-                    // We use GetAwaiter().GetResult() to block and ensure sequential processing.
                     liveBroker.OnTickAsync(symbol, tick).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
@@ -467,37 +454,29 @@ internal sealed class KernelService : IKernelService, IDisposable
                 }
             };
 
-            // Attach the handler to the adapter's event
             adapter.OnTickReceived += tickHandler;
 
-            // Subscribe to each symbol
             foreach (var sym in input.Symbols)
             {
                 await adapter.SubscribeAsync(sym).ConfigureAwait(false);
             }
 
-            // Update the task state with the adapter, symbols, and tick handler for cleanup
             if (_activeTasks.TryGetValue(taskId, out var existingState))
             {
-                _activeTasks[taskId] = existingState with
-                {
-                    Adapter = adapter,
-                    Symbols = input.Symbols,
-                    TickHandler = tickHandler
-                };
+                _activeTasks[taskId] = existingState with { Adapter = adapter, Symbols = input.Symbols, TickHandler = tickHandler };
             }
 
             return taskId;
         }
         catch
         {
-            // If an exception occurs after liveBroker is created, dispose it.
             if (liveBroker != null)
             {
                 await liveBroker.DisposeAsync().ConfigureAwait(false);
             }
+
             cts.Dispose();
-#pragma warning disable CA1508 // 'tickWindow' is never 'null' (false positive due to possible exception in constructor)
+#pragma warning disable CA1508
             tickWindow?.Dispose();
 #pragma warning restore CA1508
             throw;
@@ -528,13 +507,11 @@ internal sealed class KernelService : IKernelService, IDisposable
     {
         if (_activeTasks.TryRemove(taskId, out var state) && state.Broker is LiveBroker broker)
         {
-            // Unsubscribe from the adapter's tick event
             if (state.Adapter != null && state.TickHandler != null)
             {
                 state.Adapter.OnTickReceived -= state.TickHandler;
             }
 
-            // Unsubscribe from all symbols
             if (state.Adapter != null && state.Symbols != null)
             {
                 foreach (var sym in state.Symbols)
@@ -552,7 +529,7 @@ internal sealed class KernelService : IKernelService, IDisposable
 
             state.DisposeCts();
             state.DisposeIndicatorRegistry();
-            state.DisposeTickWindow();  // dispose the TickWindow
+            state.DisposeTickWindow();
 
             await broker.DisconnectAndNotifyAsync().ConfigureAwait(false);
             await broker.DisposeAsync().ConfigureAwait(false);
@@ -582,6 +559,7 @@ internal sealed class KernelService : IKernelService, IDisposable
         {
             strategy.InjectGenes(genes);
         }
+
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
@@ -597,7 +575,6 @@ internal sealed class KernelService : IKernelService, IDisposable
         var strategy = _extensionManager.ActiveStrategy
             ?? throw new InvalidOperationException("No active strategy found.");
 
-        // Fetch symbol properties and historical data once for the entire optimisation.
         var symbolProperties = new Dictionary<string, SymbolProperties>();
         var tickStreams = new List<IReadOnlyList<Tick>>();
         var mappedLists = new List<MemoryMappedTickList>();
@@ -632,7 +609,6 @@ internal sealed class KernelService : IKernelService, IDisposable
                 tickStreams.Add(mmList);
             }
 
-            // Build the base StrategySpecification and ExecutionSpecification (shared across all evaluations).
             var timeframeEnums = input.Timeframes
                 .Select(ParseTimeFrame)
                 .Distinct()
@@ -663,7 +639,6 @@ internal sealed class KernelService : IKernelService, IDisposable
             };
             execSpec.Validate();
 
-            // Get neural network if requested
             INeuralNetworkModel? nnModel = null;
             if (!string.IsNullOrEmpty(input.NeuralNetworkName))
             {
@@ -674,7 +649,13 @@ internal sealed class KernelService : IKernelService, IDisposable
                 }
             }
 
-            // Build the optimisation specification.
+            // Get currency converter
+            ICurrencyConverter? converter = null;
+            if (adapter is IHasCurrencyConverter hasConverter)
+            {
+                converter = hasConverter.CurrencyConverter;
+            }
+
             var optSpec = new OptimizationSpecification
             {
                 MasterSeed = input.MasterSeed,
@@ -690,7 +671,6 @@ internal sealed class KernelService : IKernelService, IDisposable
 
             var schema = GeneInjector.ExtractSchema(strategy.GetType());
 
-            // Create the optimisation runner.
             var runner = new OptimizationRunner(
                 optSpec,
                 schema,
@@ -698,14 +678,10 @@ internal sealed class KernelService : IKernelService, IDisposable
                 _hookRegistry.Optimization,
                 nnModel,
                 _messageBus,
-                _hookRegistry
-            );
+                _hookRegistry);
 
-            // Define the fitness evaluator that uses the cached data.
-            // To avoid race conditions, create a fresh strategy instance per chromosome.
             async Task<double> EvaluateChromosome(ChromosomeKernel chromo, CancellationToken ct)
             {
-                // Create a transient strategy instance (same type, new instance).
                 var transientStrategy = _extensionManager.CreateTransientStrategy(input.StrategyName);
                 if (transientStrategy == null)
                 {
@@ -714,10 +690,8 @@ internal sealed class KernelService : IKernelService, IDisposable
 
                 try
                 {
-                    // Inject the chromosome's genes into the transient strategy.
                     transientStrategy.InjectGenes(chromo.Genes);
 
-                    // Build the backtest input for this specific chromosome.
                     var backtestInput = new BacktestInput
                     {
                         TickStreams = tickStreams.ToArray(),
@@ -733,28 +707,23 @@ internal sealed class KernelService : IKernelService, IDisposable
                         Progress = null,
                         MessageBus = _messageBus,
                         Metrics = _metrics,
-                        HookRegistry = _hookRegistry
+                        HookRegistry = _hookRegistry,
+                        CurrencyConverter = converter,
+                        AccountCurrency = input.AccountCurrency
                     };
 
-                    // Run the backtest.
                     var runnerBt = new BacktestRunner();
                     var result = await runnerBt.RunAsync(backtestInput, ct).ConfigureAwait(false);
-
-                    // Fitness = net profit.
                     return result.Balance - input.InitialBalance;
                 }
                 finally
                 {
-                    // Dispose the transient strategy if it implements IDisposable.
                     (transientStrategy as IDisposable)?.Dispose();
                 }
             }
 
-            // Start the optimisation in the background.
-            // CA2000 is suppressed because the CTS is stored in the task state and disposed
-            // when the optimisation completes or is cancelled.
             CancellationTokenSource cts;
-#pragma warning disable CA2000 // Dispose objects before losing scope
+#pragma warning disable CA2000
             cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 #pragma warning restore CA2000
             var taskState = new TaskState(cts, Runner: runner, MappedTickLists: mappedLists);
@@ -797,7 +766,6 @@ internal sealed class KernelService : IKernelService, IDisposable
                 }
                 finally
                 {
-                    // Ensure mapped lists are disposed even if task state was removed.
                     if (_activeTasks.TryGetValue(taskId, out var state))
                     {
                         state.DisposeMappedTickLists();
@@ -809,11 +777,11 @@ internal sealed class KernelService : IKernelService, IDisposable
         }
         catch
         {
-            // If an error occurs before the task state is created, dispose the mapped lists.
             foreach (var mm in mappedLists)
             {
                 mm?.Dispose();
             }
+
             throw;
         }
     }
@@ -826,7 +794,6 @@ internal sealed class KernelService : IKernelService, IDisposable
             return Task.FromResult(best);
         }
 
-        // Return a dummy chromosome
         var dummy = new ChromosomeKernel(1);
         dummy.Genes[0] = 0;
         dummy.Fitness = 0;

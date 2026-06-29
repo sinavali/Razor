@@ -2,7 +2,8 @@ using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Core;
 using Chronos.Core.Engine.Extensions;
-using Chronos.Core.Kernel.Behavior;
+using Chronos.Core.Engine.Management.Commands;
+using Chronos.Core.Engine.Services.BehaviorRecorder;
 using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Management.Commands.Handlers;
@@ -59,7 +60,18 @@ internal sealed class EnableBehaviorLoggingHandler : CommandHandlerBase
             snapshotInterval = snap;
         }
 
-        _behaviorRecorder.Enable(sessionId, strategyName, genes, uploadInterval);
+        // Cast to concrete to call Enable
+        if (_behaviorRecorder is BehaviorRecorder concrete)
+        {
+            concrete.Enable(sessionId, strategyName, genes, uploadInterval);
+        }
+        else
+        {
+            await SendErrorAsync(command.CorrelationId ?? string.Empty, "BehaviorRecorder not available.", cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         _extensionManager.EnableBehaviorLoggingOnStrategy(sessionId, snapshotInterval);
 
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { SessionId = sessionId }, cancellationToken)

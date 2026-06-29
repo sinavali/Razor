@@ -1,7 +1,8 @@
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Extensions;
-using Chronos.Core.Kernel.Behavior;
+using Chronos.Core.Engine.Management.Commands;
+using Chronos.Core.Engine.Services.BehaviorRecorder;
 using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Management.Commands.Handlers;
@@ -31,8 +32,14 @@ internal sealed class DisableBehaviorLoggingHandler : CommandHandlerBase
     /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
-        _behaviorRecorder.Disable();
+        // Cast to concrete to call Disable() if needed, but IBehaviorRecorder has no Disable.
+        // We'll rely on the concrete type via the extension manager.
         _extensionManager.DisableBehaviorLoggingOnStrategy();
+
+        if (_behaviorRecorder is BehaviorRecorder concrete)
+        {
+            concrete.Disable();
+        }
 
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { Message = "Behavior logging disabled." }, cancellationToken)
             .ConfigureAwait(false);

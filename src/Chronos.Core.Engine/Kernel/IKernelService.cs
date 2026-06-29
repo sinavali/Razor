@@ -62,6 +62,7 @@ internal sealed record LiveInput
     public required int MaxOpenPositions { get; init; }
     public required double[] Genes { get; init; }
     public required string NeuralNetworkName { get; init; }  // optional, empty means none
+    public required string AccountCurrency { get; init; }    // base account currency
 }
 
 /// <summary>Input for starting an optimisation run.</summary>
@@ -86,6 +87,7 @@ internal sealed record OptimizationInput
     public required DateTime StartDate { get; init; }
     public required DateTime EndDate { get; init; }
     public required string[] Timeframes { get; init; }
+    public required string AccountCurrency { get; init; }    // base account currency
 }
 
 /// <summary>Snapshot of live trading state.</summary>

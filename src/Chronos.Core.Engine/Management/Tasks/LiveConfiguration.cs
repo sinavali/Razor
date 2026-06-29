@@ -25,6 +25,7 @@ internal sealed record LiveConfiguration
     public required int MaxOpenPositions { get; init; }
     public required double[] Genes { get; init; }
     public string? NeuralNetworkName { get; init; }
+    public required string AccountCurrency { get; init; }   // base account currency
 
     /// <summary>
     /// Parses a Cloud command parameter object into a <see cref="LiveConfiguration"/>.
@@ -50,6 +51,7 @@ internal sealed record LiveConfiguration
         int maxOpenPositions = GetInt(dict, "MaxOpenPositions");
         double[] genes = GetDoubleArray(dict, "Genes", Array.Empty<double>());
         string? neuralNetworkName = dict.TryGetValue("NeuralNetworkName", out object? nnObj) ? nnObj?.ToString() : null;
+        string accountCurrency = GetString(dict, "AccountCurrency", "USD");
 
         return new LiveConfiguration
         {
@@ -63,17 +65,18 @@ internal sealed record LiveConfiguration
             StopOutLevel = stopOutLevel,
             MaxOpenPositions = maxOpenPositions,
             Genes = genes,
-            NeuralNetworkName = neuralNetworkName
+            NeuralNetworkName = neuralNetworkName,
+            AccountCurrency = accountCurrency
         };
     }
 
-    private static string GetString(Dictionary<string, object> dict, string key)
+    private static string GetString(Dictionary<string, object> dict, string key, string fallback = "")
     {
         if (dict.TryGetValue(key, out object? value) && value is string s)
         {
             return s;
         }
-        throw new ArgumentException($"Missing or invalid string field: {key}");
+        return fallback;
     }
 
     private static string[] GetStringArray(Dictionary<string, object> dict, string key)

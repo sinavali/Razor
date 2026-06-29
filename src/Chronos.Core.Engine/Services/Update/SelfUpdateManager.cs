@@ -59,6 +59,8 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
         LoggerMessage.Define(LogLevel.Information, 13, "Update version is same as current. No update needed.");
     private static readonly Action<ILogger, Exception?> _logInvalidUpdateMetadata =
         LoggerMessage.Define(LogLevel.Warning, 14, "Invalid update metadata received.");
+    private static readonly Action<ILogger, string, Exception?> _logMarkerWritten =
+        LoggerMessage.Define<string>(LogLevel.Information, 15, "Pending marker written: {MarkerPath}");
 
     public bool IsUpdateAvailable => _pendingVersion != null;
     public (string Version, Uri DownloadUrl, string Checksum)? PendingUpdate =>
@@ -76,9 +78,6 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
         Directory.CreateDirectory(_updatePath);
     }
 
-    /// <summary>
-    /// Checks for a new version. Stores the update metadata for later installation.
-    /// </summary>
     public void CheckForUpdate(string version, Uri downloadUrl, string checksum)
     {
         if (string.IsNullOrWhiteSpace(version) || downloadUrl == null || string.IsNullOrWhiteSpace(checksum))
@@ -87,7 +86,6 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
             return;
         }
 
-        // Compare versions (simple string compare; could use Version.Parse)
         if (string.Equals(version, AppConstants.EngineVersion, StringComparison.OrdinalIgnoreCase))
         {
             _logUpdateNotNeeded(_logger, null);
@@ -101,9 +99,6 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
         _logCheckingForUpdates(_logger, null);
     }
 
-    /// <summary>
-    /// Downloads the update, verifies checksum, stages it, and launches the new binary with --command=restart.
-    /// </summary>
     public async Task InstallUpdateAsync(CancellationToken cancellationToken)
     {
         if (_pendingVersion == null || _pendingDownloadUrl == null || _pendingChecksum == null)
@@ -144,11 +139,12 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
             // Stage new binary
             string stageFile = Path.Combine(_updatePath, $"engine_{_pendingVersion}_{_executableName}");
             File.Move(tempPath, stageFile, true);
-            shouldDeleteTemp = false; // Prevent deletion of staged file
+            shouldDeleteTemp = false;
 
-            // Create pending marker
+            // Write pending marker with original path
             string markerPath = Path.Combine(_updatePath, "update.pending");
             await File.WriteAllTextAsync(markerPath, $"{_pendingVersion}|{_currentPath}|{DateTime.UtcNow:O}", cancellationToken).ConfigureAwait(false);
+            _logMarkerWritten(_logger, markerPath, null);
 
             _logUpdateStaged(_logger, _pendingVersion, null);
 
@@ -167,7 +163,6 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
                 throw new InvalidOperationException("Failed to start new binary.");
             }
 
-            // Exit current process
             Environment.Exit(0);
         }
         finally
@@ -179,10 +174,6 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
         }
     }
 
-    /// <summary>
-    /// Finalizes an update when the engine is started with --command=restart.
-    /// Moves the staged binary to the current executable path.
-    /// </summary>
     public async Task FinalizeUpdateAsync(CancellationToken cancellationToken)
     {
         _logFinalizingUpdate(_logger, null);
@@ -203,7 +194,7 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
         }
 
         string version = parts[0];
-        string originalPath = parts[1]; // Not used, but we could verify
+        string originalPath = parts[1];
 
         // Find staged binary matching version
         string stagedPattern = $"engine_{version}_*";
@@ -214,11 +205,11 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
             return;
         }
 
-        // Use the first match (should be only one)
         string stagedFile = stagedFiles[0];
 
-        // Move it to current path (overwrite)
-        File.Move(stagedFile, _currentPath, true);
+        // Replace the original executable with the staged binary atomically
+        // File.Replace creates a backup of the original; we already have a backup, so we can just overwrite.
+        File.Replace(stagedFile, originalPath, null, true);
         _logUpdateInstalled(_logger, version, null);
 
         // Delete marker
@@ -228,9 +219,6 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Rolls back to the most recent backup.
-    /// </summary>
     public Task RollbackAsync(CancellationToken cancellationToken)
     {
         _logRollingBack(_logger, null);

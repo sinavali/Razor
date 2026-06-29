@@ -7,8 +7,8 @@
 namespace Chronos.Core.Engine;
 
 using Abstractions.Hooks;
+using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Kernel;
-using Chronos.Core.Kernel.Behavior;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
@@ -42,13 +42,10 @@ internal sealed class Program
     // LoggerMessage delegates for shutdown.
     private static readonly Action<ILogger, Exception?> _logShutdownTasksError =
         LoggerMessage.Define(LogLevel.Error, 0, "Error stopping tasks during shutdown.");
-
     private static readonly Action<ILogger, Exception?> _logShutdownCloudError =
         LoggerMessage.Define(LogLevel.Error, 1, "Error disconnecting from cloud.");
-
     private static readonly Action<ILogger, Exception?> _logShutdownStateError =
         LoggerMessage.Define(LogLevel.Error, 2, "Error saving state during shutdown.");
-
     private static readonly Action<ILogger, Exception?> _logShutdownBehaviorError =
         LoggerMessage.Define(LogLevel.Error, 3, "Error flushing behavior records during shutdown.");
 
@@ -189,7 +186,7 @@ internal sealed class Program
         services.AddSingleton<IKernelService, KernelService>();
 
         // Services
-        services.AddSingleton<IBehaviorRecorder, BehaviorRecorder>();
+        services.AddSingleton<IBehaviorRecorder, Services.BehaviorRecorder.BehaviorRecorder>();
         services.AddSingleton<IMiningIntegration, MiningIntegration>();
         services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
 
@@ -298,7 +295,7 @@ internal sealed class Program
                 services.AddSingleton<IMessageBus, MessageBus>();
                 services.AddSingleton<ICoreMetrics>(sp => new CoreMetrics("engine"));
                 services.AddSingleton<IKernelService, KernelService>();
-                services.AddSingleton<IBehaviorRecorder, BehaviorRecorder>();
+                services.AddSingleton<IBehaviorRecorder, Services.BehaviorRecorder.BehaviorRecorder>();
                 services.AddSingleton<IMiningIntegration, MiningIntegration>();
                 services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
                 services.AddSingleton<IHookRegistry, HookRegistry>();
@@ -382,11 +379,11 @@ internal sealed class Program
 
         try
         {
-            var behaviorRecorder = _serviceProvider?.GetRequiredService<IBehaviorRecorder>();
-            if (behaviorRecorder != null)
+            var behaviorRecorder = _serviceProvider?.GetService<IBehaviorRecorder>();
+            if (behaviorRecorder is Services.BehaviorRecorder.BehaviorRecorder concrete)
             {
-                behaviorRecorder.Disable();
-                await behaviorRecorder.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                concrete.Disable();
+                await concrete.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (Exception ex)

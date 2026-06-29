@@ -1,7 +1,6 @@
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Communication;
 using Chronos.Core.Engine.Core;
-using Chronos.Core.Kernel.Behavior;
 using MessagePack;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
@@ -10,7 +9,7 @@ using System.IO.Compression;
 namespace Chronos.Core.Engine.Services.BehaviorRecorder;
 
 /// <summary>
-/// Default implementation of the internal <see cref="IBehaviorRecorder"/>.
+/// Default implementation of <see cref="IBehaviorRecorder"/>.
 /// Buffers records in memory and flushes them to compressed binary files.
 /// </summary>
 internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable

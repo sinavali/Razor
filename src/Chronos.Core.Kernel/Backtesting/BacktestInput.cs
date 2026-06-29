@@ -58,4 +58,14 @@ public sealed record BacktestInput
     /// Optional hook registry for invoking backtest pipeline hooks.
     /// </summary>
     public IHookRegistry? HookRegistry { get; init; }
+
+    /// <summary>
+    /// Optional currency converter for cross‑currency PnL and margin calculations.
+    /// </summary>
+    public ICurrencyConverter? CurrencyConverter { get; init; }
+
+    /// <summary>
+    /// Account base currency (e.g., "USD"). Used with <see cref="CurrencyConverter"/>.
+    /// </summary>
+    public string? AccountCurrency { get; init; }
 }

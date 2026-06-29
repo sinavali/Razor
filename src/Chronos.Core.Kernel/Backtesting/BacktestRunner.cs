@@ -49,7 +49,10 @@ public sealed class BacktestRunner : IBacktestRunner
                 input.ExecutionSpecification.MaxOpenPositions,
                 input.ExecutionSpecification.StopOutLevel,
                 input.MessageBus,
-                hooks);
+                hooks,
+                input.CurrencyConverter,
+                input.AccountCurrency,
+                null); // logger not needed in backtest
 
             var timeframes = input.StrategySpecification.RequestedSymbols
                 .SelectMany(r => r.TimeFrames)

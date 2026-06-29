@@ -5,16 +5,12 @@ public enum GeneType
 {
     /// <summary>Continuous range.</summary>
     Continuous,
-
     /// <summary>Discrete steps.</summary>
     Discrete,
-
     /// <summary>Categorical choice.</summary>
     Categorical,
-
     /// <summary>Structural gene (e.g., topology).</summary>
     Structural,
-
     /// <summary>Parametric gene (e.g., neural weight).</summary>
     Parametric
 }
@@ -27,19 +23,14 @@ public sealed class GeneAttribute : Attribute
 {
     /// <summary>Minimum value.</summary>
     public double Min { get; }
-
     /// <summary>Maximum value.</summary>
     public double Max { get; }
-
     /// <summary>Step size (for discrete genes).</summary>
     public double Step { get; }
-
     /// <summary>Gene type.</summary>
     public GeneType Type { get; }
-
     /// <summary>Display name (optional).</summary>
     public string Name { get; init; } = string.Empty;
-
     /// <summary>Deterministic ordering index (lower = earlier in chromosome).</summary>
     public int Order { get; init; }
 
@@ -62,23 +53,20 @@ public sealed class GeneAttribute : Attribute
         }
 
         // For Continuous, Structural, and Parametric genes, stepping is not applied.
-        // Reject non‑zero-step values to avoid silent misinterpretation.
         if (type is GeneType.Continuous or GeneType.Structural or GeneType.Parametric)
         {
             if (step != 0)
             {
-                throw new ArgumentException(
-                    $"Step must be 0 for {type} genes. Provided: {step}. " +
-                    "Only Discrete and Categorical genes support non-zero steps.");
+                throw new ArgumentException($"Step must be 0 for {type} genes. Provided: {step}. " +
+                                              "Only Discrete and Categorical genes support non-zero steps.");
             }
         }
         else // Discrete or Categorical
         {
-            if (step < 1)
+            if (step <= 0)
             {
-                throw new ArgumentException(
-                    $"Step must be at least 1 for {type} genes. Provided: {step}. " +
-                    "Discrete and Categorical genes require a positive integer step size.");
+                throw new ArgumentException($"Step must be positive for {type} genes. Provided: {step}. " +
+                                              "Discrete and Categorical genes require a positive step size.");
             }
         }
 

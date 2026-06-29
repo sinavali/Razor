@@ -9,7 +9,6 @@ namespace Chronos.Core.Abstractions.Shared;
 public abstract class StrategyBase : IStrategyCapability, IDisposable
 {
     private readonly ReaderWriterLockSlim _geneLock = new(LockRecursionPolicy.SupportsRecursion);
-    private IBehaviorRecorder? _behaviorRecorder;
 
     /// <summary>Lock used to protect gene injection while the strategy is processing ticks.</summary>
     public ReaderWriterLockSlim GeneLock => _geneLock;
@@ -135,7 +134,7 @@ public abstract class StrategyBase : IStrategyCapability, IDisposable
         TickWindow = tickWindow;
     }
 
-    // ─── Trade Helpers (overridden to automatically record) ──────────
+    // ─── Trade Helpers ──────────────────────────────────────────────
 
     /// <summary>Buys the primary symbol at market.</summary>
     protected Task<AdapterOrderResponse> BuyAsync(double volume, double? sl = null, double? tp = null,
