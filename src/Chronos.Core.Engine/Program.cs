@@ -78,13 +78,15 @@ internal sealed class Program
         }
 
 #if DEBUG
-        AppConstants.IsDevelopment = true;
+        RuntimeEnvironment.SetDevelopment(true);
 #endif
 
         // Parse --auth=username,password,apikey
         string? authArg = args.FirstOrDefault(a => a.StartsWith("--auth=", StringComparison.OrdinalIgnoreCase));
         if (authArg != null)
         {
+            // SEC‑04: Warn about --auth usage.
+            Console.WriteLine("WARNING: Using --auth exposes credentials to the local system. Use only in secure environments.");
             string[] parts = authArg.Substring("--auth=".Length).Split(',');
             if (parts.Length == 3)
             {

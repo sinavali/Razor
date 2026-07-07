@@ -15,6 +15,18 @@ internal static class PluginSafetyValidator
         ArgumentNullException.ThrowIfNull(assembly);
 
         var issues = new List<string>();
+
+        // SEC‑03: Check assembly signing in production mode.
+        if (Core.RuntimeEnvironment.IsProduction)
+        {
+            var publicKey = assembly.GetName().GetPublicKey();
+            if (publicKey == null || publicKey.Length == 0)
+            {
+                issues.Add($"Assembly '{assembly.FullName}' is not strong‑named (unsigned). Unsigned extensions are rejected in production mode.");
+                return issues; // Early return to avoid further checks on an unsigned assembly.
+            }
+        }
+
         var types = assembly.GetExportedTypes();
 
         foreach (var type in types.Where(t => t.IsClass && !t.IsAbstract))

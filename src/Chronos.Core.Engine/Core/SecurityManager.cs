@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Chronos.Core.Engine.Core.Exceptions;
 
 namespace Chronos.Core.Engine.Core;
 
@@ -200,14 +201,25 @@ internal sealed class SecurityManager : ISecurityManager
     /// <inheritdoc/>
     public bool VerifyIntegrity()
     {
-        try
+        // Skip integrity checks when debugging or in development mode.
+        if (IsDebuggerAttached() || RuntimeEnvironment.IsDevelopment)
         {
-            // For production, this would compare a hash of the executable with an embedded signature.
-            // For now, we always return true.
             return true;
         }
-        catch
+
+        try
         {
+            // In production, we must verify the binary integrity.
+            // For now, this is a placeholder that will be implemented in a future release.
+            Console.Error.WriteLine("[FATAL] Binary integrity verification is not implemented. Engine cannot start in production mode.");
+            throw new EngineException(
+                "Binary integrity verification is not implemented. " +
+                "Please ensure the engine binary is properly signed and verified. " +
+                "This is a security requirement in production mode.");
+        }
+        catch (Exception ex) when (ex is not EngineException)
+        {
+            Console.Error.WriteLine($"[ERROR] Integrity verification failed: {ex.Message}");
             return false;
         }
     }
