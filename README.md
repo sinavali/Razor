@@ -41,7 +41,7 @@ The `core` repository contains the heart of the Chronos ecosystem: the public SD
 2. Implement one or more contracts (`IHookManifest`, `IStrategyCapability`, `IAdapterCapability`, `INeuralNetworkModel`, or `Indicator`).
 3. Add the SDK version attribute to your assembly:
    ```csharp
-   [assembly: ChronosSdkVersion("1.0.0")]
+   [assembly: SdkVersion("1.0.0")]
    ```
 4. Build your DLL and place it in the appropriate engine directory (`Adapters/`, `Strategies/`, `Indicators/`, `Plugins/`, or `NeuralNetworks/`).
 5. Manage activation via Chronos Cloud.

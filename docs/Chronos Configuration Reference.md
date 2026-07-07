@@ -1,9 +1,9 @@
 ## Chronos Configuration Reference
 
-**Version:** 1.0.0 LTS
-**Audience:** Extension developers & power users
-**Status:** Authoritative
-**Last Updated:** 2026-06-15
+**Version:** 1.0.0 LTS  
+**Audience:** Extension developers & power users  
+**Status:** Authoritative  
+**Last Updated:** 2026-07-07  
 
 ---
 
@@ -15,7 +15,7 @@ This document catalogues every configuration object, enumeration, and data contr
 
 ## 1. Strategy Specification
 
-**Type:** `StrategySpecification` (immutable record)
+**Type:** `StrategySpecification` (immutable record)  
 **Namespace:** `Chronos.Core.Abstractions.Shared`
 
 ### Fields
@@ -64,7 +64,7 @@ This document catalogues every configuration object, enumeration, and data contr
 
 ## 2. Execution Specification
 
-**Type:** `ExecutionSpecification` (immutable record)
+**Type:** `ExecutionSpecification` (immutable record)  
 **Namespace:** `Chronos.Core.Kernel.Configuration`
 
 Controls the backtest or optimisation run environment.
@@ -80,8 +80,9 @@ Controls the backtest or optimisation run environment.
 | `WarmupWindowCount` | `int` | No | `0` | Number of initial tick windows to skip for signal generation. |
 | `MaxOpenPositions` | `int` | Yes | — | Hard limit on concurrent positions. Must be `> 0`. |
 | `StopOutLevel` | `double` | Yes | — | Stop‑out margin ratio (e.g., `0.5` = 50%). Must be `> 0` and `≤ 1`. |
-| `HistoricalDataPolicy` | `DataActionPolicy` | No | `DeleteAfterTask` | Defines how adapter should handle binary tick files after task completion. |
 | `GeneInitializationSeed` | `int?` | No | `null` | Seed for deterministic gene initialization when no explicit genes are provided. `null` means no seed was explicitly supplied. |
+
+> **Note:** The `ExecutionSpecification` does **not** contain a `HistoricalDataPolicy` field. Data retention is controlled at the `BorrowedTickData` level via the `DataActionPolicy` parameter passed to its constructor. The `DataActionPolicy` enum values are `KeepUntilExit`, `DeleteAfterTask`, and `PersistentCache`.
 
 ### Validation
 
@@ -102,8 +103,7 @@ Controls the backtest or optimisation run environment.
     "StopOutLevel": 0.5,
     "LatencyTicks": 0,
     "MaxParallelThreads": 0,
-    "GeneInitializationSeed": 12345,
-    "HistoricalDataPolicy": "DeleteAfterTask"
+    "GeneInitializationSeed": 12345
 }
 ```
 
@@ -111,7 +111,7 @@ Controls the backtest or optimisation run environment.
 
 ## 3. Optimization Specification
 
-**Type:** `OptimizationSpecification` (immutable record)
+**Type:** `OptimizationSpecification` (immutable record)  
 **Namespace:** `Chronos.Core.Kernel.Configuration`
 
 The optimisation pipeline uses the hook system for fitness evaluation. No `FitnessModel` field is present in the specification; instead, the engine invokes the `optimization.chromosome.evaluated` hook after each chromosome evaluation, and the Cloud or a hook plugin computes the fitness score.
@@ -156,7 +156,7 @@ The optimisation pipeline uses the hook system for fitness evaluation. No `Fitne
 
 ## 4. Live Specification
 
-**Type:** `LiveSpecification` (immutable record)
+**Type:** `LiveSpecification` (immutable record)  
 **Namespace:** `Chronos.Core.Kernel.Configuration`
 
 The live trading specification defines the parameters for a live trading session. Continuous optimisation is orchestrated by Chronos Cloud; the Cloud sends the engine commands to start/stop optimisation runs based on the user’s profile settings.
@@ -186,7 +186,7 @@ The live trading specification defines the parameters for a live trading session
 
 ## 5. Neural Network Model Interface
 
-**Type:** `INeuralNetworkModel` (interface)
+**Type:** `INeuralNetworkModel` (interface)  
 **Namespace:** `Chronos.Core.Abstractions.Slots`
 
 Neural networks are slot capabilities. The engine activates an `INeuralNetworkModel` instance from the `NeuralNetworks/` directory when the active strategy declares `RequiresNeuralNetwork = true`. The model supports feed‑forward, ONNX, LSTM, RL, and other architectures through a unified parameter‑vector interface compatible with the GA.
@@ -220,7 +220,7 @@ The `IStrategyCapability` interface (in `Chronos.Core.Abstractions.Slots`) expos
 
 ## 6. Symbol Properties
 
-**Type:** `SymbolProperties` (record)
+**Type:** `SymbolProperties` (record)  
 **Namespace:** `Chronos.Core.Abstractions.Shared`
 
 Adapters return this object per symbol; it defines exchange‑specific contract details. **All fields are required.** Adapters must explicitly set every property.
@@ -258,7 +258,7 @@ Adapters return this object per symbol; it defines exchange‑specific contract 
 
 ## 7. TimeFrame
 
-**Type:** `TimeFrame` (enum)
+**Type:** `TimeFrame` (enum)  
 **Namespace:** `Chronos.Core.Abstractions.Shared`
 
 The integer value equals the duration in minutes.
@@ -286,7 +286,7 @@ The integer value equals the duration in minutes.
 
 ## 8. Gene Attributes
 
-**Type:** `GeneAttribute` (attribute)
+**Type:** `GeneAttribute` (attribute)  
 **Namespace:** `Chronos.Core.Abstractions.Shared`
 
 Used to decorate strategy properties for GA optimisation.
@@ -297,7 +297,7 @@ Used to decorate strategy properties for GA optimisation.
 |-----------|------|-------------|
 | `min` | `double` | Minimum allowed value. |
 | `max` | `double` | Maximum allowed value. |
-| `step` | `double` | Discretisation step. Must be `0` for `Continuous`, `Structural`, and `Parametric` gene types. Only `Discrete` and `Categorical` types allow a non‑zero step (minimum `1`). |
+| `step` | `double` | Discretisation step. Must be `0` for `Continuous`, `Structural`, and `Parametric` gene types. For `Discrete` and `Categorical` types, `step` must be **positive** (can be any double > 0). The constructor enforces these rules. |
 | `type` | `GeneType` | `Continuous`, `Discrete`, `Categorical`, `Structural`, `Parametric`. |
 
 ### Properties
@@ -310,10 +310,10 @@ Used to decorate strategy properties for GA optimisation.
 ### GeneType Values
 
 - `Continuous` – range with no steps.
-- `Discrete` – stepped values.
-- `Categorical` – whole‑number choices.
-- `Structural` – topology genes.
-- `Parametric` – neural network weights.
+- `Discrete` – stepped values (step must be positive).
+- `Categorical` – whole‑number choices (step must be positive).
+- `Structural` – topology genes (step must be 0).
+- `Parametric` – neural network weights (step must be 0).
 
 **Note:** The `step` parameter is only applicable to `Discrete` and `Categorical`. For all other types it must be `0`. The constructor will throw `ArgumentException` if this rule is violated.
 
@@ -321,7 +321,7 @@ Used to decorate strategy properties for GA optimisation.
 
 ## 9. Data Action Policy
 
-**Type:** `DataActionPolicy` (enum)
+**Type:** `DataActionPolicy` (enum)  
 **Namespace:** `Chronos.Core.Abstractions.Shared`
 
 | Value | Meaning |
@@ -334,7 +334,7 @@ Used to decorate strategy properties for GA optimisation.
 
 ## 10. Adapter Capability Interface
 
-**Type:** `IAdapterCapability` (interface)
+**Type:** `IAdapterCapability` (interface)  
 **Namespace:** `Chronos.Core.Abstractions.Slots`
 
 Replaces the previous `IAdapter`, `IHistoricalDataProvider`, `ILiveDataProvider`, and `IExecutionProvider` interfaces. An adapter declares which sub‑capabilities it supports via boolean flags.
@@ -402,7 +402,7 @@ Replaces the previous `IAdapter`, `IHistoricalDataProvider`, `ILiveDataProvider`
 
 ## 11. Strategy Capability Interface
 
-**Type:** `IStrategyCapability` (interface)
+**Type:** `IStrategyCapability` (interface)  
 **Namespace:** `Chronos.Core.Abstractions.Slots`
 
 Replaces the previous `IStrategy` interface. Strategies are slot capabilities discovered in the `Strategies/` directory.

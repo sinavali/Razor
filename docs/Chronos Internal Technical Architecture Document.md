@@ -1,9 +1,9 @@
 # Chronos Internal Technical Architecture Document
 
-**Version:** 1.0.0 LTS
-**Audience:** Chronos core developers (Kernel, Engine, Cloud)
-**Status:** Authoritative
-**Last Updated:** 2026-06-15
+**Version:** 1.0.0 LTS  
+**Audience:** Chronos core developers (Kernel, Engine, Cloud)  
+**Status:** Authoritative  
+**Last Updated:** 2026-07-07  
 
 ---
 
@@ -211,6 +211,7 @@ Wraps an `IAdapterCapability` for real exchange trading. Adds reconciliation, co
 - **Execution reports:** The adapter's `OnExecutionUpdate` event is handled in a fire‑and‑forget task with full exception logging to prevent process crashes (Principle 13).
 - **Connection management:** `ConnectAndNotifyAsync` and `DisconnectAndNotifyAsync` publish `ConnectionStateEvent` and update telemetry.
 - **Telemetry:** Records order latency, rejection count, and tick arrival latency via `ChronosMetrics`.
+- **Logger:** The constructor requires a non‑null `ILogger<LiveBroker>` instance. Logging is mandatory for operational visibility; do not pass `null`.
 
 **Parity with SimulatedBroker:** Both use the same `IMarketCalculator`, the same stop‑out logic, the same SL/TP evaluation order, and the same daily holding cost calculation. Unit tests verify that identical tick sequences produce identical trade histories.
 
@@ -274,6 +275,12 @@ Wraps an `IAdapterCapability` for real exchange trading. Adds reconciliation, co
 
 The hook system is the primary extensibility mechanism. Instead of many typed plugin interfaces (`IRiskManager`, `IFitnessModel`, `INotificationChannel`, etc.), the engine exposes named hook points. Extensions implement `IHookManifest` and register strongly‑typed callbacks on these points.
 
+This replaces the earlier, more rigid plugin interfaces:
+- **Risk management** – previously `IRiskManager`, now achieved via filter hooks on order validation (`backtest.order.validation`, `live.order.validation`).
+- **Fitness evaluation** – previously `IFitnessModel`, now achieved via the `optimization.fitness.evaluate` action hook.
+- **Execution algorithms** – previously `IExecutionAlgorithm`, now achieved via filter hooks on order before execution (`backtest.order.before_execute`, `live.order.before_send`).
+- **Simulation friction** – previously `ISimulationFriction`, now handled internally by the adapter's `IMarketCalculator` and order execution logic; slippage and commission are adapter‑owned.
+
 ### 7.2 Hook Types
 
 - **Filter hooks** (`IFilterRegistration<T>`): Transform or reject data flowing through the pipeline. Each callback receives the current value and context, returning a `FilterResult<T>` indicating whether to allow (possibly modified) or reject.
@@ -334,7 +341,7 @@ The schema is extracted via `GeneInjector.BuildCompleteSchema()`. The total gene
 
 - **Master seed** from `OptimizationSpecification.MasterSeed` (must be `≥ 0`).
 - **Per‑individual seed** generated with `(masterSeed * 397) ^ index`, avoiding platform‑dependent `HashCode`.
-- **RNG** is `ChronosRandom` (portable xorshift128+). The `int` constructor rejects negative seeds to guarantee predictable sequences.
+- **RNG** is `CustomizedRandom` (portable xorshift128+). The `int` constructor rejects negative seeds to guarantee predictable sequences.
 - Each gene is randomly chosen within its constraints using `GeneInjector.GenerateRandomGene()`.
 
 ### 8.4 Evaluation
@@ -362,9 +369,11 @@ The schema is extracted via `GeneInjector.BuildCompleteSchema()`. The total gene
 
 All configuration is represented by immutable `record` types that implement a `Validate()` method. A `ConfigurationException` is thrown for invalid input. There are no silent defaults for critical parameters (Principle 9).
 
+**Note:** `ConfigurationException` derives directly from `System.Exception` (not from `AppException`). This is intentional; it is a configuration‑specific error that does not share the same base as domain exceptions.
+
 **Specifications in `Chronos.Core.Kernel.Configuration`:**
 
-- `ExecutionSpecification` – date range, warmup, latency, max positions, stop‑out, data policy, parallelism, gene seed (nullable `int?`).
+- `ExecutionSpecification` – date range, warmup, latency, max positions, stop‑out, parallelism, gene seed (nullable `int?`).
 - `OptimizationSpecification` – master seed (`≥ 0`), population/generations, mutation/crossover rates, elitism, tournament size. No walk‑forward fields (orchestration is Cloud‑managed). No `FitnessModel` field (fitness is computed via hooks).
 - `LiveSpecification` – magic number, order guard timeout. Continuous optimisation fields removed (Cloud‑orchestrated).
 
@@ -396,7 +405,7 @@ A single DLL can implement any combination. The engine scans all directories.
 
 ### 10.2 Version Attributes
 
-- `[assembly: ChronosSdkVersion("1.0.0")]` – declares the targeted SDK version. The engine checks this before loading any assembly.
+- `[assembly: SdkVersion("1.0.0")]` – declares the targeted SDK version. The engine checks this before loading any assembly.
 
 ### 10.3 Loading Process
 
@@ -474,38 +483,51 @@ All metrics are registered in a `Meter` named `"Chronos.Metrics"`.
 
 ---
 
-## 14. Determinism Infrastructure
+## 14. Report Generation (Engine Role)
 
-### 14.1 Random Number Generation
+The engine does **not** generate formatted reports (PDF, HTML, Excel, etc.). Report rendering is the responsibility of Chronos Cloud. The engine's role is limited to:
 
-`ChronosRandom` is a custom xorshift128+ implementation that guarantees identical sequences across .NET versions and platforms. It is used for:
+1. Streaming raw `BacktestResult` and `Chromosome` data to the Cloud via events (`BacktestCompletedEvent`, `OptimizationGenerationEvent`, etc.).
+2. Providing the `ReportGenerator` class, which exists solely to invoke the `report.before_generate` and `report.after_generate` hooks. These hooks allow plugins to capture or modify the raw data before it is sent to Cloud, or to perform custom logging.
+
+The `ReportGenerator` in `Chronos.Core.Kernel.Reporting` is a stub that does not produce any actual report output. It passes a dummy byte array to the `OnAfterGenerate` hook, but this is not used in production; it is a placeholder for future extensibility. In practice, Cloud aggregates the raw data from events and generates all user‑facing reports.
+
+**Summary:** The engine streams raw data; the Cloud renders reports.
+
+---
+
+## 15. Determinism Infrastructure
+
+### 15.1 Random Number Generation
+
+`CustomizedRandom` is a custom xorshift128+ implementation that guarantees identical sequences across .NET versions and platforms. It is used for:
 
 - GA population initialisation
 - GA selection, crossover, and mutation
 - Deterministic gene initialisation for backtests
 - Synthetic tick generation (optional)
 
-`System.Random` is never used in any path that affects backtest output or optimisation results. Negative seeds are rejected by `ChronosRandom`'s `int` constructor to avoid confusion.
+`System.Random` is never used in any path that affects backtest output or optimisation results. Negative seeds are rejected by `CustomizedRandom`'s `int` constructor to avoid confusion.
 
-### 14.2 Seeding Strategy
+### 15.2 Seeding Strategy
 
 - A **master seed** is provided by the user (through configuration). All randomness derives from this seed. It must be non‑negative.
 - Per‑individual GA seeds are generated with `(masterSeed * 397) ^ index` — stable across .NET versions.
 - Backtest gene seeds are generated from the nullable `GeneInitializationSeed` in `ExecutionSpecification`.
 
-### 14.3 System Clock Prohibition
+### 15.3 System Clock Prohibition
 
 No trading logic accesses `DateTime.UtcNow` or `Environment.TickCount64`. The only exceptions are the `SystemClock` used for order guards, telemetry, and logging, all of which are non‑trading concerns.
 
-### 14.4 Golden Tests
+### 15.4 Golden Tests
 
 A separate test suite (CI gate) executes a full backtest twice with identical inputs and compares the hash of the serialised trade history. Any difference fails the build. This validates determinism across code changes and .NET updates.
 
 ---
 
-## 15. Future Projects (Out of Scope for v1.0.0 LTS)
+## 16. Future Projects (Out of Scope for v1.0.0 LTS)
 
-### 15.1 Chronos.Engine
+### 16.1 Chronos.Engine
 
 - Headless executable.
 - Manages extension loading, connects to Chronos Cloud via WebSocket.
@@ -513,7 +535,7 @@ A separate test suite (CI gate) executes a full backtest twice with identical in
 - Handles encryption, heartbeat, remote updates, binary integrity checks.
 - Will be obfuscated and protected against reverse engineering.
 
-### 15.2 Chronos.Cloud
+### 16.2 Chronos.Cloud
 
 - SaaS web application.
 - Sends commands, receives progress/results, stores all data.
@@ -526,7 +548,3 @@ Both will be private repositories, developed after the stable v1.0.0 kernel rele
 ---
 
 *This document is the authoritative internal reference. Any architecture deviation must be approved by the Chronos architecture board.*
-
----
-
-*Ready for the next document.*

@@ -1,9 +1,9 @@
-## Chronos Installation & Deployment Guide
+# Chronos Installation & Deployment Guide
 
-**Version:** 1.0.0 LTS
-**Audience:** End‑users (traders, quants, IT staff)
-**Status:** Authoritative
-**Last Updated:** 2026-06-14
+**Version:** 1.0.0 LTS  
+**Audience:** End‑users (traders, quants, IT staff)  
+**Status:** Authoritative  
+**Last Updated:** 2026-07-07  
 
 ---
 
@@ -68,7 +68,6 @@ The archive contains:
 chronos/
 ├── Chronos.Engine.exe       (Windows) / Chronos.Engine (Linux)
 ├── *.dll                    (engine dependencies)
-├── chronos.bootstrap.json   (template – edit before running)
 ├── Adapters/                (empty – place adapter DLLs here)
 ├── Strategies/              (empty – place strategy DLLs here)
 ├── Indicators/              (empty – place indicator DLLs here)
@@ -77,6 +76,8 @@ chronos/
 └── logs/                    (created on first run)
 ```
 
+**There is no configuration file in the archive.** All operational parameters are supplied by Chronos Cloud after authentication.
+
 ---
 
 ## 4. Installation Steps
@@ -84,13 +85,13 @@ chronos/
 ### 4.1 Windows Installation
 
 1. **Extract the archive** to a permanent location, e.g., `C:\Chronos\`.
-2. **Edit the bootstrap file** `chronos.bootstrap.json` (see §5).
-3. **Place extensions** – copy your adapter, strategy, indicator, hook plugin, and NN model DLLs into the appropriate directories (see §8 for details).
-4. **Run the engine**:
+2. **Place extensions** – copy your adapter, strategy, indicator, hook plugin, and NN model DLLs into the appropriate directories (see §8 for details).
+3. **Run the engine**:
    - Open a **Command Prompt** or **PowerShell** as Administrator.
    - Navigate to `C:\Chronos\`.
    - Run: `.\Chronos.Engine.exe`
-   - The engine will start, authenticate with Chronos Cloud, and display a live log stream.
+   - On first startup, the engine will prompt you for your **Cloud Username**, **Cloud Password**, and **Instance API Key**. Enter them interactively.
+   - For automated or service deployments, you can pass credentials via the `--auth` flag (see §4.3).
 
 ### 4.2 Linux Installation
 
@@ -103,15 +104,45 @@ chronos/
    ```bash
    sudo chmod +x /opt/chronos/Chronos.Engine
    ```
-3. **Edit the bootstrap file** `/opt/chronos/chronos.bootstrap.json` (see §5).
-4. **Place extensions** in the appropriate subdirectories under `/opt/chronos/`.
-5. **Run the engine**:
+3. **Place extensions** in the appropriate subdirectories under `/opt/chronos/`.
+4. **Run the engine**:
    ```bash
    cd /opt/chronos
    ./Chronos.Engine
    ```
+   - If you are running interactively, the engine will prompt for credentials.
+   - For background or service operation, use the `--auth` flag as described below.
 
-### 4.3 Running as a Service
+### 4.3 Authentication Options
+
+Credentials are **never stored on disk**. They are held in memory only for the duration of the session.
+
+**Option 1: Interactive Prompt** (default)
+
+- Run the engine with no arguments. It will display:
+  ```
+  === Engine Authentication ===
+  Cloud Username: 
+  Cloud Password: 
+  Instance API Key: 
+  ```
+- Enter your credentials. They are validated against Chronos Cloud and then used to establish the secure session.
+
+**Option 2: Command‑line `--auth` flag** (for automation)
+
+- Use the following syntax:
+  ```bash
+  Chronos.Engine.exe --auth=username,password,apikey
+  ```
+- The three values must be comma‑separated, with no spaces.
+- **Security warning:** The command line is visible to other processes and may be stored in shell history. Use this only in secure, controlled environments. For production services, ensure that the command line is not logged.
+
+**Option 3: Environment variable** (recommended for services)
+
+- Set the environment variable `CHRONOS_AUTH_TOKEN` to a base64‑encoded string of `username:password:apikey`.
+- The engine reads this variable on startup if the `--auth` flag is not provided.
+
+### 4.4 Running as a Service
 
 The engine can be installed as a background service on both Windows and Linux.
 
@@ -157,38 +188,16 @@ The engine can be installed as a background service on both Windows and Linux.
    sudo systemctl start chronos
    ```
 
-> **Note:** Replace `username,password,apikey` with the actual credentials required for the engine’s authentication. The `--service` flag tells the engine to run as a daemon/service.
+> **Note:** Replace `username,password,apikey` with the actual credentials. The `--service` flag tells the engine to run as a daemon/service.
 
 ---
 
-## 5. Bootstrap Configuration
-
-The bootstrap file `chronos.bootstrap.json` contains the minimal settings the engine needs to connect to Chronos Cloud.
-
-### 5.1 File Format
-
-```json
-{
-    "CloudEndpoint": "wss://cloud.chronos.io/engine",
-    "InstanceApiKey": "ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "EncryptionSeed": "a 32-byte base64-encoded seed for AES key derivation",
-    "LogVerbosity": "Information"
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `CloudEndpoint` | Yes | WebSocket URL of Chronos Cloud. |
-| `InstanceApiKey` | Yes | API key from Chronos Cloud (Engine registration page). |
-| `EncryptionSeed` | Yes | A secret string used to derive session encryption keys. Keep it secret and identical across engine restarts. |
-| `LogVerbosity` | No | `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`. Default: `Information`. |
-
-### 5.2 Obtaining the API Key
+## 5. Obtaining an Instance API Key
 
 1. In Chronos Cloud, go to **Engines** → **Register New Engine**.
 2. Give the engine a friendly name.
 3. Copy the generated API key.
-4. Paste it into the `InstanceApiKey` field.
+4. Use this key as the third component of the `--auth` flag or enter it when prompted.
 
 Never share this key. If compromised, revoke it in the Cloud dashboard and generate a new one.
 
@@ -200,7 +209,7 @@ Never share this key. If compromised, revoke it in the Cloud dashboard and gener
 
 The engine must be able to establish outbound WebSocket connections to:
 
-- **Chronos Cloud** – the endpoint in your bootstrap file (default `wss://cloud.chronos.io`).
+- **Chronos Cloud** – the hardcoded endpoint `wss://cloud.chronos.io/engine` (with a fallback to `wss://cloud.chronos-fallback.io/engine`).
 - **Your broker's API** – whatever host/port your adapter requires.
 
 The engine does **not** listen on any inbound port; it initiates all connections.
@@ -264,7 +273,7 @@ Extensions are placed in subdirectories alongside the engine executable:
 | `Plugins/` | Hook‑based extensions | `IHookManifest` |
 | `NeuralNetworks/` | Neural network models | `INeuralNetworkModel` |
 
-A single DLL can be placed in any directory—the engine scans all of them. However, for organizational clarity, each extension type has its own directory.
+A single DLL can be placed in any directory—the engine scans all of them. However, for organisational clarity, each extension type has its own directory.
 
 ### 8.2 Single‑File vs Multi‑File Extensions
 
@@ -314,22 +323,21 @@ Chronos Cloud notifies you when a new engine version is available. To update:
 2. The engine downloads the new binary, verifies its cryptographic signature, and schedules a restart.
 3. If the engine is live, it will close all positions (per your settings) before restarting.
 
-Manual update: download the new archive and replace the files, preserving your `chronos.bootstrap.json` and extension directories.
+Manual update: download the new archive and replace the files, preserving your extension directories.
 
 ---
 
 ## 10. Security Considerations
 
-### 10.1 Protect the Bootstrap File
+### 10.1 Protect Your Credentials
 
-The bootstrap file contains your API key and encryption seed. Restrict file permissions:
-
-- **Windows:** `icacls chronos.bootstrap.json /inheritance:r /grant:r "SYSTEM:(R)" /grant:r "Administrators:(R)"`
-- **Linux:** `chmod 600 /opt/chronos/chronos.bootstrap.json`
+- Never share your Instance API Key.
+- Use the interactive prompt or environment variable for authentication in production; avoid `--auth` where command‑line visibility is a concern.
+- Credentials are held only in memory and are never persisted to disk.
 
 ### 10.2 Secrets Management
 
-Broker API keys are stored in Chronos Cloud, not in the bootstrap file. The engine fetches them securely over the encrypted channel. A local encrypted secrets file may be used as a cache but is not the primary store.
+Broker API keys and other secrets are stored in Chronos Cloud, not on the engine. The engine fetches them securely over the encrypted channel. A local encrypted secrets file may be used as a cache but is not the primary store.
 
 ---
 
@@ -339,8 +347,8 @@ Broker API keys are stored in Chronos Cloud, not in the bootstrap file. The engi
 
 Logs are written to the `logs/` directory with daily rotation:
 ```
-logs/chronos-20260614.log
-logs/chronos-20260613.log
+logs/chronos-20260707.log
+logs/chronos-20260706.log
 ...
 ```
 
@@ -348,17 +356,17 @@ logs/chronos-20260613.log
 
 | Problem | Likely Cause | Solution |
 |---------|-------------|----------|
-| Engine exits immediately | Invalid bootstrap JSON | Validate JSON syntax. |
+| Engine exits immediately | Invalid `--auth` format or missing credentials | Verify the format or run interactively. |
 | Engine cannot connect to Cloud | Firewall blocking outbound | Allow outbound TCP 443. |
-| Engine shows "Invalid API key" | Key revoked or mistyped | Regenerate key in Cloud, update bootstrap. |
-| Extensions not loaded | Missing `ChronosSdkVersion` attribute or mismatched version | Check assembly attributes. |
+| Engine shows "Invalid API key" | Key revoked or mistyped | Regenerate key in Cloud, update credentials. |
+| Extensions not loaded | Missing `SdkVersion` attribute or mismatched version | Check assembly attributes. |
 | Extension rejected – SDK major version mismatch | Extension compiled against a different SDK major | Recompile extension against the matching SDK. |
 | MT5 adapter fails on Linux | MT5 is Windows‑only | Deploy engine on Windows. |
 | High CPU on backtest | Normal (heavy workload) | Tune `MaxParallelThreads` in execution spec. |
 
 ### 11.3 Getting Support
 
-Send the relevant log excerpts to Chronos support through the Cloud dashboard. Do not share your bootstrap file or API key.
+Send the relevant log excerpts to Chronos support through the Cloud dashboard. Do not share your credentials.
 
 ---
 

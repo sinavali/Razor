@@ -1,9 +1,9 @@
-## Chronos Extension Developer Guide
+# Chronos Extension Developer Guide
 
-**Version:** 1.0.0 LTS
-**Audience:** Extension developers (adapters, strategies, indicators, hook plugins, NN models)
-**Status:** Authoritative
-**Last Updated:** 2026-06-15
+**Version:** 1.0.0 LTS  
+**Audience:** Extension developers (adapters, strategies, indicators, hook plugins, NN models)  
+**Status:** Authoritative  
+**Last Updated:** 2026-07-07  
 
 ---
 
@@ -55,7 +55,7 @@ Chronos extensions are organized into three concepts:
 
 The SDK is the `Chronos.Core.Abstractions` NuGet package. It contains **only** contracts (interfaces, abstract classes, records, enums, and utilities) – no runtime logic, no GA engine, no broker implementations. You can freely redistribute the package.
 
-The SDK includes helper types like `ChronosRandom` (portable RNG), `TickWindow`, `BinaryDataMapper`, etc. These are helpers for your extension code; you are free to use them or implement your own. However, any randomness that affects trading decisions must derive from the master seed (see §8.4).
+The SDK includes helper types like `CustomizedRandom` (portable RNG), `TickWindow`, `BinaryDataMapper`, etc. These are helpers for your extension code; you are free to use them or implement your own. However, any randomness that affects trading decisions must derive from the master seed (see §8.4).
 
 ---
 
@@ -87,12 +87,12 @@ Create a .NET class library targeting `net10.0`. Example `.csproj`:
 
 ### 3.2 Assembly Attributes
 
-Every extension assembly must declare the **target SDK version** using `ChronosSdkVersionAttribute`. Example `AssemblyInfo.cs`:
+Every extension assembly must declare the **target SDK version** using `SdkVersionAttribute`. Example `AssemblyInfo.cs`:
 
 ```csharp
 using Chronos.Core.Abstractions;
 
-[assembly: ChronosSdkVersion("1.0.0")]
+[assembly: SdkVersion("1.0.0")]
 ```
 
 The engine validates this version at load time. A major version mismatch will prevent loading (see §10).
@@ -476,7 +476,74 @@ return FilterResult.Reject<T>("Reason for rejection");
 
 An **action hook** observes events without modifying data. Use `IActionRegistration<T>.Register(Action<T, IHookContext> callback, int priority)` for typed events, or `IActionRegistration.Register(Action<IHookContext> callback, int priority)` for parameterless events.
 
-> **⚠ Critical:** Action hook callbacks **must be synchronous**. Do **not** use `async void` — exceptions thrown inside an `async void` delegate cannot be caught by the engine and will crash the process. If you need to perform asynchronous work (e.g., HTTP calls to an external API), queue the work externally with its own exception handling. For example, use `Task.Run(() => ...).ContinueWith(t => { /* log t.Exception */ }, TaskContinuationOptions.OnlyOnFaulted)` or a dedicated background channel. See §6.9 for a safe notification example.
+> **⚠ Critical:** Action hook callbacks **must be synchronous**. Do **not** use `async void` — exceptions thrown inside an `async void` delegate cannot be caught by the engine and will crash the process. If you need to perform asynchronous work (e.g., HTTP calls to an external API), queue the work externally with its own exception handling. See the dedicated subsection below for safe patterns.
+
+---
+
+### Safe Fire‑and‑Forget Async Patterns
+
+Because action hook callbacks **must be synchronous**, you cannot use `async`/`await` directly. However, you may need to perform asynchronous operations (e.g., sending an HTTP request to a webhook, writing to a remote database, or sending an email) without blocking the engine's tick processing pipeline.
+
+The safe pattern is to **fire‑and‑forget** using `Task.Run` with explicit exception handling. **Never** use `async void` – unhandled exceptions in `async void` methods will crash the engine process.
+
+**Correct pattern (copy‑paste ready):**
+
+```csharp
+public class TelegramNotifier : IHookManifest
+{
+    public void RegisterHooks(IHookRegistry registry)
+    {
+        registry.Backtest.OnCompleted.Register(ctx =>
+        {
+            // Fire and forget – do NOT use async void directly.
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await SendTelegramNotificationAsync("Backtest completed.");
+                }
+                catch (Exception ex)
+                {
+                    // Log the error; the engine will not catch it for you.
+                    // Use your preferred logging mechanism.
+                    Console.Error.WriteLine($"[TelegramNotifier] Failed: {ex.Message}");
+                }
+            });
+        });
+    }
+
+    private async Task SendTelegramNotificationAsync(string message)
+    {
+        // Your HTTP call here...
+        await Task.CompletedTask;
+    }
+}
+```
+
+**Why this works:**
+
+- `Task.Run` schedules the async delegate on the thread pool, freeing the hook callback to return immediately.
+- The `try/catch` inside the delegate ensures that any exception is logged and does not propagate to the CLR.
+- The engine's tick processing is not blocked, preserving determinism and performance.
+
+**Alternative pattern (using `ContinueWith`):**
+
+```csharp
+Task.Run(() => SendTelegramNotificationAsync("Backtest completed."))
+    .ContinueWith(t =>
+    {
+        if (t.IsFaulted && t.Exception != null)
+        {
+            Console.Error.WriteLine($"[TelegramNotifier] Failed: {t.Exception.Message}");
+        }
+    }, TaskContinuationOptions.OnlyOnFaulted);
+```
+
+Both patterns are acceptable. The first is more readable and recommended.
+
+**Important:** Always ensure that your background tasks do not hold references to engine objects that might be disposed (e.g., `IBroker`, `TickWindow`). If you need to capture such objects, do so only during the hook callback and do not keep them alive beyond the callback's scope.
+
+---
 
 ### 6.5 Priorities
 
@@ -583,7 +650,7 @@ public class DrawdownGuard : IHookManifest
 
 ### 6.9 Example: Custom Notifications via Hooks
 
-Because action hooks are synchronous, fire‑and‑forget asynchronous work safely using a background task with explicit exception handling:
+The safe fire‑and‑forget pattern is demonstrated in §6.4. Here is a complete example:
 
 ```csharp
 public class TelegramNotifier : IHookManifest
@@ -592,7 +659,6 @@ public class TelegramNotifier : IHookManifest
     {
         registry.Backtest.OnCompleted.Register(ctx =>
         {
-            // Fire and forget — do NOT use async void directly.
             Task.Run(async () =>
             {
                 try
@@ -601,7 +667,6 @@ public class TelegramNotifier : IHookManifest
                 }
                 catch (Exception ex)
                 {
-                    // Log the error; the engine will not catch it for you.
                     Console.Error.WriteLine($"[TelegramNotifier] Failed: {ex.Message}");
                 }
             });
@@ -615,8 +680,6 @@ public class TelegramNotifier : IHookManifest
     }
 }
 ```
-
-> **Why not `async void`?** An `async void` delegate compiles to a fire‑and‑forget operation where unhandled exceptions propagate directly to the CLR, crashing the process. The pattern above captures exceptions and logs them safely.
 
 ### 6.10 Example: Custom Metrics via Hooks
 
@@ -706,7 +769,7 @@ For reinforcement learning, implement `INeuralNetworkModel` and use `Reset()` to
 ### 8.3 Determinism for Strategies and Hooks
 
 - Do not use `System.Random` unless it's seeded deterministically and only for non‑trading purposes (e.g., logging).
-- Use `ChronosRandom` if you need a PRNG; seed it from the master seed passed through configuration or genes. **Use only non‑negative seeds** with the `int` constructor — negative seeds are rejected to prevent unpredictable sequences.
+- Use `CustomizedRandom` if you need a PRNG; seed it from the master seed passed through configuration or genes. **Use only non‑negative seeds** with the `int` constructor — negative seeds are rejected to prevent unpredictable sequences.
 - Do not access `DateTime.UtcNow` or system clocks in trading logic.
 - Hook callbacks execute deterministically by priority and name ordering. Do not rely on non‑deterministic behavior.
 
@@ -748,7 +811,7 @@ During development, place your DLL in the appropriate directory of a locally run
 
 ### 10.1 Declaring Compatibility
 
-Your extension assembly must include `[assembly: ChronosSdkVersion("1.0.0")]`. The engine's version manager checks this attribute.
+Your extension assembly must include `[assembly: SdkVersion("1.0.0")]`. The engine's version manager checks this attribute.
 
 - Extensions targeting an older major version may be loaded if backward‑compatible.
 - Extensions targeting a newer major version are rejected unless an explicit compatibility mode is configured.
@@ -772,7 +835,3 @@ Chronos follows SemVer. Minor releases add new hook points or interface members 
 - **Sample Extensions**: See the `Chronos.Samples` repository for complete working examples.
 - **Chronos Principles**: For a high‑level understanding of the engine's design rules.
 - **Configuration Reference**: For all configuration objects and validation rules.
-
----
-
-*Ready for the next document.*

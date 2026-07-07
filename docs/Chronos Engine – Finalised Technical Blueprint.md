@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0 LTS  
 **Status:** Authoritative – Single Source of Truth  
-**Last Updated:** 2026-06-20  
+**Last Updated:** 2026-07-07  
 
 ---
 
@@ -125,7 +125,7 @@ All messages are JSON (except binary chunks). Envelope structure:
   - `AdminMessage` – optional broadcast message (with style hints)
   - **Self‑Update Metadata** – if a new Engine version is available, the response contains `NewVersion`, `DownloadUrl`, and `Checksum`.
 - Engine updates its internal clock with `ServerTime` and adjusts drift.
-- If `AuthValid` is false, Engine stops all user tasks (Live, Backtest, Optimisation) – but **mining continues**. It prevents new user tasks until re‑authentication.
+- If `AuthValid` is false, Engine stops all user tasks (Live, Backtest, Optimisation) and prevents new user tasks until re‑authentication.
 
 ### 3.5 Command Execution
 
@@ -179,7 +179,6 @@ Commands are grouped by category, each with a range of IDs.
 | Reports (Client‑Side Aggregation) | 1500‑1599 | *Reserved for Cloud* – Engine never generates reports |
 | Logs & Telemetry | 1600‑1699 | GetLogs, DeleteLogsAll, DeleteLogsExpired, SetLogLevel, GetMetrics, ExportMetrics |
 | Schedules & Cron | 1700‑1799 | SetCronJob, DeleteCronJob, ListCronJobs, SetSchedule, DeleteSchedule, ListSchedules |
-| Mining | 1800‑1899 | StartMining, StopMining, GetMiningStatus, UpdateMiningConfig |
 | Admin & Broadcast | 1900‑1999 | BroadcastMessage, SetAdminConfig, GetEngineCapabilities, GetEngineVersion |
 | Kill & Emergency | 2000‑2099 | KillSwitch, EmergencyStop |
 | Behaviour Logging | 2100‑2199 | EnableBehaviorLogging, DisableBehaviorLogging, GetBehaviorLogs, DeleteBehaviorLogs |
@@ -249,12 +248,6 @@ Commands are grouped by category, each with a range of IDs.
 - `SetSchedule` (1703) – define a one‑off schedule (datetime + command).
 - `DeleteSchedule` (1704) – delete a schedule.
 - `ListSchedules` (1705) – list all schedules.
-
-#### Mining (1800‑1899)
-- `StartMining` (1800) – start mining (with config fetched from Cloud).
-- `StopMining` (1801) – stop mining.
-- `GetMiningStatus` (1802) – get mining status (admin only).
-- `UpdateMiningConfig` (1803) – update mining config (pushed from Cloud).
 
 #### Admin & Broadcast (1900‑1999)
 - `BroadcastMessage` (1900) – display admin message on console.
@@ -354,7 +347,6 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 | LiveTask | High | **1 dedicated core** | 1 GB | Reserved at startup; never pre‑empted |
 | BacktestTask | Medium | Shared (remaining) | Up to 2 GB per task | Configurable by Cloud |
 | OptimizationTask | Medium | Shared (remaining) | Up to 2 GB per task | Configurable |
-| MiningTask | Low | Idle CPU only | 256 MB | Auto‑pauses if other tasks need CPU |
 | ReportTask | Low | Shared | 256 MB | (Engine only streams raw data) |
 | LogsTask | Low | Shared | 128 MB | |
 
@@ -417,7 +409,6 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 - While offline:
   - All user commands (Live, Backtest, Optimisation) continue running using the last known configuration.
   - Outgoing data (results, logs, heartbeats) is queued in memory (with a bounded queue; if queue fills, older items are dropped with a warning).
-  - Mining continues (if configured).
   - The Engine does not accept new commands (they are queued by Cloud and delivered when the connection re‑establishes).
 
 ### 8.3 User Notification
@@ -529,35 +520,9 @@ Record **only** the necessary data for RL training: the strategy’s state at de
 
 ---
 
-## 12. Mining Integration (Real BTC Mining, Cloud‑Controlled)
+## 12. Self‑Update (Via Heartbeat)
 
-### 12.1 Purpose
-
-Utilise idle CPU resources for Bitcoin mining. This feature is a side monetisation channel; it must be stable for 10+ years with minimal maintenance.
-
-### 12.2 Implementation
-
-- **Library:** The Engine uses a well‑established, open‑source .NET Stratum client library (e.g., `StratumClient` or `NBXplorer` style) to communicate with mining pools.
-- **Protocol:** Stratum (JSON‑RPC over TCP) for BTC mining.
-- **Configuration:** All mining parameters are **fetched from Cloud**, never hardcoded:
-  - The Engine periodically calls a public Cloud endpoint: `GET /api/mining/config` (or receives it via heartbeat).
-  - Response contains: `PoolUrl`, `WalletAddress`, `Password`, `ThreadCount`, `SimulateOnly` (for testing).
-  - The `InstanceApiKey` (or session token) is used to authenticate this request.
-- **Control:** Cloud can start/stop mining via commands. The Engine also respects a `NoMining` claim/permission. If the claim is present (or absent depending on the tier), the Engine will reject `StartMining` commands.
-- **Status:** Admin‑only via `GetMiningStatus`.
-- **Resource Management:** Mining runs at `ThreadPriority.Lowest` and automatically yields CPU to live tasks, backtests, and optimisations.
-
-### 12.3 Security
-
-- Mining config encrypted in transit.
-- Wallet address and pool URL are never stored locally.
-- Mining logs excluded from user‑accessible logs.
-
----
-
-## 13. Self‑Update (Via Heartbeat)
-
-### 13.1 Process
+### 12.1 Process
 
 1. Cloud includes `NewVersion`, `DownloadUrl`, and `Checksum` in the `HeartbeatResponse`.
 2. Engine detects that a new version is available.
@@ -569,72 +534,72 @@ Utilise idle CPU resources for Bitcoin mining. This feature is a side monetisati
 8. Engine launches the new binary with `--auth=... --command=restart` and exits.
 9. The new binary, upon seeing `--command=restart`, finalises the replacement (moves the staged binary into the main executable path) and resumes normal operation.
 
-### 13.2 Rollback
+### 12.2 Rollback
 
 - Old executable kept as backup in `backup/`.
 - If new version fails to start 3 times, automatic rollback attempted (the launcher script or the new binary triggers the rollback).
 
 ---
 
-## 14. State Persistence (Cloud as Source of Truth)
+## 13. State Persistence (Cloud as Source of Truth)
 
-### 14.1 In‑Memory Only
+### 13.1 In‑Memory Only
 
 - The Engine holds **no persistent database**. No SQLite, no local JSON configs.
 - All state (live positions, orders, balance, optimisation populations, schedules) is synchronised with Cloud via events.
 - On restart, the Engine is a blank slate and waits for Cloud to send the initial state (via commands).
 
-### 14.2 Cloud Synchronisation
+### 13.2 Cloud Synchronisation
 
 - Engine sends `StateUpdate` events for significant changes.
 - Cloud may request full state via `GetState`.
 - Engine can pull state from Cloud if inconsistency detected (rare).
 
-### 14.3 Behaviour Logs Exception
+### 13.3 Behaviour Logs Exception
 
 - Behaviour logs are the **only** data stored locally beyond logs.
 - They are temporary and are deleted after successful upload to Cloud.
 
 ---
 
-## 15. Error Handling & Recovery
+## 14. Error Handling & Recovery
 
-### 15.1 Global Exception Handler
+### 14.1 Global Exception Handler
 
 - Catch unhandled exceptions, log, attempt graceful shutdown.
 - Send final status to Cloud before exit.
 
-### 15.2 Task‑Level Error Handling
+### 14.2 Task‑Level Error Handling
 
 - Each task has try‑catch; on fault, task marked `Faulted`; Engine notifies Cloud.
 - Live task: if faulted, Engine attempts restart (if configured) or stops.
 
-### 15.3 Adapter Failures
+### 14.3 Adapter Failures
 
 - Log, try reconnect.
 - If unreachable, Live task stopped.
 
-### 15.4 Kill‑Switch
+### 14.4 Kill‑Switch
 
 - `KillSwitch` command: closes all positions, stops all tasks, sends final status, exits.
 
 ---
 
-## 16. Platform‑Specific Details
+## 15. Platform‑Specific Details
 
-### 16.1 Windows
+### 15.1 Windows
 
 - DPAPI for memory encryption.
 - Can run as Windows Service (`-service` flag).
 - Signal handling: `Console.CancelKeyPress`, `SessionEnding`.
 
-### 16.2 Linux (Ubuntu)
+### 15.2 Linux (Ubuntu)
 
 - `keyctl` for encryption (or file‑based with proper permissions).
 - Systemd unit file.
 - Signal handling: SIGTERM, SIGINT, SIGHUP.
 
-### 16.3 General
+### 15.3 General
 
 - All times UTC.
 - Paths relative to Engine executable.
@@ -642,21 +607,21 @@ Utilise idle CPU resources for Bitcoin mining. This feature is a side monetisati
 
 ---
 
-## 17. Testing Strategy (Post‑Finalisation)
+## 16. Testing Strategy (Post‑Finalisation)
 
-### 17.1 Unit Tests
+### 16.1 Unit Tests
 
 - Test each component in isolation: command dispatcher, task manager, extension manager, state manager, cloud connector, schedule manager.
 
-### 17.2 Integration Tests
+### 16.2 Integration Tests
 
 - Test Engine as a whole: startup, authentication, full command flow, multi‑task concurrency, offline retry, extension reload.
 
-### 17.3 Cross‑Project Integration Tests
+### 16.3 Cross‑Project Integration Tests
 
 - Engine + Kernel: run backtest via Engine, verify results; live trading with mock adapter.
 
-### 17.4 Performance/Load Tests
+### 16.4 Performance/Load Tests
 
 - Simulate heavy optimisation while live trading; measure CPU/memory, task switching overhead.
 
@@ -664,11 +629,11 @@ Utilise idle CPU resources for Bitcoin mining. This feature is a side monetisati
 
 ---
 
-## 18. ID System for Features & Capabilities
+## 17. ID System for Features & Capabilities
 
 To ensure extensibility and version compatibility, every feature, command, and capability is assigned a unique numeric ID.
 
-### 18.1 Feature ID Registry
+### 17.1 Feature ID Registry
 
 | Feature | ID | Description |
 |---------|----|-------------|
@@ -679,13 +644,12 @@ To ensure extensibility and version compatibility, every feature, command, and c
 | Hooks | 104 | Hook system support |
 | Cronjobs | 105 | Scheduled jobs |
 | Schedules | 106 | One‑off scheduled commands |
-| Mining | 107 | Background mining |
 | Self‑Update | 108 | Automatic binary update |
 | Log Streaming | 109 | On‑demand log transfer |
 | Telemetry Export | 110 | Metrics export |
 | Behavior Logging | 111 | Sparse behaviour recording |
 
-### 18.2 Capability Negotiation
+### 17.2 Capability Negotiation
 
 - Engine sends its `Capabilities` (list of supported feature IDs and versions) during handshake.
 - Cloud validates and may reject the Engine if it lacks required features.
@@ -693,14 +657,14 @@ To ensure extensibility and version compatibility, every feature, command, and c
 
 ---
 
-## 19. Admin Broadcast Messages
+## 18. Admin Broadcast Messages
 
 - Cloud sends `BroadcastMessage` with `Text`, `Style` (info, warning, error, success), `Persistent` (boolean).
 - Engine displays on console with appropriate colour styling (ANSI or Windows console colours).
 
 ---
 
-## 20. Performance Considerations (Summary)
+## 19. Performance Considerations (Summary)
 
 | Area | Strategy |
 |------|----------|
@@ -714,7 +678,7 @@ To ensure extensibility and version compatibility, every feature, command, and c
 
 ---
 
-## 21. Implementation Roadmap (No Phases – Integrated Whole)
+## 20. Implementation Roadmap (No Phases – Integrated Whole)
 
 The Engine is built as a single, cohesive project. All components are developed in parallel, with continuous integration and testing. The blueprint serves as the source of truth for every feature.
 
@@ -724,14 +688,14 @@ The Engine is built as a single, cohesive project. All components are developed 
 - Task manager and concurrency (live‑first resource reservation).
 - Live, backtest, and optimisation tasks (fully integrated with Kernel).
 - Schedules, cronjobs.
-- BehaviorRecorder and mining (real Stratum implementation).
+- BehaviorRecorder.
 - Self‑update, logging, telemetry.
 - Full security and anti‑tampering.
 - Comprehensive testing (post‑finalisation).
 
 ---
 
-## 22. Conclusion
+## 21. Conclusion
 
 This blueprint defines the complete, performance‑conscious, **finalised** architecture of the Chronos Engine. It incorporates all required features while maintaining security, determinism, live‑first principles, and **infinite resiliency**.
 
