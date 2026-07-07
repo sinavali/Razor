@@ -73,6 +73,29 @@ public sealed class FilterRegistration<T> : IFilterRegistration<T>
         }
     }
 
+    /// <summary>
+    /// Removes all entries registered with the specified plugin name.
+    /// </summary>
+    /// <param name="pluginName">The plugin name to remove.</param>
+    public void RemoveAll(string pluginName)
+    {
+        lock (_lock)
+        {
+            _entries.RemoveAll(e => string.Equals(e.PluginName, pluginName, StringComparison.Ordinal));
+        }
+    }
+
+    /// <summary>
+    /// Removes all entries.
+    /// </summary>
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _entries.Clear();
+        }
+    }
+
     private void SortEntries()
     {
         _entries.Sort((a, b) =>

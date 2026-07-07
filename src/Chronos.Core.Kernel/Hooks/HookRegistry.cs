@@ -30,4 +30,15 @@ public sealed class HookRegistry : IHookRegistry
         Optimization = new OptimizationHooks();
         Report = new ReportHooks();
     }
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points across all pipelines.
+    /// </summary>
+    public void ClearAll()
+    {
+        ((BacktestHooks)Backtest).ClearAll();
+        ((LiveHooks)Live).ClearAll();
+        ((OptimizationHooks)Optimization).ClearAll();
+        ((ReportHooks)Report).ClearAll();
+    }
 }

@@ -95,6 +95,9 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
     /// <inheritdoc/>
     public async Task ReloadExtensionsAsync(CancellationToken cancellationToken)
     {
+        // IMP-03: Clear all existing hook registrations before reloading.
+        _hookRegistry.ClearAll();
+
         _catalog?.Dispose();
         _catalog = null;
         _activeExtensionNames.Clear();
@@ -304,12 +307,6 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
         }
 
         var strategy = _catalog.CreateStrategy(strategyName);
-
-        // If the active strategy had a neural network, we need to propagate it? 
-        // But for transient evaluation, we may not need it because we can set it from the caller.
-        // The caller can set NeuralNetwork property if needed.
-        // We'll leave it unset, and the caller can set it.
-
         return strategy;
     }
 

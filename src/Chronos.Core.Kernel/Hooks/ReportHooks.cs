@@ -14,4 +14,13 @@ public sealed class ReportHooks : IReportHooks
     /// <inheritdoc/>
     public IActionRegistration<(byte[] Data, string Format)> OnAfterGenerate { get; }
         = new ActionRegistration<(byte[], string)>();
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points.
+    /// </summary>
+    public void ClearAll()
+    {
+        ((FilterRegistration<ReportRequest>)OnBeforeGenerate).Clear();
+        ((ActionRegistration<(byte[], string)>)OnAfterGenerate).Clear();
+    }
 }

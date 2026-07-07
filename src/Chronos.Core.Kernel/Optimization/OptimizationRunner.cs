@@ -5,7 +5,6 @@ using Chronos.Core.Kernel.Configuration;
 using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Messaging;
-using Chronos.Core.Kernel.Reporting;
 using Chronos.Core.Kernel.Telemetry;
 
 namespace Chronos.Core.Kernel.Optimization;
@@ -181,12 +180,7 @@ public sealed class OptimizationRunner
             EventId = $"opt-cycle-{Guid.NewGuid():N}"
         });
 
-        // Generate report if hooks are available
-        if (_hookRegistry is not null)
-        {
-            var reportGen = new ReportGenerator(_hookRegistry.Report, systemClock);
-            reportGen.GenerateOptimizationReport(best, _spec);
-        }
+        // IMP-02: Removed ReportGenerator usage – report rendering is handled by Cloud.
 
         return best;
     }

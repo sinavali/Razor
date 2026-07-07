@@ -6,7 +6,6 @@ using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Indicators;
 using Chronos.Core.Kernel.Metrics;
-using Chronos.Core.Kernel.Reporting;
 using Chronos.Core.Kernel.Telemetry;
 using System.Diagnostics;
 
@@ -262,13 +261,7 @@ public sealed class BacktestRunner : IBacktestRunner
                     EventId = $"bt-{Interlocked.Increment(ref _eventCounter)}"
                 });
 
-                // Generate report if hooks are available
-                if (input.HookRegistry is not null)
-                {
-                    var sysClock = new SystemClock();
-                    var reportGen = new ReportGenerator(input.HookRegistry.Report, sysClock);
-                    reportGen.GenerateBacktestReport(result, input.StrategySpecification, input.ExecutionSpecification);
-                }
+                // IMP-02: Removed ReportGenerator usage – report rendering is handled by Cloud.
 
                 // backtest.completed hook – pass ct
                 hooks?.OnCompleted.InvokeActionChain(

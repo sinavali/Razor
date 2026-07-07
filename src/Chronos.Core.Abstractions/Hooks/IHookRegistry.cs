@@ -17,4 +17,10 @@ public interface IHookRegistry
 
     /// <summary>Hooks for the report generation pipeline.</summary>
     IReportHooks Report { get; }
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points across all pipelines.
+    /// Called during extension reload to prevent accumulation of old callbacks.
+    /// </summary>
+    void ClearAll();
 }

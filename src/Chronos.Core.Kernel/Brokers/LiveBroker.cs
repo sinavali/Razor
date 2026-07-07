@@ -123,7 +123,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
     /// <param name="orderGuardTimeoutSeconds">In‑flight order guard timeout in seconds.</param>
     /// <param name="stopOutLevel">Stop‑out margin ratio.</param>
     /// <param name="syncIntervalTicks">Periodic sync interval in ticks.</param>
-    /// <param name="logger">Logger instance (must not be null).</param>
+    /// <param name="logger">Logger instance.</param>
     /// <param name="currencyConverter">Optional currency converter for cross‑currency PnL.</param>
     /// <param name="accountCurrency">Base account currency.</param>
     public LiveBroker(
@@ -138,7 +138,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         int orderGuardTimeoutSeconds = 5,
         double stopOutLevel = 0.50,
         long syncIntervalTicks = TimeSpan.TicksPerMinute,
-        ILogger<LiveBroker>? logger = null,
+        ILogger<LiveBroker>? logger = null,  // Now optional
         ICurrencyConverter? currencyConverter = null,
         string? accountCurrency = null)
     {
@@ -153,7 +153,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         _orderGuardTimeoutSeconds = orderGuardTimeoutSeconds;
         _syncIntervalTicks = syncIntervalTicks;
         _hooks = hooks;
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<LiveBroker>.Instance; // IMP-06
         _currencyConverter = currencyConverter;
         _accountCurrency = accountCurrency;
 

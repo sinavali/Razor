@@ -56,4 +56,27 @@ public sealed class LiveHooks : ILiveHooks
 
     /// <inheritdoc/>
     public IActionRegistration<EquitySnapshot> OnEquityChanged { get; } = new ActionRegistration<EquitySnapshot>();
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points.
+    /// </summary>
+    public void ClearAll()
+    {
+        ((ActionRegistration)OnStart).Clear();
+        ((FilterRegistration<Tick>)OnTickReceived).Clear();
+        ((ActionRegistration<Tick>)OnTickProcessed).Clear();
+        ((FilterRegistration<AdapterOrderRequest>)OnOrderValidation).Clear();
+        ((FilterRegistration<AdapterOrderRequest>)OnOrderBeforeSend).Clear();
+        ((ActionRegistration<ExecutionReport>)OnOrderExecuted).Clear();
+        ((ActionRegistration<(AdapterOrderRequest, string)>)OnOrderRejected).Clear();
+        ((ActionRegistration<Position>)OnPositionOpened).Clear();
+        ((ActionRegistration<Position>)OnPositionClosed).Clear();
+        ((ActionRegistration<Position>)OnPositionStopout).Clear();
+        ((ActionRegistration)OnSyncBefore).Clear();
+        ((ActionRegistration)OnSyncAfter).Clear();
+        ((ActionRegistration<int>)OnReconnectAttempt).Clear();
+        ((ActionRegistration<int>)OnReconnectSuccess).Clear();
+        ((ActionRegistration)OnStop).Clear();
+        ((ActionRegistration<EquitySnapshot>)OnEquityChanged).Clear();
+    }
 }
