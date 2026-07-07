@@ -76,6 +76,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         return liveTask?.LastTickTime;
     }
 
+    /// <inheritdoc/>
     public async Task<string?> RestoreLiveTaskAsync(LiveState state, CancellationToken cancellationToken)
     {
         if (state == null)
@@ -254,6 +255,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
+                task.Dispose(); // THR‑05: Dispose CTS.
 
                 // Wait for the live thread to finish
                 if (_liveThreads.TryRemove(taskId, out var thread))
@@ -327,6 +329,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
+                task.Dispose(); // THR‑05: Dispose CTS.
                 // No explicit kernel cancel for backtest (stub)
             }
         }
@@ -508,6 +511,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
+                task.Dispose(); // THR‑05: Dispose CTS.
                 // No explicit kernel cancel for optimisation (stub)
             }
         }
@@ -592,6 +596,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await task.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 task.State = TaskState.Canceled;
+                task.Dispose(); // THR‑05: Dispose CTS.
                 // Cancel kernel sessions
                 if (task is LiveTask lt)
                 {
@@ -627,6 +632,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await kv.Value.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 kv.Value.State = TaskState.Canceled;
+                kv.Value.Dispose(); // THR‑05: Dispose CTS.
                 if (kv.Value is LiveTask lt)
                 {
                     await _kernelService.StopLiveAsync(lt.KernelTaskId, cancellationToken).ConfigureAwait(false);
@@ -659,6 +665,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 await kv.Value.CancellationTokenSource.CancelAsync().ConfigureAwait(false);
                 kv.Value.State = TaskState.Canceled;
+                kv.Value.Dispose(); // THR‑05: Dispose CTS.
                 if (kv.Value is LiveTask lt)
                 {
                     await _kernelService.StopLiveAsync(lt.KernelTaskId, cancellationToken).ConfigureAwait(false);
@@ -762,7 +769,10 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             _ = Task.Run(async () =>
             {
                 await Task.Delay(TimeSpan.FromMinutes(5), CancellationToken.None).ConfigureAwait(false);
-                _tasks.TryRemove(task.TaskId, out _);
+                if (_tasks.TryRemove(task.TaskId, out var removedTask))
+                {
+                    removedTask.Dispose(); // Ensure cleanup of CTS even if removed later.
+                }
                 _liveThreads.TryRemove(task.TaskId, out _);
             }, CancellationToken.None);
         }
@@ -780,6 +790,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
         foreach (var task in _tasks.Values)
         {
             task.CancellationTokenSource.Cancel();
+            task.Dispose();
         }
 
         foreach (var kv in _liveThreads)

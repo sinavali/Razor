@@ -34,7 +34,7 @@ internal sealed class KernelService : IKernelService, IDisposable
     private readonly IMessageBus _messageBus;
     private readonly ICoreMetrics _metrics;
     private readonly ILogger<KernelService> _logger;
-    private readonly ILoggerFactory _loggerFactory;  // added
+    private readonly ILoggerFactory _loggerFactory;
     private readonly ConcurrentDictionary<string, TaskState> _activeTasks = new();
     private readonly SemaphoreSlim _taskLock = new(1, 1);
     private bool _disposed;
@@ -370,7 +370,7 @@ internal sealed class KernelService : IKernelService, IDisposable
                 converter = hasConverter.CurrencyConverter;
             }
 
-            var liveBrokerLogger = _loggerFactory.CreateLogger<LiveBroker>();  // create the correct logger
+            var liveBrokerLogger = _loggerFactory.CreateLogger<LiveBroker>();
 
 #pragma warning disable CA2000
             liveBroker = new LiveBroker(
@@ -441,12 +441,13 @@ internal sealed class KernelService : IKernelService, IDisposable
             await liveBroker.ConnectAndNotifyAsync(cancellationToken).ConfigureAwait(false);
             await liveBroker.InitializeLiveStateAsync(cancellationToken).ConfigureAwait(false);
 
+            // Tick handler – now uses synchronous enqueue.
             Action<string, Tick> tickHandler = (symbol, tick) =>
             {
                 try
                 {
                     tickWindow.PushTick(symbol, tick);
-                    liveBroker.OnTickAsync(symbol, tick).GetAwaiter().GetResult();
+                    liveBroker.OnTickReceived(symbol, tick); // FIXED: was liveBroker.OnTickAsync(...).GetAwaiter().GetResult()
                 }
                 catch (Exception ex)
                 {

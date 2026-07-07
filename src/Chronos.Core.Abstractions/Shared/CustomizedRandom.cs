@@ -3,11 +3,12 @@ namespace Chronos.Core.Abstractions.Shared;
 /// <summary>
 /// Portable deterministic pseudo‑random number generator using the xorshift128+ algorithm.
 /// Guarantees identical sequences across .NET versions and platforms.
-/// <para><b>This class is not thread‑safe.</b> For concurrent usage, create one instance per thread.</para>
+/// <para>This class is now thread‑safe; a lock is used to protect internal state.</para>
 /// </summary>
 public sealed class CustomizedRandom
 {
     private ulong _s0, _s1;
+    private readonly Lock _lock = new();
 
     /// <summary>Creates a new generator from a 64‑bit seed.</summary>
     /// <param name="seed">
@@ -53,13 +54,16 @@ public sealed class CustomizedRandom
     /// <summary>Returns a uniformly distributed 64‑bit integer.</summary>
     public ulong NextUInt64()
     {
-        ulong s1 = _s0;
-        ulong s0 = _s1;
-        ulong result = s0 + s1;
-        _s0 = s0;
-        s1 ^= s1 << 23;
-        _s1 = s1 ^ s0 ^ (s1 >> 18) ^ (s0 >> 5);
-        return result;
+        lock (_lock)
+        {
+            ulong s1 = _s0;
+            ulong s0 = _s1;
+            ulong result = s0 + s1;
+            _s0 = s0;
+            s1 ^= s1 << 23;
+            _s1 = s1 ^ s0 ^ (s1 >> 18) ^ (s0 >> 5);
+            return result;
+        }
     }
 
     /// <summary>Returns a uniform double in [0.0, 1.0).</summary>
