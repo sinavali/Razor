@@ -1,4 +1,5 @@
 using Chronos.Core.Abstractions.Slots;
+using System.Collections.Concurrent;
 
 namespace Chronos.Core.Abstractions.Shared;
 
@@ -8,12 +9,17 @@ namespace Chronos.Core.Abstractions.Shared;
 /// Respects <see cref="DataActionPolicy"/> for file deletion.
 /// Call <see cref="DisposeAsync"/> after use, or use `await using`.
 /// </summary>
-public sealed class BorrowedTickData : IAsyncDisposable
+public sealed class BorrowedTickData : IAsyncDisposable, IDisposable
 {
+    // DAT‑05: Reference counting for shared files.
+    private static readonly ConcurrentDictionary<string, int> _fileRefCounts = new();
+    private static readonly Lock _refCountLock = new();
+
     private readonly IAdapterCapability _adapter;
     private readonly IReadOnlyList<MemoryMappedTickList> _mappedLists;
     private readonly IReadOnlyList<string> _filePaths;
     private readonly DataActionPolicy _policy;
+    private bool _disposed;
 
     /// <summary>The tick streams, one per symbol (aligned with Symbols).</summary>
     public IReadOnlyList<Tick>[] Streams { get; }
@@ -65,24 +71,64 @@ public sealed class BorrowedTickData : IAsyncDisposable
         _filePaths = filePaths;
         _adapter = adapter;
         _policy = policy;
+
+        // DAT‑05: Increment reference count for each file.
+        foreach (var path in _filePaths)
+        {
+            _fileRefCounts.AddOrUpdate(path, 1, (_, count) => count + 1);
+        }
     }
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
         foreach (var mm in _mappedLists)
         {
             mm.Dispose();
         }
 
+        // DAT‑05: Decrement reference count and delete only when zero.
         foreach (var path in _filePaths)
         {
+            bool shouldDelete = false;
+            lock (_refCountLock)
+            {
+                if (_fileRefCounts.TryGetValue(path, out int count))
+                {
+                    if (count <= 1)
+                    {
+                        _fileRefCounts.TryRemove(path, out _);
+                        shouldDelete = true;
+                    }
+                    else
+                    {
+                        _fileRefCounts[path] = count - 1;
+                    }
+                }
+            }
+
             await _adapter.NotifyFileSafeToDeleteAsync(path).ConfigureAwait(false);
 
-            if (_policy == DataActionPolicy.DeleteAfterTask)
+            if (shouldDelete && _policy == DataActionPolicy.DeleteAfterTask)
             {
                 await _adapter.DeleteHistoryFileAsync(path).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Synchronous dispose implementation.
+    /// </summary>
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+        GC.SuppressFinalize(this);
     }
 }

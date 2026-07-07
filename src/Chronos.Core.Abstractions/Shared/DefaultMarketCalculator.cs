@@ -11,6 +11,12 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     public virtual double NormalizeVolume(SymbolProperties symbolProps, double requestedVolume)
     {
         ArgumentNullException.ThrowIfNull(symbolProps);
+        // DAT‑07: Reject negative volume.
+        if (requestedVolume < 0)
+        {
+            throw new ArgumentException("Volume cannot be negative.", nameof(requestedVolume));
+        }
+
         double step = symbolProps.MinVolume;
         if (step <= 0)
         {
@@ -25,6 +31,12 @@ public abstract class DefaultMarketCalculator : IMarketCalculator
     public virtual double NormalizePrice(SymbolProperties symbolProps, double requestedPrice)
     {
         ArgumentNullException.ThrowIfNull(symbolProps);
+        // DAT‑07: Reject negative price.
+        if (requestedPrice < 0)
+        {
+            throw new ArgumentException("Price cannot be negative.", nameof(requestedPrice));
+        }
+
         double tick = symbolProps.TickSize;
         if (tick <= 0)
         {

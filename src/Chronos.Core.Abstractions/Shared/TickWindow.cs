@@ -388,7 +388,19 @@ public sealed class TickWindow : IDisposable
                     throw new ArgumentOutOfRangeException(nameof(index));
                 }
 
-                int start = _count < _capacity ? 0 : _head;
+                // DAT‑02: Fix the start calculation for correct retrieval.
+                int start;
+                if (_count == _capacity)
+                {
+                    // Buffer is full: the oldest valid tick is at _head.
+                    start = _head;
+                }
+                else
+                {
+                    // Buffer is not full: the oldest valid tick is at index 0.
+                    start = 0;
+                }
+
                 return _buffer[(start + index) % _capacity];
             }
         }
@@ -401,15 +413,24 @@ public sealed class TickWindow : IDisposable
             }
 
             int actual = Math.Min(Math.Min(maxCount, _count), destination.Length);
-            int start = _head - actual;
-            if (start < 0)
+            int start;
+            if (_count == _capacity)
             {
-                start += _capacity;
+                // Buffer is full: the oldest valid tick is at _head.
+                start = _head;
+            }
+            else
+            {
+                // Buffer is not full: the oldest valid tick is at index 0.
+                start = 0;
             }
 
+            // We need to get the 'actual' most recent ticks.
+            // The most recent tick is at index (_count - 1) relative to start.
+            int recentStart = (start + _count - actual) % _capacity;
             for (int i = 0; i < actual; i++)
             {
-                destination[i] = _buffer[(start + i) % _capacity];
+                destination[i] = _buffer[(recentStart + i) % _capacity];
             }
 
             return actual;
@@ -424,15 +445,22 @@ public sealed class TickWindow : IDisposable
 
             int actual = Math.Min(count, _count);
             var result = new Tick[actual];
-            int start = _head - actual;
-            if (start < 0)
+            int start;
+            if (_count == _capacity)
             {
-                start += _capacity;
+                // Buffer is full: the oldest valid tick is at _head.
+                start = _head;
+            }
+            else
+            {
+                // Buffer is not full: the oldest valid tick is at index 0.
+                start = 0;
             }
 
+            int recentStart = (start + _count - actual) % _capacity;
             for (int i = 0; i < actual; i++)
             {
-                result[i] = _buffer[(start + i) % _capacity];
+                result[i] = _buffer[(recentStart + i) % _capacity];
             }
 
             return result;

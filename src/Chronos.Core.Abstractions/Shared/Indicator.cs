@@ -18,8 +18,22 @@ public abstract class Indicator : IDisposable, IWindowAwareIndicator
     /// <summary>Indexer. The index is absolute and wraps around the circular buffer.</summary>
     public double this[long index]
     {
-        get => _count == 0 ? 0 : _buffer[(int)(index % _count)];
-        set => _buffer[(int)(index % _count)] = value;
+        get
+        {
+            if (index < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), "Index must be non-negative.");
+            }
+            return _count == 0 ? 0 : _buffer[(int)(index % _count)];
+        }
+        set
+        {
+            if (index < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), "Index must be non-negative.");
+            }
+            _buffer[(int)(index % _count)] = value;
+        }
     }
 
     /// <summary>Dependency injection from the Indicator Registry.</summary>

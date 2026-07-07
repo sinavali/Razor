@@ -248,7 +248,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         long latencyTicks = _wallClock.GetUtcNow().Ticks - now;
         _metrics.RecordLiveTickLatency(latencyTicks);
 
-        // Check if sync is due – release lock before syncing to avoid deadlock (THR‑03).
+        // Check if sync is due – release lock before syncing to avoid deadlock.
         if (_syncIntervalTicks > 0 && (now - _lastSyncTime) >= _syncIntervalTicks)
         {
             await SyncStateAsync(CancellationToken.None).ConfigureAwait(false);
@@ -265,6 +265,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             for (int i = _openPositions.Count - 1; i >= 0; i--)
             {
                 var p = _openPositions[i];
+                // DAT‑09: Use TryGetValue instead of indexer.
                 if (!_symbolSpecs.TryGetValue(p.Symbol, out var spec))
                 {
                     continue;
@@ -855,6 +856,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         double used = 0;
         foreach (var pos in _openPositions)
         {
+            // Use TryGetValue instead of indexer.
             if (_symbolSpecs.TryGetValue(pos.Symbol, out var spec))
             {
                 double margin = _adapter.Calculator.CalculateRequiredMargin(spec, pos.OpenPrice, pos.Volume, _leverage);
@@ -870,6 +872,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
         double used = CalculateActiveMarginUsed();
         foreach (var o in _pendingOrders)
         {
+            // Use TryGetValue instead of indexer.
             if (_symbolSpecs.TryGetValue(o.Symbol, out var spec))
             {
                 double margin = _adapter.Calculator.CalculateRequiredMargin(spec, o.Price, o.Volume, _leverage);
@@ -938,6 +941,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
                 else
                 {
                     double newVolume = pos.Volume + (report.Type == pos.Type ? report.ExecutedVolume : -report.ExecutedVolume);
+                    // Use TryGetValue instead of indexer.
                     if (_symbolSpecs.TryGetValue(pos.Symbol, out var spec))
                     {
                         newVolume = _adapter.Calculator.NormalizeVolume(spec, newVolume);
@@ -1076,6 +1080,7 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             for (int i = 0; i < _openPositions.Count; i++)
             {
                 var pos = _openPositions[i];
+                // Use TryGetValue instead of indexer.
                 if (_symbolSpecs.TryGetValue(pos.Symbol, out var spec))
                 {
                     double cost = _adapter.Calculator.CalculateHoldingCost(

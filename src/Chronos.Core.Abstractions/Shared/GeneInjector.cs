@@ -105,12 +105,12 @@ public static class GeneInjector
                         val = attr.Min + steps * attr.Step;
                         val = Math.Clamp(val, attr.Min, attr.Max);
                     }
-
                     break;
 
                 case GeneType.Categorical:
+                    // DAT‑03: Use Floor for categorical indices to map to whole integer category IDs.
                     val = Math.Clamp(val, attr.Min, attr.Max);
-                    val = Math.Round(val, MidpointRounding.AwayFromZero);
+                    val = Math.Floor(val);
                     break;
 
                 case GeneType.Parametric:

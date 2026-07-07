@@ -2,6 +2,7 @@ using Chronos.Core.Abstractions.Shared;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 
 namespace Chronos.Core.Kernel.Indicators;
 
@@ -22,7 +23,8 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
 
     public T Get<T>(params object[] args) where T : Indicator
     {
-        string sig = typeof(T).FullName + ":" + string.Join(",", args.Select(a => a?.ToString() ?? "null"));
+        // DAT‑06: Build a reliable signature using serialization for custom types.
+        string sig = BuildSignature(typeof(T), args);
 
         if (_cache.TryGetValue(sig, out var existing))
         {
@@ -121,6 +123,51 @@ internal sealed class IndicatorRegistry : IIndicatorRegistry
             var lambda = Expression.Lambda<Func<object[], object>>(newExpr, argsParam);
             return lambda.Compile();
         });
+    }
+
+    // DAT‑06: Build a reliable signature string.
+    private static string BuildSignature(Type type, object[] args)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(type.FullName);
+        sb.Append(':');
+
+        foreach (var arg in args)
+        {
+            if (arg == null)
+            {
+                sb.Append("null|");
+                continue;
+            }
+
+            Type argType = arg.GetType();
+
+            // For primitive types and strings, use ToString().
+            if (argType.IsPrimitive || argType == typeof(string) || argType == typeof(decimal))
+            {
+                sb.Append(arg.ToString());
+                sb.Append('|');
+                continue;
+            }
+
+            // For custom types, use JSON serialization to capture state.
+            try
+            {
+                string json = JsonSerializer.Serialize(arg);
+                sb.Append(json);
+                sb.Append('|');
+            }
+            catch
+            {
+                // Fallback: use type name and hash code.
+                sb.Append(argType.FullName);
+                sb.Append('#');
+                sb.Append(arg.GetHashCode());
+                sb.Append('|');
+            }
+        }
+
+        return sb.ToString();
     }
 
     private sealed class IndicatorRef
