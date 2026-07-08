@@ -1,6 +1,7 @@
 using Chronos.Core.Engine.Core;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 
 namespace Chronos.Core.Engine.Services.Update;
@@ -131,8 +132,9 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
                 }
             }
 
-            // Backup current binary
-            string backupFile = Path.Combine(_backupPath, $"engine_{DateTime.UtcNow:yyyyMMddHHmmss}_{_executableName}");
+            // RUN‑04: Create a unique backup path and copy current binary to it.
+            string backupTimestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+            string backupFile = Path.Combine(_backupPath, $"engine_backup_{backupTimestamp}_{_executableName}");
             File.Copy(_currentPath, backupFile, true);
             _logBackupCreated(_logger, backupFile, null);
 
@@ -141,9 +143,10 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
             File.Move(tempPath, stageFile, true);
             shouldDeleteTemp = false;
 
-            // Write pending marker with original path
+            // Write pending marker with original path and backup path
             string markerPath = Path.Combine(_updatePath, "update.pending");
-            await File.WriteAllTextAsync(markerPath, $"{_pendingVersion}|{_currentPath}|{DateTime.UtcNow:O}", cancellationToken).ConfigureAwait(false);
+            // Store version, original path, backup path, and timestamp
+            await File.WriteAllTextAsync(markerPath, $"{_pendingVersion}|{_currentPath}|{backupFile}|{DateTime.UtcNow:O}", cancellationToken).ConfigureAwait(false);
             _logMarkerWritten(_logger, markerPath, null);
 
             _logUpdateStaged(_logger, _pendingVersion, null);
@@ -195,6 +198,7 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
 
         string version = parts[0];
         string originalPath = parts[1];
+        string backupPath = parts.Length > 2 ? parts[2] : string.Empty;
 
         // Find staged binary matching version
         string stagedPattern = $"engine_{version}_*";
@@ -207,7 +211,7 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
 
         string stagedFile = stagedFiles[0];
 
-        // Replace the original executable with the staged binary atomically
+        // Replace the original executable with the staged binary atomically.
         // File.Replace creates a backup of the original; we already have a backup, so we can just overwrite.
         File.Replace(stagedFile, originalPath, null, true);
         _logUpdateInstalled(_logger, version, null);
@@ -219,20 +223,34 @@ internal sealed class SelfUpdateManager : ISelfUpdateManager, IDisposable
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    public Task RollbackAsync(CancellationToken cancellationToken)
+    public async Task RollbackAsync(CancellationToken cancellationToken)
     {
         _logRollingBack(_logger, null);
-        var backups = Directory.GetFiles(_backupPath, $"engine_*_{_executableName}");
+
+        // Find the most recent backup file.
+        var backups = Directory.GetFiles(_backupPath, $"engine_backup_*_{_executableName}");
         if (backups.Length == 0)
         {
             _logNoBackupFound(_logger, null);
-            return Task.CompletedTask;
+            return;
         }
+        // Sort by creation time descending.
         Array.Sort(backups, (a, b) => File.GetCreationTime(b).CompareTo(File.GetCreationTime(a)));
         string latest = backups[0];
+
         File.Copy(latest, _currentPath, true);
         _logRollbackComplete(_logger, null);
-        return Task.CompletedTask;
+
+        // Clean up old backup files (keep only the last 5).
+        var allBackups = Directory.GetFiles(_backupPath, $"engine_backup_*_{_executableName}")
+            .OrderByDescending(f => File.GetCreationTime(f))
+            .Skip(5);
+        foreach (var file in allBackups)
+        {
+            try { File.Delete(file); } catch { }
+        }
+
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     public void Dispose()

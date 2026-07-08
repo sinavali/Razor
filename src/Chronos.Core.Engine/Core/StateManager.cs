@@ -1,3 +1,9 @@
+// -----------------------------------------------------------------------------
+// <copyright file="StateManager.cs" company="Chronos Platform">
+//   Copyright (c) Chronos Platform. All rights reserved.
+// </copyright>
+// -----------------------------------------------------------------------------
+
 using Microsoft.Data.Sqlite;
 using System.Globalization;
 using System.Text.Json;
@@ -96,8 +102,11 @@ internal sealed class StateManager : IStateManager, IDisposable
     /// <summary>Initializes a new instance.</summary>
     public StateManager()
     {
-        _databasePath = Path.Combine("state", "engine_state.db");
-        Directory.CreateDirectory("state");
+        // RUN‑01: Use absolute path based on engine base directory.
+        var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        var stateDir = Path.Combine(baseDirectory, "state");
+        Directory.CreateDirectory(stateDir);
+        _databasePath = Path.Combine(stateDir, "engine_state.db");
 
         if (!File.Exists(_databasePath))
         {

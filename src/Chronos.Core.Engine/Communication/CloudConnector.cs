@@ -6,6 +6,7 @@
 
 namespace Chronos.Core.Engine.Communication;
 
+using Chronos.Core.Engine.Management.Commands;
 using Core;
 using Core.Exceptions;
 using Management.Tasks;
@@ -566,6 +567,12 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            // RUN‑02: Check cancellation at the start of each loop iteration.
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
             try
             {
                 if (_isConnected && _webSocket?.State == WebSocketState.Open)
@@ -967,7 +974,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
                 Console.WriteLine("🔴 Engine is locked/banned. Stopping user tasks.");
                 var stopCommand = new CloudCommand
                 {
-                    CommandId = 2001, // EmergencyStop
+                    CommandId = CommandIds.EmergencyStop,
                     CommandType = "EmergencyStop",
                     CorrelationId = Guid.NewGuid().ToString()
                 };
@@ -1010,7 +1017,7 @@ internal sealed class CloudConnector : ICloudConnector, IAsyncDisposable
             Console.WriteLine("🔴 Authentication invalid. Stopping user tasks.");
             var stopCommand = new CloudCommand
             {
-                CommandId = 2001,
+                CommandId = CommandIds.EmergencyStop,
                 CommandType = "EmergencyStop",
                 CorrelationId = Guid.NewGuid().ToString()
             };

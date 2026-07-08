@@ -23,7 +23,7 @@ using System.Diagnostics.CodeAnalysis;
     Justification = "Console output for CLI; no localization required.")]
 internal sealed class EngineHostedService : IHostedService, IDisposable
 {
-    private readonly ILogger<EngineHostedService> _logger;
+    private readonly Microsoft.Extensions.Logging.ILogger<EngineHostedService> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly CancellationTokenSource _shutdownCts = new();
     private Task? _engineTask;
@@ -39,7 +39,7 @@ internal sealed class EngineHostedService : IHostedService, IDisposable
     private static readonly Action<Microsoft.Extensions.Logging.ILogger, Exception?> _logStoppedService =
         LoggerMessage.Define(LogLevel.Information, 3, "Chronos Engine service stopped.");
 
-    public EngineHostedService(ILogger<EngineHostedService> logger, IServiceProvider serviceProvider)
+    public EngineHostedService(Microsoft.Extensions.Logging.ILogger<EngineHostedService> logger, IServiceProvider serviceProvider)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -128,7 +128,9 @@ internal sealed class EngineHostedService : IHostedService, IDisposable
             // Credentials must be already set via --auth in service mode
             if (!Credentials.IsAvailable)
             {
-                throw new InvalidOperationException("Credentials not provided. Use --auth=username,password,apikey when running as a service.");
+                // RUN‑03: Provide a clear, actionable error message.
+                throw new InvalidOperationException(
+                    "Credentials not provided. Use --auth=username,password,apikey when running as a service.");
             }
 
             var cloudConnectorServices = sp.GetRequiredService<ICloudConnector>();
