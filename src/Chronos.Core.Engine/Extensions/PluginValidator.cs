@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions;
+using Chronos.Core.Sdk.Shared;
 using System.Reflection;
 
 namespace Chronos.Core.Engine.Extensions;

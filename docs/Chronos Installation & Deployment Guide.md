@@ -3,7 +3,7 @@
 **Version:** 1.0.0 LTS  
 **Audience:** End‑users (traders, quants, IT staff)  
 **Status:** Authoritative  
-**Last Updated:** 2026-07-07  
+**Last Updated:** 2026-07-09  
 
 ---
 
@@ -66,14 +66,19 @@ The archive contains:
 
 ```
 chronos/
-├── Chronos.Engine.exe       (Windows) / Chronos.Engine (Linux)
-├── *.dll                    (engine dependencies)
-├── Adapters/                (empty – place adapter DLLs here)
-├── Strategies/              (empty – place strategy DLLs here)
-├── Indicators/              (empty – place indicator DLLs here)
-├── Plugins/                 (empty – place hook plugin DLLs here)
-├── NeuralNetworks/          (empty – place NN model DLLs here)
-└── logs/                    (created on first run)
+├── Chronos.Core.Engine.exe       (Windows) / Chronos.Core.Engine (Linux)
+├── *.dll                         (engine dependencies)
+├── Adapters/                     (empty – place adapter DLLs here)
+├── Strategies/                   (empty – place strategy DLLs here)
+├── Indicators/                   (empty – place indicator DLLs here)
+├── Plugins/                      (empty – place hook plugin DLLs here)
+├── NeuralNetworks/               (empty – place NN model DLLs here)
+├── state/                        (created on first run – SQLite database)
+├── logs/                         (created on first run)
+├── downloads/                    (created on first run)
+├── backup/                       (created on first run)
+├── update/                       (created on first run)
+└── behavior_logs/                (created on first run)
 ```
 
 **There is no configuration file in the archive.** All operational parameters are supplied by Chronos Cloud after authentication.
@@ -89,7 +94,7 @@ chronos/
 3. **Run the engine**:
    - Open a **Command Prompt** or **PowerShell** as Administrator.
    - Navigate to `C:\Chronos\`.
-   - Run: `.\Chronos.Engine.exe`
+   - Run: `.\Chronos.Core.Engine.exe`
    - On first startup, the engine will prompt you for your **Cloud Username**, **Cloud Password**, and **Instance API Key**. Enter them interactively.
    - For automated or service deployments, you can pass credentials via the `--auth` flag (see §4.3).
 
@@ -102,13 +107,13 @@ chronos/
    ```
 2. **Set permissions**:
    ```bash
-   sudo chmod +x /opt/chronos/Chronos.Engine
+   sudo chmod +x /opt/chronos/Chronos.Core.Engine
    ```
 3. **Place extensions** in the appropriate subdirectories under `/opt/chronos/`.
 4. **Run the engine**:
    ```bash
    cd /opt/chronos
-   ./Chronos.Engine
+   ./Chronos.Core.Engine
    ```
    - If you are running interactively, the engine will prompt for credentials.
    - For background or service operation, use the `--auth` flag as described below.
@@ -132,7 +137,7 @@ Credentials are **never stored on disk**. They are held in memory only for the d
 
 - Use the following syntax:
   ```bash
-  Chronos.Engine.exe --auth=username,password,apikey
+  Chronos.Core.Engine.exe --auth=username,password,apikey
   ```
 - The three values must be comma‑separated, with no spaces.
 - **Security warning:** The command line is visible to other processes and may be stored in shell history. Use this only in secure, controlled environments. For production services, ensure that the command line is not logged.
@@ -151,7 +156,7 @@ The engine can be installed as a background service on both Windows and Linux.
 1. Install the engine binary in a permanent directory, e.g., `C:\Chronos`.
 2. Create a service using `sc`:
    ```
-   sc create ChronosEngine binPath = "C:\Chronos\Chronos.Engine.exe --service --auth=username,password,apikey" start=auto
+   sc create ChronosEngine binPath = "C:\Chronos\Chronos.Core.Engine.exe --service --auth=username,password,apikey" start=auto
    ```
 3. Start the service:
    ```
@@ -169,7 +174,7 @@ The engine can be installed as a background service on both Windows and Linux.
    After=network.target
 
    [Service]
-   ExecStart=/opt/chronos/Chronos.Engine --service --auth=username,password,apikey
+   ExecStart=/opt/chronos/Chronos.Core.Engine --service --auth=username,password,apikey
    WorkingDirectory=/opt/chronos
    Restart=on-failure
    RestartSec=10
@@ -347,10 +352,12 @@ Broker API keys and other secrets are stored in Chronos Cloud, not on the engine
 
 Logs are written to the `logs/` directory with daily rotation:
 ```
-logs/chronos-20260707.log
-logs/chronos-20260706.log
+logs/chronos-20260709.log
+logs/chronos-20260708.log
 ...
 ```
+
+Each log file is in JSON format (`CompactJsonFormatter`) and can be parsed by standard log aggregation tools.
 
 ### 11.2 Common Issues
 
@@ -363,6 +370,8 @@ logs/chronos-20260706.log
 | Extension rejected – SDK major version mismatch | Extension compiled against a different SDK major | Recompile extension against the matching SDK. |
 | MT5 adapter fails on Linux | MT5 is Windows‑only | Deploy engine on Windows. |
 | High CPU on backtest | Normal (heavy workload) | Tune `MaxParallelThreads` in execution spec. |
+| State database locked | Another engine instance running | Ensure only one instance runs. |
+| Binary integrity check fails | Tampered binary or unsigned build | Download official build from Chronos Cloud. |
 
 ### 11.3 Getting Support
 
@@ -376,3 +385,24 @@ Send the relevant log excerpts to Chronos support through the Cloud dashboard. D
 2. Delete the engine directory.
 3. Revoke the engine's API key in Chronos Cloud.
 4. Remove the engine from the Cloud dashboard.
+
+---
+
+## 13. Command‑Line Reference
+
+| Flag | Description |
+|------|-------------|
+| `--auth=username,password,apikey` | Sets credentials via command line. |
+| `--help`, `-h` | Shows help message. |
+| `--version`, `-v` | Shows version information. |
+| `--service` | Runs as a Windows Service (Windows) or systemd (Linux). |
+| `--development` | Runs in development mode (disables some security checks). |
+| `--command=restart` | Internal use for self‑update. |
+
+---
+
+## 14. Further Resources
+
+- **Chronos Principles** – For the engine's design rules.
+- **Configuration Reference** – For all configuration objects.
+- **Extension Developer Guide** – For building custom extensions.

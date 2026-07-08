@@ -1,13 +1,13 @@
-## Chronos Configuration Reference
+# Chronos Configuration Reference
 
 **Version:** 1.0.0 LTS  
 **Audience:** Extension developers & power users  
 **Status:** Authoritative  
-**Last Updated:** 2026-07-07  
+**Last Updated:** 2026-07-09  
 
 ---
 
-### Purpose
+## Purpose
 
 This document catalogues every configuration object, enumeration, and data contract that controls Chronos engine behaviour. It is the single source of truth for parameter names, types, validation rules, and acceptable values. Use it when writing strategies, building adapters, or interpreting Cloud‑supplied payloads.
 
@@ -16,7 +16,7 @@ This document catalogues every configuration object, enumeration, and data contr
 ## 1. Strategy Specification
 
 **Type:** `StrategySpecification` (immutable record)  
-**Namespace:** `Chronos.Core.Abstractions.Shared`
+**Namespace:** `Chronos.Core.Sdk.Shared`
 
 ### Fields
 
@@ -91,6 +91,7 @@ Controls the backtest or optimisation run environment.
 - `MaxOpenPositions > 0`.
 - `0 < StopOutLevel ≤ 1`.
 - `MaxParallelThreads ≥ 0`.
+- `GeneInitializationSeed` must be non‑negative when provided.
 
 ### Example
 
@@ -114,7 +115,7 @@ Controls the backtest or optimisation run environment.
 **Type:** `OptimizationSpecification` (immutable record)  
 **Namespace:** `Chronos.Core.Kernel.Configuration`
 
-The optimisation pipeline uses the hook system for fitness evaluation. No `FitnessModel` field is present in the specification; instead, the engine invokes the `optimization.chromosome.evaluated` hook after each chromosome evaluation, and the Cloud or a hook plugin computes the fitness score.
+The optimisation pipeline uses the hook system for fitness evaluation. No `FitnessModel` field is present in the specification; instead, the engine invokes the `optimization.fitness.evaluate` hook after each chromosome evaluation, and the Cloud or a hook plugin computes the fitness score.
 
 ### Fields
 
@@ -128,6 +129,7 @@ The optimisation pipeline uses the hook system for fitness evaluation. No `Fitne
 | `ElitismPct` | `double` | Yes | — | Fraction of best individuals preserved unchanged. `[0, 1]`. |
 | `TournamentSize` | `int` | Yes | — | Number of individuals competing in selection. Must be `≥ 2`. |
 | `StagnationGenerationsBeforeHyper` | `int` | No | `3` | Generations without improvement before hyper‑mutation activates. `≥ 1`. |
+| `MaxParallelThreads` | `int` | No | `0` | Maximum parallel threads for chromosome evaluation. `0` = `Environment.ProcessorCount - 1`. |
 
 ### Validation
 
@@ -136,6 +138,7 @@ The optimisation pipeline uses the hook system for fitness evaluation. No `Fitne
 - `TournamentSize ≥ 2`.
 - `StagnationGenerationsBeforeHyper ≥ 1`.
 - `MasterSeed` must be `≥ 0`. Negative seeds are rejected to guarantee deterministic and predictable sequences.
+- `MaxParallelThreads ≥ 0`.
 
 ### Example
 
@@ -148,7 +151,8 @@ The optimisation pipeline uses the hook system for fitness evaluation. No `Fitne
     "CrossoverRate": 0.5,
     "ElitismPct": 0.05,
     "TournamentSize": 3,
-    "StagnationGenerationsBeforeHyper": 3
+    "StagnationGenerationsBeforeHyper": 3,
+    "MaxParallelThreads": 0
 }
 ```
 
@@ -159,7 +163,7 @@ The optimisation pipeline uses the hook system for fitness evaluation. No `Fitne
 **Type:** `LiveSpecification` (immutable record)  
 **Namespace:** `Chronos.Core.Kernel.Configuration`
 
-The live trading specification defines the parameters for a live trading session. Continuous optimisation is orchestrated by Chronos Cloud; the Cloud sends the engine commands to start/stop optimisation runs based on the user’s profile settings.
+The live trading specification defines the parameters for a live trading session. Continuous optimisation is orchestrated by Chronos Cloud; the Cloud sends the engine commands to start/stop optimisation runs based on the user's profile settings.
 
 ### Fields
 
@@ -187,7 +191,7 @@ The live trading specification defines the parameters for a live trading session
 ## 5. Neural Network Model Interface
 
 **Type:** `INeuralNetworkModel` (interface)  
-**Namespace:** `Chronos.Core.Abstractions.Slots`
+**Namespace:** `Chronos.Core.Sdk.Slots.NeuralNetwork`
 
 Neural networks are slot capabilities. The engine activates an `INeuralNetworkModel` instance from the `NeuralNetworks/` directory when the active strategy declares `RequiresNeuralNetwork = true`. The model supports feed‑forward, ONNX, LSTM, RL, and other architectures through a unified parameter‑vector interface compatible with the GA.
 
@@ -208,7 +212,7 @@ Neural networks are slot capabilities. The engine activates an `INeuralNetworkMo
 
 ### Strategy Integration
 
-The `IStrategyCapability` interface (in `Chronos.Core.Abstractions.Slots`) exposes:
+The `IStrategyCapability` interface (in `Chronos.Core.Sdk.Slots.Strategy`) exposes:
 
 | Member | Type | Description |
 |--------|------|-------------|
@@ -221,7 +225,7 @@ The `IStrategyCapability` interface (in `Chronos.Core.Abstractions.Slots`) expos
 ## 6. Symbol Properties
 
 **Type:** `SymbolProperties` (record)  
-**Namespace:** `Chronos.Core.Abstractions.Shared`
+**Namespace:** `Chronos.Core.Sdk.Shared`
 
 Adapters return this object per symbol; it defines exchange‑specific contract details. **All fields are required.** Adapters must explicitly set every property.
 
@@ -247,6 +251,7 @@ Adapters return this object per symbol; it defines exchange‑specific contract 
 | `MaintenanceMarginRate` | `double` | Fraction below which liquidation may occur. |
 | `MakerFeeRate` | `double` | Fee for maker orders. |
 | `TakerFeeRate` | `double` | Fee for taker orders. |
+| `HoldingCostIntervalTicks` | `long` | Interval between holding cost calculations in 100‑ns ticks. |
 
 ### Enums Used
 
@@ -254,12 +259,22 @@ Adapters return this object per symbol; it defines exchange‑specific contract 
 - `MarginMode`: `Cross`, `Isolated`
 - `PendingOrderTriggerMode`: `UseBidForBuy`, `UseAskForBuy`, `UseMidPrice`
 
+### Validation
+
+- `MarginCurrency` must not be empty.
+- `ContractSize`, `TickSize`, `TickValue`, `MinVolume`, `MaxLeverage` must all be `> 0`.
+- `SwapRolloverHourUtc` must be between `0` and `23`.
+- `TripleSwapDayMultiplier` must be `≥ 0`.
+- `InitialMarginRate` and `MaintenanceMarginRate` must be in `(0, 1]`.
+- `MakerFeeRate` and `TakerFeeRate` must be in `[0, 1]`.
+- `HoldingCostIntervalTicks` must be `> 0`.
+
 ---
 
 ## 7. TimeFrame
 
 **Type:** `TimeFrame` (enum)  
-**Namespace:** `Chronos.Core.Abstractions.Shared`
+**Namespace:** `Chronos.Core.Sdk.Shared`
 
 The integer value equals the duration in minutes.
 
@@ -287,7 +302,7 @@ The integer value equals the duration in minutes.
 ## 8. Gene Attributes
 
 **Type:** `GeneAttribute` (attribute)  
-**Namespace:** `Chronos.Core.Abstractions.Shared`
+**Namespace:** `Chronos.Core.Sdk.Shared`
 
 Used to decorate strategy properties for GA optimisation.
 
@@ -309,11 +324,11 @@ Used to decorate strategy properties for GA optimisation.
 
 ### GeneType Values
 
-- `Continuous` – range with no steps.
-- `Discrete` – stepped values (step must be positive).
-- `Categorical` – whole‑number choices (step must be positive).
-- `Structural` – topology genes (step must be 0).
-- `Parametric` – neural network weights (step must be 0).
+- `Continuous` – range with no steps (step must be `0`).
+- `Discrete` – stepped values (step must be `> 0`).
+- `Categorical` – whole‑number choices (step must be `> 0`).
+- `Structural` – topology genes (step must be `0`).
+- `Parametric` – neural network weights (step must be `0`).
 
 **Note:** The `step` parameter is only applicable to `Discrete` and `Categorical`. For all other types it must be `0`. The constructor will throw `ArgumentException` if this rule is violated.
 
@@ -322,7 +337,7 @@ Used to decorate strategy properties for GA optimisation.
 ## 9. Data Action Policy
 
 **Type:** `DataActionPolicy` (enum)  
-**Namespace:** `Chronos.Core.Abstractions.Shared`
+**Namespace:** `Chronos.Core.Sdk.Shared`
 
 | Value | Meaning |
 |-------|---------|
@@ -335,7 +350,7 @@ Used to decorate strategy properties for GA optimisation.
 ## 10. Adapter Capability Interface
 
 **Type:** `IAdapterCapability` (interface)  
-**Namespace:** `Chronos.Core.Abstractions.Slots`
+**Namespace:** `Chronos.Core.Sdk.Slots.Adapter`
 
 Replaces the previous `IAdapter`, `IHistoricalDataProvider`, `ILiveDataProvider`, and `IExecutionProvider` interfaces. An adapter declares which sub‑capabilities it supports via boolean flags.
 
@@ -403,7 +418,7 @@ Replaces the previous `IAdapter`, `IHistoricalDataProvider`, `ILiveDataProvider`
 ## 11. Strategy Capability Interface
 
 **Type:** `IStrategyCapability` (interface)  
-**Namespace:** `Chronos.Core.Abstractions.Slots`
+**Namespace:** `Chronos.Core.Sdk.Slots.Strategy`
 
 Replaces the previous `IStrategy` interface. Strategies are slot capabilities discovered in the `Strategies/` directory.
 
@@ -435,7 +450,7 @@ Replaces the previous `IStrategy` interface. Strategies are slot capabilities di
 
 ## 12. Hook System
 
-**Namespace:** `Chronos.Core.Abstractions.Hooks`
+**Namespace:** `Chronos.Core.Sdk.Hooks`
 
 Chronos uses a priority‑based hook system for extensibility. Hook plugins implement `IHookManifest` and register callbacks on named hook points.
 
@@ -476,6 +491,70 @@ public readonly struct FilterResult<T>
 | `IOptimizationContext` | Optimization | `CurrentGeneration`, `TotalGenerations`, `BestFitness`, `IsHyperMutation` |
 | `IReportContext` | Reports | `ReportFormat` |
 
+### Hook Catalog
+
+#### Backtest Hooks
+
+| Hook | Type | Description |
+|------|------|-------------|
+| `OnStart` | Action | Fires when a backtest starts. |
+| `OnTickReceived` | Filter\<Tick\> | Filter a tick as it is received from the tick stream. |
+| `OnTickStrategyBefore` | Filter\<Tick\> | Filter the tick before it is passed to the strategy. |
+| `OnTickStrategyAfter` | Action\<Tick\> | Action after the strategy has processed a tick. |
+| `OnTickCompleted` | Action\<Tick\> | Action after all processing for a tick is complete. |
+| `OnOrderValidation` | Filter\<AdapterOrderRequest\> | Filter an order request before any validation. |
+| `OnOrderBeforeExecute` | Filter\<AdapterOrderRequest\> | Filter an order request just before execution. |
+| `OnOrderAfterExecute` | Action\<(AdapterOrderRequest, AdapterOrderResponse)\> | Action after an order is executed or rejected. |
+| `OnPositionOpened` | Action\<Position\> | Action when a new position is opened. |
+| `OnPositionClosed` | Action\<Position\> | Action when a position is closed. |
+| `OnPositionStopout` | Action\<Position\> | Action when a stop‑out occurs. |
+| `OnEquityUpdated` | Action\<EquitySnapshot\> | Action when equity/drawdown is recalculated. |
+| `OnCompleted` | Action | Fires when the backtest completes. |
+
+#### Live Hooks
+
+| Hook | Type | Description |
+|------|------|-------------|
+| `OnStart` | Action | Fires when a live session starts. |
+| `OnTickReceived` | Filter\<Tick\> | Filter a tick as received from the adapter. |
+| `OnTickProcessed` | Action\<Tick\> | Action after a tick is fully processed. |
+| `OnOrderValidation` | Filter\<AdapterOrderRequest\> | Filter an order request before sending to exchange. |
+| `OnOrderBeforeSend` | Filter\<AdapterOrderRequest\> | Filter an order immediately before sending. |
+| `OnOrderExecuted` | Action\<ExecutionReport\> | Action when an execution report is received. |
+| `OnOrderRejected` | Action\<(AdapterOrderRequest, string)\> | Action when an order is rejected. |
+| `OnPositionOpened` | Action\<Position\> | Action when a new position is detected. |
+| `OnPositionClosed` | Action\<Position\> | Action when a position is closed. |
+| `OnPositionStopout` | Action\<Position\> | Action when a stop‑out occurs. |
+| `OnSyncBefore` | Action | Action before periodic state sync. |
+| `OnSyncAfter` | Action | Action after periodic state sync. |
+| `OnReconnectAttempt` | Action\<int\> | Action on a reconnection attempt. |
+| `OnReconnectSuccess` | Action\<int\> | Action on successful reconnection. |
+| `OnStop` | Action | Fires when the live session stops. |
+| `OnEquityChanged` | Action\<EquitySnapshot\> | Action when equity changes. |
+
+#### Optimization Hooks
+
+| Hook | Type | Description |
+|------|------|-------------|
+| `OnStart` | Action | Fires when optimization starts. |
+| `OnGenerationStart` | Action\<int\> | Action at the start of each generation. |
+| `OnChromosomeCreated` | Filter\<Chromosome\> | Filter a chromosome immediately after creation. |
+| `OnChromosomeEvaluated` | Action\<(Chromosome, double)\> | Action after a chromosome's fitness is evaluated. |
+| `OnSelectionApplied` | Action\<(Chromosome, Chromosome)\> | Action when parents are selected. |
+| `OnCrossoverApplied` | Action\<Chromosome\> | Action when a child chromosome is produced. |
+| `OnMutationApplied` | Action\<Chromosome\> | Action when a chromosome is mutated. |
+| `OnGenerationCompleted` | Action\<(int, double, bool)\> | Action at the end of each generation. |
+| `OnStagnationDetected` | Action\<int\> | Action when stagnation is detected. |
+| `OnCompleted` | Action\<Chromosome\> | Fires when optimization completes. |
+| `OnFitnessEvaluation` | Action\<IFitnessEvaluationContext\> | Hook for calculating fitness; plugins set `context.Fitness`. |
+
+#### Report Hooks
+
+| Hook | Type | Description |
+|------|------|-------------|
+| `OnBeforeGenerate` | Filter\<ReportRequest\> | Filter the report request before generation. |
+| `OnAfterGenerate` | Action\<(byte[], string)\> | Action after a report is generated. |
+
 ---
 
 ## 13. Validation Principles
@@ -483,7 +562,19 @@ public readonly struct FilterResult<T>
 - Every specification record has a `Validate()` method throwing `ConfigurationException`.
 - No critical parameter is silently defaulted (Principle 9).
 - All parsing uses `TryParse`‑style methods with clear error messages.
-- Fitness evaluation is performed by hook plugins via the `optimization.*` hooks, not by a built‑in `IFitnessModel`.
+- Fitness evaluation is performed by hook plugins via the `optimization.fitness.evaluate` hook, not by a built‑in `IFitnessModel`.
 - Slippage and commission are adapter‑internal concerns, handled through the adapter's `IMarketCalculator` and `SymbolProperties`, not through a user‑supplied `ISimulationFriction`.
 - All seeds used for deterministic randomness must be non‑negative; negative values are rejected.
 - Duplicate symbols in `RequestedSymbols` are forbidden and will cause validation failure.
+
+---
+
+## 14. Common Exceptions
+
+| Exception | Namespace | Description |
+|-----------|-----------|-------------|
+| `ConfigurationException` | `Chronos.Core.Sdk.Shared` | Thrown when a specification contains invalid values. |
+| `AdapterException` | `Chronos.Core.Sdk.Shared` | Thrown when an adapter operation fails. |
+| `StrategyException` | `Chronos.Core.Sdk.Shared` | Thrown when a strategy encounters an error. |
+| `OptimizationException` | `Chronos.Core.Sdk.Shared` | Thrown during GA optimisation failures. |
+| `EngineException` | `Chronos.Core.Engine.Core.Exceptions` | Base exception for engine‑specific errors. |

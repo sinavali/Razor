@@ -1,8 +1,8 @@
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
 using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Optimization;
@@ -137,7 +137,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
                 // Invoke filter
                 if (_hooks is not null)
                 {
-                    var wrapped = new Chronos.Core.Abstractions.Hooks.Chromosome
+                    var wrapped = new Chronos.Core.Sdk.Hooks.Chromosome
                     {
                         Genes = c.Genes,
                         Fitness = c.Fitness,
@@ -267,7 +267,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             var parent1 = TournamentSelect();
             var parent2 = TournamentSelect();
             _hooks?.OnSelectionApplied.InvokeActionChain(
-                (new Chronos.Core.Abstractions.Hooks.Chromosome
+                (new Chronos.Core.Sdk.Hooks.Chromosome
                 {
                     Genes = parent1.Genes,
                     Fitness = parent1.Fitness,
@@ -275,7 +275,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
                     IndividualIndex = parent1.IndividualIndex,
                     Seed = parent1.Seed
                 },
-                new Chronos.Core.Abstractions.Hooks.Chromosome
+                new Chronos.Core.Sdk.Hooks.Chromosome
                 {
                     Genes = parent2.Genes,
                     Fitness = parent2.Fitness,
@@ -294,7 +294,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             }
 
             _hooks?.OnCrossoverApplied.InvokeActionChain(
-                new Chronos.Core.Abstractions.Hooks.Chromosome
+                new Chronos.Core.Sdk.Hooks.Chromosome
                 {
                     Genes = child.Genes,
                     Fitness = child.Fitness,
@@ -315,7 +315,7 @@ public sealed class GeneticOptimizer : IGeneticOptimizer
             }
 
             _hooks?.OnMutationApplied.InvokeActionChain(
-                new Chronos.Core.Abstractions.Hooks.Chromosome
+                new Chronos.Core.Sdk.Hooks.Chromosome
                 {
                     Genes = child.Genes,
                     Fitness = child.Fitness,

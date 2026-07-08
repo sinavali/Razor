@@ -6,9 +6,6 @@
 
 namespace Chronos.Core.Engine.Kernel;
 
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Engine.Extensions;
 using Chronos.Core.Engine.Management.Tasks;
 using Chronos.Core.Kernel.Backtesting;
@@ -19,6 +16,12 @@ using Chronos.Core.Kernel.Indicators;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Optimization;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.Adapter;
+using Chronos.Core.Sdk.Slots.NeuralNetwork;
+using Chronos.Core.Sdk.Slots.Strategy;
+using Chronos.Core.Shared;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;

@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Sdk.Shared;
 
 namespace Chronos.Core.Kernel.Backtesting;
 

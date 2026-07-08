@@ -4,14 +4,14 @@
 // </copyright>
 // -----------------------------------------------------------------------------
 
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.Adapter;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Diagnostics;

@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Sdk.Shared;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;

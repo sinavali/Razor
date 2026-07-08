@@ -5,10 +5,6 @@
 // -----------------------------------------------------------------------------
 
 namespace Chronos.Core.Engine.Management.Tasks;
-
-using System.Globalization;
-using System.Text.Json;
-
 /// <summary>
 /// Configuration for a live trading session, parsed from Cloud command parameters.
 /// </summary>

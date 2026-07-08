@@ -3,13 +3,13 @@
 **Version:** 1.0.0 LTS  
 **Audience:** Extension developers (adapters, strategies, indicators, hook plugins, NN models)  
 **Status:** Authoritative  
-**Last Updated:** 2026-07-07  
+**Last Updated:** 2026-07-09  
 
 ---
 
 ## 1. Introduction
 
-This guide teaches you how to create extensions for Chronos. An extension is a .NET DLL that implements one or more public contracts from the `Chronos.Core.Abstractions` NuGet package. The engine discovers and loads extensions at runtime through isolated contexts, and activation is managed through Chronos Cloud.
+This guide teaches you how to create extensions for Chronos. An extension is a .NET DLL that implements one or more public contracts from the `Chronos.Core.Sdk` NuGet package. The engine discovers and loads extensions at runtime through isolated contexts, and activation is managed through Chronos Cloud.
 
 In v1.0.0 LTS, the following extension types are supported:
 
@@ -29,8 +29,7 @@ A single DLL can combine any of these — for example, a strategy that also regi
 
 ### 1.2 Where to Get Help
 
-- The `Chronos.Core.Abstractions` NuGet package contains XML documentation for every public member.
-- The `Chronos.Samples` repository provides full, working examples.
+- The `Chronos.Core.Sdk` NuGet package contains XML documentation for every public member.
 - This guide is your primary reference.
 
 ---
@@ -53,9 +52,9 @@ Chronos extensions are organized into three concepts:
 
 ### 2.2 The Chronos SDK
 
-The SDK is the `Chronos.Core.Abstractions` NuGet package. It contains **only** contracts (interfaces, abstract classes, records, enums, and utilities) – no runtime logic, no GA engine, no broker implementations. You can freely redistribute the package.
+The SDK is the `Chronos.Core.Sdk` NuGet package. It contains **only** contracts (interfaces, abstract classes, records, enums, and utilities) – no runtime logic, no GA engine, no broker implementations. You can freely redistribute the package.
 
-The SDK includes helper types like `CustomizedRandom` (portable RNG), `TickWindow`, `BinaryDataMapper`, etc. These are helpers for your extension code; you are free to use them or implement your own. However, any randomness that affects trading decisions must derive from the master seed (see §8.4).
+The SDK includes helper types like `CustomizedRandom` (portable RNG), `TickWindow`, `TickSynthesizer`, and `GeneInjector`. These are helpers for your extension code; you are free to use them or implement your own. However, any randomness that affects trading decisions must derive from the master seed (see §8.4).
 
 ---
 
@@ -77,7 +76,7 @@ Create a .NET class library targeting `net10.0`. Example `.csproj`:
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Chronos.Core.Abstractions" Version="1.0.0" />
+        <PackageReference Include="Chronos.Core.Sdk" Version="1.0.0" />
     </ItemGroup>
 
 </Project>
@@ -87,10 +86,10 @@ Create a .NET class library targeting `net10.0`. Example `.csproj`:
 
 ### 3.2 Assembly Attributes
 
-Every extension assembly must declare the **target SDK version** using `SdkVersionAttribute`. Example `AssemblyInfo.cs`:
+Every extension assembly must declare the **target SDK version** using `SdkVersionAttribute`. Example `AssemblyInfo.cs` or in your `csproj`:
 
 ```csharp
-using Chronos.Core.Abstractions;
+using Chronos.Core.Sdk.Shared;
 
 [assembly: SdkVersion("1.0.0")]
 ```
@@ -105,7 +104,7 @@ An adapter bridges Chronos and a real exchange/broker. You must implement `IAdap
 
 ### 4.1 The `IAdapterCapability` Interface
 
-The interface is in `Chronos.Core.Abstractions.Slots`. It replaces the older `IAdapter`, `IHistoricalDataProvider`, `ILiveDataProvider`, and `IExecutionProvider`.
+The interface is in `Chronos.Core.Sdk.Slots.Adapter`.
 
 ```csharp
 public interface IAdapterCapability
@@ -225,7 +224,7 @@ Stream real‑time tick data directly into the engine.
 
 ### 4.6 Market Calculator
 
-The `Calculator` property returns an instance of `IMarketCalculator` (in `Chronos.Core.Abstractions.Shared`). You must implement this interface with exchange‑specific math.
+The `Calculator` property returns an instance of `IMarketCalculator` (in `Chronos.Core.Sdk.Shared`). You must implement this interface with exchange‑specific math.
 
 ```csharp
 public interface IMarketCalculator
@@ -239,6 +238,7 @@ public interface IMarketCalculator
     double CalculateFunding(SymbolProperties props, double volume, double openPrice, OrderType type, long currentTime, long lastFundingTime);
     bool IsPendingOrderTriggered(SymbolProperties props, OrderType pendingType, double bid, double ask, double orderPrice);
     double CalculateHoldingCost(SymbolProperties props, double volume, double openPrice, OrderType type, long fromTime, long toTime);
+    double CalculateSlippage(SymbolProperties props, OrderType type, double volume, double price);
 }
 ```
 
@@ -247,12 +247,12 @@ public interface IMarketCalculator
 **Example margin calculation (crypto perpetual):**
 ```csharp
 public double CalculateRequiredMargin(SymbolProperties props, double price, double volume, double leverage)
-    => (price * volume * props.ContractSize) / leverage;
+    => (price * volume * props.ContractSize) / leverage * props.InitialMarginRate;
 ```
 
 **Important:** All price/volume normalization must round to the exchange's tick size. Failure to do so will cause rejections and parity mismatches.
 
-Slippage and commission are now adapter‑internal. The `IMarketCalculator` provides `CalculateCommission`; slippage is handled by the adapter's order execution logic. The engine no longer uses a separate `ISimulationFriction` — the adapter owns all friction.
+Slippage and commission are now adapter‑internal. The `IMarketCalculator` provides `CalculateCommission` and `CalculateSlippage`; slippage is handled by the adapter's order execution logic. The engine no longer uses a separate `ISimulationFriction` — the adapter owns all friction.
 
 ### 4.7 Connection Lifecycle
 
@@ -261,6 +261,10 @@ Implement `ConnectAsync` and `DisconnectAsync` to manage the underlying transpor
 ### 4.8 Example Adapter Skeleton
 
 ```csharp
+using Chronos.Core.Sdk.Slots.Adapter;
+using Chronos.Core.Sdk.Shared;
+
+[AdapterName("MyExchange")]
 public class MyExchangeAdapter : IAdapterCapability
 {
     public string Name => "MyExchange";
@@ -297,7 +301,7 @@ Strategies contain the decision logic. They react to ticks, use indicators, plac
 
 ### 5.1 The `IStrategyCapability` Interface
 
-The interface is in `Chronos.Core.Abstractions.Slots`. It replaces the older `IStrategy`.
+The interface is in `Chronos.Core.Sdk.Slots.Strategy`.
 
 ```csharp
 public interface IStrategyCapability
@@ -343,18 +347,21 @@ A simpler approach is to derive from `StrategyBase`, which provides convenience 
 - `NeuralNetwork` – Your optional `INeuralNetworkModel` instance, set by the engine.
 - `TotalGeneCount` – Computed automatically from property genes + NN parameter count.
 - Helper methods: `BuyAsync`, `SellAsync`, `ModifyOrderAsync`, `CloseAllAsync`, etc.
+- `GeneLock` – A `ReaderWriterLockSlim` to protect gene injection while processing ticks.
 
 Override the virtual lifecycle methods and add your logic.
 
 ### 5.4 Example Strategy Skeleton
 
 ```csharp
+using Chronos.Core.Sdk.Shared;
+
 public class SimpleMaStrategy : StrategyBase
 {
-    [Gene(10, 200, Step = 1)]
+    [Gene(10, 200, Step = 1, Type = GeneType.Discrete)]
     public int FastPeriod { get; set; } = 50;
 
-    [Gene(50, 500, Step = 1)]
+    [Gene(50, 500, Step = 1, Type = GeneType.Discrete)]
     public int SlowPeriod { get; set; } = 200;
 
     private Indicator _fastSma = null!;
@@ -408,7 +415,7 @@ if (isComplete) { /* use OHLC */ }
 To make your strategy optimizable, mark properties with `[Gene]`. The GA will automatically discover them via reflection.
 
 ```csharp
-[Gene(0.1, 5.0, Step = 0.1)]
+[Gene(0.1, 5.0, Step = 0.1, Type = GeneType.Discrete)]
 public double RiskPercent { get; set; } = 1.0;
 ```
 
@@ -425,7 +432,7 @@ If your strategy uses a neural network, set `RequiresNeuralNetwork = true` in yo
 
 The `GeneInjector` will automatically include the model's `ParameterCount` in `TotalGeneCount` and inject the neural network genes during `InjectGenes`. You can call `NeuralNetwork.Predict(inputs)` inside `OnTick` to get predictions.
 
-You may also implement `INeuralNetworkModel` yourself to create custom architectures, ONNX wrappers, or RL models. See §8.
+You may also implement `INeuralNetworkModel` yourself to create custom architectures, ONNX wrappers, or RL models. See §7.
 
 ---
 
@@ -604,6 +611,7 @@ Each hook registration accepts a `priority` parameter (default 100). Lower numbe
 | `OnGenerationCompleted` | Action\<(int, double, bool)\> | Action at the end of each generation. |
 | `OnStagnationDetected` | Action\<int\> | Action when stagnation is detected. |
 | `OnCompleted` | Action\<Chromosome\> | Fires when optimization completes. |
+| `OnFitnessEvaluation` | Action\<IFitnessEvaluationContext\> | Hook for calculating fitness; plugins set `context.Fitness`. |
 
 #### Report Hooks (via `registry.Report`)
 
@@ -708,7 +716,7 @@ public class UlcerIndexMetric : IHookManifest
 
 ## 7. Developing a Neural Network Model
 
-Neural network models are slot capabilities. Implement `INeuralNetworkModel` (in `Chronos.Core.Abstractions.Slots`) and place the DLL in the `NeuralNetworks/` directory. The engine activates the model when the active strategy declares `RequiresNeuralNetwork = true`.
+Neural network models are slot capabilities. Implement `INeuralNetworkModel` (in `Chronos.Core.Sdk.Slots.NeuralNetwork`) and place the DLL in the `NeuralNetworks/` directory. The engine activates the model when the active strategy declares `RequiresNeuralNetwork = true`.
 
 ### 7.1 The `INeuralNetworkModel` Interface
 
@@ -831,7 +839,7 @@ Chronos follows SemVer. Minor releases add new hook points or interface members 
 
 ## 12. Further Resources
 
-- **Chronos.Core.Abstractions** NuGet package – contains XML documentation for every public member.
-- **Sample Extensions**: See the `Chronos.Samples` repository for complete working examples.
-- **Chronos Principles**: For a high‑level understanding of the engine's design rules.
-- **Configuration Reference**: For all configuration objects and validation rules.
+- **Chronos.Core.Sdk** NuGet package – contains XML documentation for every public member.
+- **Chronos Principles** – For a high‑level understanding of the engine's design rules.
+- **Configuration Reference** – For all configuration objects and validation rules.
+- **Installation & Deployment Guide** – For setting up the engine.

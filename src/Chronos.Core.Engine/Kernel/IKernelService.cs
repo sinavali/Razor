@@ -6,9 +6,10 @@
 
 namespace Chronos.Core.Engine.Kernel;
 
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Engine.Management.Tasks;
 using Chronos.Core.Kernel.Backtesting;
+using Chronos.Core.Sdk.Slots.Adapter;
+using Chronos.Core.Sdk.Slots.Strategy;
 using ChromosomeKernel = Chronos.Core.Kernel.Optimization.Chromosome;
 
 /// <summary>

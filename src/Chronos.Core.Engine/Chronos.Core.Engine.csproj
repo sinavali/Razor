@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -31,7 +31,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Chronos.Core.Abstractions\Chronos.Core.Abstractions.csproj" />
+        <ProjectReference Include="..\Chronos.Core.Shared\Chronos.Core.Shared.csproj" />
+        <ProjectReference Include="..\Chronos.Core.Sdk\Chronos.Core.Sdk.csproj" />
         <ProjectReference Include="..\Chronos.Core.Kernel\Chronos.Core.Kernel.csproj" />
     </ItemGroup>
 

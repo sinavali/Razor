@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Hooks;
+using Chronos.Core.Sdk.Hooks;
 using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Hooks;

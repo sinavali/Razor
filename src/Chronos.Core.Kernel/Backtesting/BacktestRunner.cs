@@ -1,5 +1,3 @@
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Kernel.Brokers;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Events;
@@ -7,6 +5,8 @@ using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Indicators;
 using Chronos.Core.Kernel.Metrics;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.Strategy;
 using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Backtesting;

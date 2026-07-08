@@ -1,7 +1,9 @@
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Engine.Core;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.Adapter;
+using Chronos.Core.Sdk.Slots.NeuralNetwork;
+using Chronos.Core.Sdk.Slots.Strategy;
 using Microsoft.Extensions.Logging;
 
 namespace Chronos.Core.Engine.Extensions;

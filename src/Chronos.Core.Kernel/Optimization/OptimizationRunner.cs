@@ -1,11 +1,11 @@
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Kernel.Configuration;
 using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.NeuralNetwork;
 
 namespace Chronos.Core.Kernel.Optimization;
 
@@ -93,7 +93,7 @@ public sealed class OptimizationRunner
                 // Build fitness evaluation context and fire hook
                 var fitnessCtx = new FitnessEvaluationContext(
                     systemClock,
-                    new Chronos.Core.Abstractions.Hooks.Chromosome
+                    new Chronos.Core.Sdk.Hooks.Chromosome
                     {
                         Genes = chromo.Genes,
                         Fitness = double.NaN,
@@ -114,7 +114,7 @@ public sealed class OptimizationRunner
 
                 // Notify evaluators (post‑fitness)
                 _hooks?.OnChromosomeEvaluated.InvokeActionChain(
-                    (new Chronos.Core.Abstractions.Hooks.Chromosome
+                    (new Chronos.Core.Sdk.Hooks.Chromosome
                     {
                         Genes = chromo.Genes,
                         Fitness = finalFitness,
@@ -161,7 +161,7 @@ public sealed class OptimizationRunner
         var best = _ga.BestSolution!;
 
         _hooks?.OnCompleted.InvokeActionChain(
-            new Chronos.Core.Abstractions.Hooks.Chromosome
+            new Chronos.Core.Sdk.Hooks.Chromosome
             {
                 Genes = best.Genes,
                 Fitness = best.Fitness,

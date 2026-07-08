@@ -3,13 +3,13 @@
 **Version:** 1.0.0 LTS  
 **Audience:** Chronos core developers (Kernel, Engine, Cloud)  
 **Status:** Authoritative  
-**Last Updated:** 2026-07-07  
+**Last Updated:** 2026-07-09  
 
 ---
 
 ## 1. Introduction
 
-This document describes the complete internal architecture of the Chronos engine. It covers all closed‑source components (`Chronos.Core.Kernel`, future `Chronos.Engine`, `Chronos.Cloud`) and explains how they interact with the public `Chronos.Core.Abstractions` SDK and extensions.
+This document describes the complete internal architecture of the Chronos engine. It covers all closed‑source components (`Chronos.Core.Kernel`, `Chronos.Core.Engine`, and future `Chronos.Cloud`) and explains how they interact with the public `Chronos.Core.Sdk` and extensions.
 
 It is the primary technical reference for:
 
@@ -32,49 +32,46 @@ The repository `Chronos/` contains the following **source projects**:
 
 | Project | Role | Visibility | Notes |
 |---------|------|------------|-------|
-| `Chronos.Core.Abstractions` | Public SDK contracts | Public (NuGet) | Hooks, slots, domain types, utilities. No runtime logic. |
-| `Chronos.Core.Kernel` | Core engine implementation | Private (closed‑source) | Backtesting, brokers, optimisation, telemetry, hook invoker. References `Chronos.Core.Abstractions` via project reference. |
-| *(future)* `Chronos.Engine` | User‑facing executable | Private (closed‑source) | Bootstraps the engine, connects to Cloud, manages extension lifecycle. |
-| *(future)* `Chronos.Cloud` | SaaS control plane | Private (closed‑source) | Web application for management, monitoring, reporting. |
-| `Chronos.Samples` | Example extensions | External repo | Demonstrates adapter, strategy, indicator, hook plugin, and NN model implementation. Not part of the engine build. |
-
-**Discontinued projects** (already removed or pending removal):
-
-- `Chronos.Orchestration` – temporary test project; deleted.
-- `Chronos.Messaging` – merged into Kernel.
-- `Chronos.Sdk` / `Chronos.Core` – old naming, replaced by `Chronos.Core.Abstractions` and `Chronos.Core.Kernel`.
+| `Chronos.Core.Sdk` | Public SDK contracts | Public (NuGet) | Hooks, slots, domain types, utilities. No runtime logic. |
+| `Chronos.Core.Shared` | Shared utilities (file I/O, memory mapping) | Private (closed‑source) | Memory‑mapped tick access, binary file mapping. |
+| `Chronos.Core.Kernel` | Core engine implementation | Private (closed‑source) | Backtesting, brokers, optimisation, telemetry, hook invoker. References `Chronos.Core.Sdk` and `Chronos.Core.Shared`. |
+| `Chronos.Core.Engine` | User‑facing executable | Private (closed‑source) | Bootstraps the engine, connects to Cloud, manages extension lifecycle. References all core projects. |
+| `Chronos.Cloud` | SaaS control plane | Private (closed‑source) | Web application for management, monitoring, reporting (future). |
 
 ### 2.2 Dependency Graph
 
 ```
-Chronos.Core.Abstractions  (no dependencies beyond .NET 10 BCL)
+Chronos.Core.Sdk  (no dependencies beyond .NET 10 BCL)
        ↑
-Chronos.Core.Kernel        (references Chronos.Core.Abstractions via project reference)
+Chronos.Core.Shared  (references Chronos.Core.Sdk)
        ↑
-Chronos.Engine             (references Chronos.Core.Kernel and Chronos.Core.Abstractions)
+Chronos.Core.Kernel  (references Chronos.Core.Sdk, Chronos.Core.Shared)
+       ↑
+Chronos.Core.Engine  (references all core projects)
 ```
 
-Extensions (adapters, strategies, indicators, hook plugins, NN models) reference **only** `Chronos.Core.Abstractions`. The kernel never references extension assemblies directly; discovery is via reflection through isolated `AssemblyLoadContext`.
+Extensions (adapters, strategies, indicators, hook plugins, NN models) reference **only** `Chronos.Core.Sdk`. The kernel never references extension assemblies directly; discovery is via reflection through isolated `AssemblyLoadContext`.
 
 ### 2.3 Repository Layout
 
 ```
 Chronos/
 ├── src/
-│   ├── Chronos.Core.Abstractions/
-│   │   ├── Hooks/            ← Hook registration interfaces and context types
-│   │   ├── Shared/           ← Domain types, enums, exceptions, helpers
-│   │   └── Slots/            ← Capability interfaces (IAdapterCapability, IStrategyCapability, INeuralNetworkModel)
-│   ├── Chronos.Core.Kernel/
-│   └── Chronos.Samples/           # Separate repo in production
+│   ├── Chronos.Core.Sdk/           ← Public contracts
+│   │   ├── Hooks/                  ← Hook registration interfaces and context types
+│   │   ├── Shared/                 ← Domain types, enums, exceptions, helpers
+│   │   └── Slots/                  ← Capability interfaces (IAdapterCapability, IStrategyCapability, INeuralNetworkModel)
+│   ├── Chronos.Core.Shared/        ← Shared utilities
+│   ├── Chronos.Core.Kernel/        ← Core engine
+│   └── Chronos.Core.Engine/        ← Headless executable
 ├── tests/
-│   ├── Chronos.Core.Abstractions.UnitTests/
-│   ├── Chronos.Core.Abstractions.IntegrationTests/
+│   ├── Chronos.Core.Sdk.UnitTests/
+│   ├── Chronos.Core.Sdk.IntegrationTests/
 │   ├── Chronos.Core.Kernel.UnitTests/
 │   ├── Chronos.Core.Kernel.IntegrationTests/
 │   └── Chronos.Determinism.Tests/
 ├── docs/
-├── Chronos.sln
+├── Chronos.Core.sln
 ├── Directory.Build.props
 ├── global.json
 └── .editorconfig
@@ -137,7 +134,10 @@ Live ticks arrive asynchronously and are not stored in files.
 Adapter (exchange WebSocket)
    │ OnTickReceived event (symbol, Tick)
    ▼
-LiveBroker.OnTickAsync()
+LiveBroker.OnTickReceived()
+   │ (enqueues tick for processing)
+   ▼
+LiveBroker.ProcessTickAsync()
    │ (after feeding TickClock)
    ▼
 TickClock.SetTickTime(tick.Time)
@@ -147,7 +147,7 @@ TickClock.SetTickTime(tick.Time)
    └─→ Strategy.OnTick(symbol, tick)
 ```
 
-The adapter raises `IAdapterCapability.OnTickReceived`. The live broker subscribes, and each tick is pushed directly into memory. There is no file intermediary. The broker immediately updates its internal state and forwards the tick to the strategy, passing both the symbol and the tick data.
+The adapter raises `IAdapterCapability.OnTickReceived`. The live broker subscribes, and each tick is enqueued to a dedicated processor thread. There is no file intermediary. The broker immediately updates its internal state and forwards the tick to the strategy, passing both the symbol and the tick data.
 
 ---
 
@@ -167,7 +167,7 @@ Two implementations of `IClock` enforce the separation of market time and wall�
 - **Location:** `Chronos.Core.Kernel.Clock.SystemClock`
 - **Purpose:** Wall‑clock time for non‑trading concerns: in‑flight order guards, telemetry timestamps, health checks.
 - **Operation:** `GetTimestamp()` returns `Environment.TickCount64` (monotonic, unaffected by system time adjustments). `GetUtcNow()` returns `DateTime.UtcNow` (only used for logging/events).
-- **Used by:** `LiveBroker` (order guard timeouts, telemetry), `ChronosMetrics` (recording latencies), and future scheduling logic.
+- **Used by:** `LiveBroker` (order guard timeouts, telemetry), `CoreMetrics` (recording latencies), and scheduling logic.
 
 **Enforcement:** Any call to `DateTime.UtcNow` inside `Chronos.Kernel` trading paths is a build‑breaking violation per static analysis CI.
 
@@ -192,7 +192,7 @@ Used exclusively for backtesting and optimisation. Entirely deterministic, singl
 - **Stop‑out:** If `Equity / MarginUsed ≤ _stopOutLevel`, the position with the worst floating PnL is force‑closed.
 - **Holding costs:** `ProcessHoldingCosts()` charges daily swap/funding based on `TickClock` time. Resets daily peak equity at UTC day boundaries.
 - **Friction:** Slippage and commission are derived from the adapter's `IMarketCalculator` and `SymbolProperties`. There is no separate `ISimulationFriction`; the adapter owns all friction logic.
-- **Partial closes:** Supported; adjusts volume and apportions commission/swap. Uses `CloseSequence` to disambiguate multiple partial closes of the same ticket.
+- **Partial closes:** Supported; adjusts volume and apportions commission/swap.
 - **Warm‑up:** `IsWarmup` property is set by the backtest runner. While true, all order methods return a rejection response.
 
 **Determinism:** No `DateTime.UtcNow`, no system clock. All randomisation is external (strategy can be seeded). The execution queue time is purely tick‑driven.
@@ -204,14 +204,14 @@ Wraps an `IAdapterCapability` for real exchange trading. Adds reconciliation, co
 **Key characteristics:**
 
 - **State lock:** `SemaphoreSlim(1,1)` ensures thread‑safe access (ticks, order responses, periodic sync).
-- **Tick handling:** `OnTickAsync` updates `_lastPrices`, processes holding costs, recalculates floating PnL for all positions, checks SL/TP, and triggers stop‑out. It also periodically calls `SyncStateAsync()`.
+- **Tick handling:** `ProcessTickAsync()` updates `_lastPrices`, processes holding costs, recalculates floating PnL for all positions, checks SL/TP, and triggers stop‑out. It also periodically calls `SyncStateAsync()`.
 - **State reconciliation:** `ReconcileAsync()` fetches the full account state from the adapter and corrects local positions/orders. Called at startup and after reconnection.
-- **In‑flight order guard:** Uses `SystemClock.GetTimestamp()` (monotonic) + configurable timeout (in milliseconds) to prevent duplicate order submissions. Protects against rapid double‑clicks or network retries.
+- **In‑flight order guard:** Uses `SystemClock.GetTimestamp()` (monotonic) + configurable timeout to prevent duplicate order submissions.
 - **Order execution:** Delegated to adapter methods. Responses are returned immediately; execution reports are handled asynchronously.
 - **Execution reports:** The adapter's `OnExecutionUpdate` event is handled in a fire‑and‑forget task with full exception logging to prevent process crashes (Principle 13).
 - **Connection management:** `ConnectAndNotifyAsync` and `DisconnectAndNotifyAsync` publish `ConnectionStateEvent` and update telemetry.
-- **Telemetry:** Records order latency, rejection count, and tick arrival latency via `ChronosMetrics`.
-- **Logger:** The constructor requires a non‑null `ILogger<LiveBroker>` instance. Logging is mandatory for operational visibility; do not pass `null`.
+- **Telemetry:** Records order latency, rejection count, and tick arrival latency via `CoreMetrics`.
+- **Logger:** Uses `ILogger<LiveBroker>` for operational visibility.
 
 **Parity with SimulatedBroker:** Both use the same `IMarketCalculator`, the same stop‑out logic, the same SL/TP evaluation order, and the same daily holding cost calculation. Unit tests verify that identical tick sequences produce identical trade histories.
 
@@ -230,7 +230,7 @@ Wraps an `IAdapterCapability` for real exchange trading. Adds reconciliation, co
 
 1. **Setup:**
    - Creates a `TickClock`.
-   - Instantiates `SimulatedBroker` with `IMarketCalculator`, `IAdapterCapability` (for friction), symbol properties, etc.
+   - Instantiates `SimulatedBroker` with `IMarketCalculator`, symbol properties, etc.
    - Creates `TickWindow` for the requested timeframes (excluding `Tick`).
    - Wires broker and tick window to the strategy via `StrategyBase.WireUp()`.
 
@@ -324,7 +324,7 @@ This guarantees bit‑identical hook execution order across runs.
 
 - **`GeneticOptimizer`** – Steppable GA implementing `IGeneticOptimizer`. Host controls generation flow.
 - **`Chromosome`** – A single candidate solution. Contains a double[] gene array, fitness, generation index, seed. The sentinel `Chromosome.NotEvaluated` (`double.NegativeInfinity`) marks unevaluated chromosomes.
-- **`GeneInjector`** – Static class in `Chronos.Core.Abstractions.Shared` for extracting schemas, injecting genes into strategy properties and neural network models, and building complete chromosome arrays.
+- **`GeneInjector`** – Static class in `Chronos.Core.Sdk.Shared` for extracting schemas, injecting genes into strategy properties and neural network models, and building complete chromosome arrays.
 - **`OptimizationSpecification`** – Immutable configuration (population size, mutation rate, etc.) in `Chronos.Core.Kernel.Configuration`.
 - **`GeneticOptimizerState`** – Serializable state for pause/resume.
 
@@ -369,15 +369,13 @@ The schema is extracted via `GeneInjector.BuildCompleteSchema()`. The total gene
 
 All configuration is represented by immutable `record` types that implement a `Validate()` method. A `ConfigurationException` is thrown for invalid input. There are no silent defaults for critical parameters (Principle 9).
 
-**Note:** `ConfigurationException` derives directly from `System.Exception` (not from `AppException`). This is intentional; it is a configuration‑specific error that does not share the same base as domain exceptions.
-
 **Specifications in `Chronos.Core.Kernel.Configuration`:**
 
 - `ExecutionSpecification` – date range, warmup, latency, max positions, stop‑out, parallelism, gene seed (nullable `int?`).
 - `OptimizationSpecification` – master seed (`≥ 0`), population/generations, mutation/crossover rates, elitism, tournament size. No walk‑forward fields (orchestration is Cloud‑managed). No `FitnessModel` field (fitness is computed via hooks).
 - `LiveSpecification` – magic number, order guard timeout. Continuous optimisation fields removed (Cloud‑orchestrated).
 
-**Specifications in `Chronos.Core.Abstractions.Shared`:**
+**Specifications in `Chronos.Core.Sdk.Shared`:**
 
 - `StrategySpecification` – initial balance, leverage, symbols/timeframes. No `FrictionModel` (adapter‑internal) or `FitnessModel` (hook‑based). Duplicate symbols are rejected.
 
@@ -409,15 +407,16 @@ A single DLL can implement any combination. The engine scans all directories.
 
 ### 10.3 Loading Process
 
-1. Scan all extension directories for `.dll` files (including subfolder‑named `.dll`s for multi‑file extensions).
+1. Scan all extension directories for `.dll` files.
 2. For each assembly, load in a new `PluginLoadContext` (unloadable later).
-3. The `PluginLoadContext` ensures `Chronos.Core.Abstractions` is loaded from the default context (type sharing), while all other dependencies are resolved from the extension's directory.
+3. The `PluginLoadContext` ensures `Chronos.Core.Sdk` is loaded from the default context (type sharing), while all other dependencies are resolved from the extension's directory.
 4. Call `PluginValidator.ValidateAssembly()` to check the SDK version. Reject if the major version differs.
-5. Discover types implementing `IHookManifest`, `IAdapterCapability`, `IStrategyCapability`, `INeuralNetworkModel`, or `Indicator`.
-6. Register discovered items in the engine's manifest.
-7. Send the manifest to Chronos Cloud.
-8. Cloud responds with the active set (selected by the user from their profile).
-9. Activate the selected adapter, strategy, indicators, NN model, and hook plugins.
+5. Call `PluginSafetyValidator.Validate()` to check strong‑naming in production.
+6. Discover types implementing `IHookManifest`, `IAdapterCapability`, `IStrategyCapability`, `INeuralNetworkModel`, or `Indicator`.
+7. Register discovered items in the engine's manifest.
+8. Send the manifest to Chronos Cloud.
+9. Cloud responds with the active set (selected by the user from their profile).
+10. Activate the selected adapter, strategy, indicators, NN model, and hook plugins.
 
 **Isolation:** Each extension context resolves dependencies independently, avoiding version conflicts. Assemblies must be strongly signed in production; unsigned plugins are rejected.
 
@@ -427,7 +426,7 @@ A single DLL can implement any combination. The engine scans all directories.
 
 ### 11.1 In‑Process Message Bus
 
-`Chronos.Kernel.Messaging.MessageBus` implements `IMessageBus` (both interfaces now reside in `Chronos.Core.Kernel.Messaging`):
+`Chronos.Kernel.Messaging.MessageBus` implements `IMessageBus`:
 
 - **Typed subscriptions:** Handlers are stored per message type.
 - **Deduplication:** If `message.EventId` is non‑null and has been published within the last 60 seconds, the message is suppressed.
@@ -445,8 +444,8 @@ All event records reside in `Chronos.Core.Kernel.Events`. They are internal infr
 | `ConnectionStateEvent` | LiveBroker | IsConnected, AdapterName |
 | `LiveReconnectEvent` | LiveBroker | Success, AttemptCount, AdapterName |
 | `LiveSessionEndedEvent` | LiveBroker | FinalBalance, FinalEquity, MaxDrawdown, TotalTrades |
-| `OptimizationGenerationEvent` | OptimizationRunner (future) | Generation, BestFitness, IsHyperMutation |
-| `OptimizationCycleCompletedEvent` | (future) | CycleIndex, BestFitness, GenerationCount |
+| `OptimizationGenerationEvent` | OptimizationRunner | Generation, BestFitness, IsHyperMutation |
+| `OptimizationCycleCompletedEvent` | OptimizationRunner | CycleIndex, BestFitness, GenerationCount |
 
 ---
 
@@ -456,30 +455,30 @@ All event records reside in `Chronos.Core.Kernel.Events`. They are internal infr
 |-----------|-----------------|-------|
 | `BacktestRunner` | Single‑threaded | Sync‑over‑async; no concurrency. |
 | `SimulatedBroker` | Lock‑protected | All public methods and `OnTickAsync` use `_stateLock`. |
-| `LiveBroker` | `SemaphoreSlim(1,1)` | Protects all state. `ExecutionReport` handler also acquires lock. |
-| `GeneticOptimizer.EvaluateAsync` | Parallel | Uses `Parallel.ForEachAsync` with configurable max DOP. Chromosomes are evaluated independently. |
+| `LiveBroker` | `SemaphoreSlim(1,1)` | Protects all state. Dedicated tick processor thread. |
+| `GeneticOptimizer.EvaluateAsync` | Parallel | Uses `Parallel.ForEachAsync` with configurable max DOP. |
 | `MessageBus` | Lock‑free for publish | Uses snapshot of handlers; subscriptions locked briefly. |
 | `HookInvoker` | Single‑threaded per pipeline | Filters and actions execute synchronously within the pipeline's thread. |
-| Adapter implementations | Must be thread‑safe (Principle 13) | The engine may call adapter methods from multiple threads simultaneously (tick events, timers, command execution). |
-| `TickWindow` | Not thread‑safe | Designed for single‑threaded tick processing only. External synchronisation required if accessed from other threads. |
+| Adapter implementations | Must be thread‑safe (Principle 13) | The engine may call adapter methods from multiple threads. |
+| `TickWindow` | Not thread‑safe | Designed for single‑threaded tick processing only. |
 
 ---
 
 ## 13. Telemetry & Observability
 
-`ChronosMetrics` (instance‑based) provides OpenTelemetry metrics via `System.Diagnostics.Metrics`.
+`CoreMetrics` (instance‑based) provides OpenTelemetry metrics via `System.Diagnostics.Metrics`.
 
 | Metric | Instrument | Description |
 |--------|------------|-------------|
-| `chronos.ga.fitness_improvement` | Histogram | Improvement in best fitness per generation (double) |
-| `chronos.backtest.ticks_per_second` | Histogram | Tick processing rate |
-| `chronos.live.order_latency_ms` | Histogram | Order placement latency in milliseconds |
-| `chronos.live.order_rejections_total` | Counter | Total order rejections |
-| `chronos.optimization.duration_seconds` | Histogram | Total optimisation run duration |
-| `chronos.live.tick_latency_ticks` | Histogram | Live tick arrival latency (wall clock – tick timestamp) |
-| `chronos.live.connection_state` | Gauge | 1 if connected, 0 if disconnected, with `instance_id` tag |
+| `core.ga.fitness_improvement` | Histogram | Improvement in best fitness per generation |
+| `core.backtest.ticks_per_second` | Histogram | Tick processing rate |
+| `core.live.order_latency_ms` | Histogram | Order placement latency in milliseconds |
+| `core.live.order_rejections_total` | Counter | Total order rejections |
+| `core.optimization.duration_seconds` | Histogram | Total optimisation run duration |
+| `core.live.tick_latency_ticks` | Histogram | Live tick arrival latency |
+| `core.live.connection_state` | Gauge | 1 if connected, 0 if disconnected |
 
-All metrics are registered in a `Meter` named `"Chronos.Metrics"`.
+All metrics are registered in a `Meter` named `"Core.Metrics"`. Engine‑specific metrics are in `EngineTelemetry` under `"Chronos.Core.Engine"`.
 
 ---
 
@@ -489,8 +488,6 @@ The engine does **not** generate formatted reports (PDF, HTML, Excel, etc.). Rep
 
 1. Streaming raw `BacktestResult` and `Chromosome` data to the Cloud via events (`BacktestCompletedEvent`, `OptimizationGenerationEvent`, etc.).
 2. Providing the `ReportGenerator` class, which exists solely to invoke the `report.before_generate` and `report.after_generate` hooks. These hooks allow plugins to capture or modify the raw data before it is sent to Cloud, or to perform custom logging.
-
-The `ReportGenerator` in `Chronos.Core.Kernel.Reporting` is a stub that does not produce any actual report output. It passes a dummy byte array to the `OnAfterGenerate` hook, but this is not used in production; it is a placeholder for future extensibility. In practice, Cloud aggregates the raw data from events and generates all user‑facing reports.
 
 **Summary:** The engine streams raw data; the Cloud renders reports.
 
@@ -525,17 +522,45 @@ A separate test suite (CI gate) executes a full backtest twice with identical in
 
 ---
 
-## 16. Future Projects (Out of Scope for v1.0.0 LTS)
+## 16. Project: Chronos.Core.Engine
 
-### 16.1 Chronos.Engine
+### 16.1 Architecture Overview
 
-- Headless executable.
-- Manages extension loading, connects to Chronos Cloud via WebSocket.
-- Receives commands and dispatches them to the kernel.
-- Handles encryption, heartbeat, remote updates, binary integrity checks.
-- Will be obfuscated and protected against reverse engineering.
+The `Chronos.Core.Engine` project is the headless executable that hosts the kernel and communicates with Chronos Cloud. Its key components are:
 
-### 16.2 Chronos.Cloud
+- **Program.cs** – Entry point, CLI parsing, service registration, shutdown handling.
+- **CloudConnector** – WebSocket connection, authentication, heartbeat, command dispatch, binary transfers.
+- **SecurityManager** – ECDH key exchange, AES‑256‑GCM encryption, integrity checks.
+- **StateManager** – SQLite persistence for engine ID, live state, optimisation state, cron jobs, schedules, queued messages.
+- **ExtensionManager** – Discovery, activation, isolation, hot‑reload.
+- **TaskManager** – Task scheduling with live‑first priority.
+- **CronJobManager** – Cron and one‑off schedule execution.
+- **KernelService** – Facade bridging engine commands to kernel operations.
+- **BehaviorRecorder** – Sparse behavior logging with MessagePack + GZip.
+- **SelfUpdateManager** – Download, checksum, staging, and rollback.
+
+### 16.2 Dependency Injection
+
+All services are registered in `BuildServiceProvider()` using `Microsoft.Extensions.DependencyInjection`. Key registrations include:
+
+- `Singleton` for stateless services (SecurityManager, StateManager, CloudConnector, etc.)
+- `Scoped` for task‑specific services
+- `Lazy<T>` for dependencies that must be resolved after construction (e.g., ICloudConnector in BehaviorRecorder)
+
+### 16.3 Command Flow
+
+1. Cloud sends a `Command` message.
+2. `CloudConnector.ReceiveLoopAsync()` deserializes and dispatches to `ProcessReceivedMessageAsync()`.
+3. `CommandReceived` event fires.
+4. `CommandDispatcher.OnCommandReceivedAsync()` calls `DispatchAsync()`.
+5. `DispatchAsync()` looks up the handler by `CommandId` and invokes `HandleAsync()`.
+6. Handler executes the operation and sends a `CommandResponse` via `SendResponseAsync()`.
+
+---
+
+## 17. Future Projects (Out of Scope for v1.0.0 LTS)
+
+### 17.1 Chronos.Cloud
 
 - SaaS web application.
 - Sends commands, receives progress/results, stores all data.

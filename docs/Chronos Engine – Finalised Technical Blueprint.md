@@ -1,19 +1,19 @@
-# Chronos Engine – Finalised Technical Blueprint (v1.0.0 LTS)
+# Chronos Engine – Finalised Technical Blueprint
 
 **Version:** 1.0.0 LTS  
 **Status:** Authoritative – Single Source of Truth  
-**Last Updated:** 2026-07-07  
+**Last Updated:** 2026-07-09  
 
 ---
 
 ## 1. Overview & Core Principles
 
-The Chronos Engine is the headless execution node that runs on the user’s infrastructure. It is the **sole execution point** for all trading, backtesting, optimisation, and data‑streaming tasks. It communicates exclusively with Chronos Cloud via a persistent, encrypted WebSocket connection.
+The Chronos Engine is the headless execution node that runs on the user's infrastructure. It is the **sole execution point** for all trading, backtesting, optimisation, and data‑streaming tasks. It communicates exclusively with Chronos Cloud via a persistent, encrypted WebSocket connection.
 
 The Engine is designed to be:
 
 - **Always‑online** – maintains connection to Cloud at all times. If the connection drops, it retries indefinitely (with exponential backoff) and never exits on its own.
-- **Fully controllable** – Cloud sends granular commands to manage every aspect of the Engine’s operation (50+ commands).
+- **Fully controllable** – Cloud sends granular commands to manage every aspect of the Engine's operation (60+ commands, all implemented in `Chronos.Core.Engine`).
 - **Secure** – three‑factor authentication (username, password, instance API key), end‑to‑end encryption, anti‑tampering.
 - **Performant** – resource‑aware task scheduling with strict live‑first prioritisation.
 - **Headless & Simple** – user interacts only via Cloud dashboard; no configuration files; minimal CLI solely for authentication and critical alerts.
@@ -46,7 +46,7 @@ The Engine has a minimal CLI. It is launched without command‑line arguments in
      - Instance API Key
    - To support automated restarts (e.g., self‑update), the user can pass credentials via the command line:
      ```
-     Chronos.Engine.exe --auth=MyUsername,MyPassword,MyInstanceApiKey
+     Chronos.Core.Engine.exe --auth=MyUsername,MyPassword,MyInstanceApiKey
      ```
      - The `--auth` flag accepts exactly three comma‑separated values.
      - If provided, the interactive prompt is skipped.
@@ -75,7 +75,7 @@ When the self‑update mechanism stages a new binary, it restarts the Engine wit
 
 ### 3.2 Message Envelope
 
-All messages are JSON (except binary chunks). Envelope structure:
+All messages are JSON (except binary chunks). Envelope structure (`CloudMessage` in `Chronos.Core.Engine.Communication`):
 
 ```json
 {
@@ -96,15 +96,15 @@ All messages are JSON (except binary chunks). Envelope structure:
 
 1. Engine → Cloud: `Auth` with:
    - `Username`, `Password`, `InstanceApiKey`
-   - `EngineVersion`, `ClientCapabilities` (list of supported feature IDs, see §18)
+   - `EngineVersion`, `ClientCapabilities` (list of supported feature IDs)
    - `PublicKey` (ECDH ephemeral public key)
 2. Cloud validates credentials. If valid, returns `AuthResponse`:
    - `Status` – `Success` or `Failure`
-   - `PublicKey` – Cloud’s ephemeral public key
+   - `PublicKey` – Cloud's ephemeral public key
    - `Nonce` – for deriving session key
    - `SessionId` – for future reference
    - `RequiredCapabilities` – features the Engine must support
-3. Engine derives shared secret from its private key and Cloud’s public key.
+3. Engine derives shared secret from its private key and Cloud's public key.
 4. Engine → Cloud: `AuthConfirm` with a signed challenge (HMAC of nonce with session key).
 5. Cloud verifies and sends `AuthAck`.
 6. From this point, all messages are encrypted with AES‑256‑GCM using the derived session key. Each message includes a sequence number to prevent replay.
@@ -114,12 +114,12 @@ All messages are JSON (except binary chunks). Envelope structure:
 - Engine sends `Heartbeat` at intervals defined by Cloud in the previous `HeartbeatResponse`.
 - Heartbeat payload includes:
   - `EngineId`
-  - `LocalTimestamp` (Engine’s current UTC time)
+  - `LocalTimestamp` (Engine's current UTC time)
   - `Health` – CPU, memory, tasks running, live tick age, etc.
 - Cloud responds with `HeartbeatResponse` containing:
   - `Status` – `OK`, `Stop`, `Pause`, `Lock`, `Exit`, `Ban`
   - `NextIntervalSeconds`
-  - `ServerTime` – Cloud’s current UTC time (for time sync)
+  - `ServerTime` – Cloud's current UTC time (for time sync)
   - `Commands` – list of commands to execute immediately (if any)
   - `AuthValid` – true/false (re‑validates credentials)
   - `AdminMessage` – optional broadcast message (with style hints)
@@ -144,18 +144,11 @@ All large data transfers (logs, optimisation results, raw tick data, behaviour l
 
 **Protocol:**
 
-1. **Sender** sends a `BinaryTransferStart` message containing:
-   - `TransferId` – unique UUID.
-   - `FileName` – name for the target file.
-   - `TotalSize` – total bytes.
-   - `ContentType` – e.g., `"application/octet-stream"`, `"application/json"`, `"text/plain"`.
-   - `Checksum` – SHA‑256 of the whole file (for integrity).
-2. **Sender** then sends one or more `BinaryChunk` messages:
-   - Each contains a base64‑encoded `Data` segment (or raw binary over the WebSocket frame, but JSON‑base64 is simpler).
-   - Each chunk includes `TransferId`, `Offset`, and `Data`.
-   - Chunk size is configurable (default 64 KB) with a sliding window for flow control.
+1. **Sender** sends a `BinaryTransferStart` message (`BinaryTransferManager` in `Chronos.Core.Engine.Communication`).
+2. **Sender** then sends one or more `BinaryChunk` messages (base64‑encoded data).
 3. **Sender** finalises with a `BinaryTransferEnd` message.
-4. **Receiver** can send `BinaryTransferAck` to confirm receipt or request retransmission of a specific chunk (`RequestRetransmit`).
+4. **Receiver** can send `BinaryTransferAck` to confirm receipt or request retransmission.
+5. Checksum (SHA‑256) verification is performed on completion.
 
 **Performance:** The same WebSocket is reused, reducing latency and overhead. For extremely large files (multi‑gigabyte tick data), the engine streams directly from disk without loading the entire file into memory.
 
@@ -167,7 +160,7 @@ Every command, feature, and capability in the system is assigned a **unique nume
 
 ### 4.1 Command ID Registry
 
-Commands are grouped by category, each with a range of IDs.
+Commands are grouped by category, each with a range of IDs. **All 60+ commands are implemented** in `Chronos.Core.Engine.Management.Commands.Handlers`.
 
 | Category | ID Range | Description |
 |----------|----------|-------------|
@@ -176,101 +169,19 @@ Commands are grouped by category, each with a range of IDs.
 | Backtesting | 1200‑1299 | RunBacktest, CancelBacktest, GetBacktestResult |
 | Optimisation | 1300‑1399 | StartOptimization, CancelOptimization, PauseOptimization, ResumeOptimization, GetOptimizationState, GetOptimizationResult |
 | Extensions | 1400‑1499 | ReloadExtensions, DeployExtension, RemoveExtension, ListExtensions, ActivateExtensions |
-| Reports (Client‑Side Aggregation) | 1500‑1599 | *Reserved for Cloud* – Engine never generates reports |
+| Reports | 1500‑1599 | GenerateReport, GetReport |
 | Logs & Telemetry | 1600‑1699 | GetLogs, DeleteLogsAll, DeleteLogsExpired, SetLogLevel, GetMetrics, ExportMetrics |
 | Schedules & Cron | 1700‑1799 | SetCronJob, DeleteCronJob, ListCronJobs, SetSchedule, DeleteSchedule, ListSchedules |
 | Admin & Broadcast | 1900‑1999 | BroadcastMessage, SetAdminConfig, GetEngineCapabilities, GetEngineVersion |
 | Kill & Emergency | 2000‑2099 | KillSwitch, EmergencyStop |
 | Behaviour Logging | 2100‑2199 | EnableBehaviorLogging, DisableBehaviorLogging, GetBehaviorLogs, DeleteBehaviorLogs |
 
-### 4.2 Full Command List (60+ Commands)
+### 4.2 Command Handler Design
 
-*(This list remains identical to the previous blueprint, but all handlers are fully implemented. See `ICommandHandler` implementations for detailed behaviour.)*
-
-#### System Management (1000‑1099)
-- `Auth` (1000) – authenticate.
-- `AuthConfirm` (1001) – confirm session.
-- `Heartbeat` (1002) – send heartbeat.
-- `GetStatus` (1003) – return full Engine status.
-- `PauseEngine` (1004) – pause non‑critical tasks.
-- `ResumeEngine` (1005) – resume paused tasks.
-- `Shutdown` (1006) – graceful shutdown.
-- `Restart` (1007) – restart Engine (used by self‑update).
-- `SetConfig` (1008) – update runtime config (from Cloud).
-- `GetConfig` (1009) – return current config.
-- `GetCapabilities` (1010) – return supported feature IDs.
-
-#### Live Trading (1100‑1199)
-- `StartLive` (1100) – start live trading.
-- `StopLive` (1101) – stop live trading.
-- `InjectGenes` (1102) – inject genes into live strategy.
-- `PauseLive` (1103) – pause live (no new orders).
-- `ResumeLive` (1104) – resume live.
-- `GetLiveState` (1105) – get current live state.
-- `SyncLive` (1106) – force reconciliation with broker.
-- `SetLiveConfig` (1107) – update live config (e.g., stop‑out, max positions).
-- `GetLiveMetrics` (1108) – get live performance metrics.
-
-#### Backtesting (1200‑1299)
-- `RunBacktest` (1200) – run a backtest.
-- `CancelBacktest` (1201) – cancel a running backtest.
-- `GetBacktestResult` (1202) – get result (raw data stream, not a report).
-- `ListBacktests` (1203) – list all backtest tasks.
-
-#### Optimisation (1300‑1399)
-- `StartOptimization` (1300) – start GA optimisation.
-- `CancelOptimization` (1301) – cancel.
-- `PauseOptimization` (1302) – pause and save state.
-- `ResumeOptimization` (1303) – resume from saved state.
-- `GetOptimizationState` (1304) – get current population snapshot.
-- `GetOptimizationResult` (1305) – get best chromosome (raw data).
-- `ListOptimizations` (1306) – list optimisation tasks.
-
-#### Extensions (1400‑1499)
-- `ReloadExtensions` (1400) – reload all extensions.
-- `DeployExtension` (1401) – deploy new DLL (binary transfer).
-- `RemoveExtension` (1402) – remove extension by name.
-- `ListExtensions` (1403) – return manifest.
-- `ActivateExtensions` (1404) – activate specific set (re‑validate).
-
-#### Logs & Telemetry (1600‑1699)
-- `GetLogs` (1600) – request logs (type, date range). Returns binary transfer.
-- `DeleteLogsAll` (1601) – delete all logs.
-- `DeleteLogsExpired` (1602) – delete expired logs.
-- `SetLogLevel` (1603) – change log verbosity.
-- `GetMetrics` (1604) – fetch telemetry metrics (JSON).
-- `ExportMetrics` (1605) – export metrics to binary file.
-
-#### Schedules & Cron (1700‑1799)
-- `SetCronJob` (1700) – define a cron job (command + schedule).
-- `DeleteCronJob` (1701) – delete a cron job.
-- `ListCronJobs` (1702) – list all cron jobs.
-- `SetSchedule` (1703) – define a one‑off schedule (datetime + command).
-- `DeleteSchedule` (1704) – delete a schedule.
-- `ListSchedules` (1705) – list all schedules.
-
-#### Admin & Broadcast (1900‑1999)
-- `BroadcastMessage` (1900) – display admin message on console.
-- `SetAdminConfig` (1901) – set admin‑only config.
-- `GetEngineCapabilities` (1902) – return supported feature IDs.
-- `GetEngineVersion` (1903) – return version.
-
-#### Kill & Emergency (2000‑2099)
-- `KillSwitch` (2000) – emergency shutdown (close positions, exit).
-- `EmergencyStop` (2001) – stop all tasks (but keep Engine running).
-
-#### Behaviour Logging (2100‑2199)
-- `EnableBehaviorLogging` (2100) – enable sparse behaviour logging for strategy.
-- `DisableBehaviorLogging` (2101) – disable.
-- `GetBehaviorLogs` (2102) – request behaviour log files (binary transfer).
-- `DeleteBehaviorLogs` (2103) – delete behaviour logs.
-
-### 4.3 Command Handler Design
-
-- Each command implemented as a class implementing `ICommandHandler<T>` where `T` is the command type.
-- Handlers are registered via DI using `AddTransient` or `AddScoped` in a dedicated `CommandRegistry`.
+- Each command implemented as a class inheriting from `CommandHandlerBase`.
 - `CommandDispatcher` routes incoming messages based on `CommandId` to the appropriate handler.
-- Handlers have access to all core services (TaskManager, ExtensionManager, StateManager, CloudConnector, KernelService, etc.).
+- Handlers have access to all core services via dependency injection.
+- The dispatcher is initialised in `Program.cs` and wired to the `CloudConnector`.
 
 ---
 
@@ -287,45 +198,29 @@ EngineRoot/
 │   └── NeuralNetworks/
 ├── Hooks/
 ├── logs/
-└── behavior_logs/
+├── state/                 (SQLite state database)
+├── downloads/             (received binary files)
+├── backup/                (self‑update backups)
+├── update/                (staged updates)
+└── behavior_logs/         (compressed behaviour log files)
 ```
-
-- `Slots/` – subdirectories for each slot type.
-- `Hooks/` – all hook plugin DLLs.
-- `logs/` – standard logs (daily rotation).
-- `behavior_logs/` – compressed behaviour log files (temporary).
 
 All paths are relative to the Engine executable. No configuration files exist in these directories.
 
 ### 5.2 Discovery & Activation Flow (Double Validation)
 
-The activation flow guarantees that only compatible, signed, and Cloud‑approved extensions are loaded.
+The activation flow guarantees that only compatible, signed, and Cloud‑approved extensions are loaded. This is implemented in `ExtensionManager` and `ExtensionCatalog`.
 
-1. **Discovery (Engine):** On startup (or `ReloadExtensions`), Engine scans all directories, loads each assembly via `PluginLoadContext`, validates SDK version (`[SdkVersion]`), and builds a manifest:
-   - List of adapters (name, version, capabilities)
-   - List of strategies (name, version, capabilities)
-   - List of indicators (name, version)
-   - List of NN models (name, version)
-   - List of hook plugins (name, version)
+1. **Discovery (Engine):** On startup (or `ReloadExtensions`), Engine scans all directories, loads each assembly via `PluginLoadContext`, validates SDK version (`[SdkVersion]`), and builds a manifest.
 2. **Manifest Send (Engine → Cloud):** Engine sends the complete manifest to Cloud via `ExtensionManifest` event.
-3. **Cloud Validation & Selection:** Cloud validates signatures, compatibility, and license permissions. It selects the active set based on the user profile and sends `ActiveExtensions` command:
-   - `AdapterName`
-   - `StrategyName`
-   - `IndicatorNames` (list)
-   - `NNModelName` (optional)
-   - `HookPluginNames` (list)
-4. **Engine Re‑validation:** Engine re‑validates that all selected extensions are present, loadable, and that their required capabilities are supported by the Engine. It also verifies that the Cloud‑selected set is internally consistent (e.g., the selected adapter is compatible with the selected strategy’s symbol requirements).
-5. **Engine → Cloud `ActiveExtensionsAck`:** Engine sends back the validated set (or an error if validation fails). If validation fails, the Engine does **not** activate the extensions and sends an error to Cloud.
+3. **Cloud Validation & Selection:** Cloud validates signatures, compatibility, and license permissions. It selects the active set and sends `ActivateExtensions` command.
+4. **Engine Re‑validation:** Engine re‑validates that all selected extensions are present, loadable, and internally consistent.
+5. **Engine → Cloud `ActiveExtensionsAck`:** Engine sends back the validated set (or an error).
 6. **Cloud Finalises:** Cloud acknowledges and the Engine activates the extensions.
-
-**When does activation happen?**
-- On every fresh Engine startup (after successful Cloud authentication).
-- On `ReloadExtensions` command (user manually updates extensions via Cloud dashboard).
-- On `DeployExtension` / `RemoveExtension` (followed by a reload).
 
 ### 5.3 Extension Lifecycle
 
-- **Instantiation:** `Activator.CreateInstance` (or DI factory).
+- **Instantiation:** `Activator.CreateInstance` (or cached compiled lambda via `_ctorCache`).
 - **Initialisation:** Calls `ConnectAsync` (adapter), `OnConfigureAsync`/`OnStartAsync` (strategy), sets `NeuralNetwork` if required, and `RegisterHooks` (plugins).
 - **Activation Order:** Hooks registered **before** strategy starts.
 - **Deactivation:** On `StopLive` or `ReloadExtensions`, Engine disposes in reverse order.
@@ -333,7 +228,8 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 ### 5.4 Safety & Compatibility
 
 - Double validation ensures consistency.
-- Compatibility check uses feature ID system (Engine compares its supported IDs against extension’s required IDs).
+- `PluginValidator` checks SDK version (major must match).
+- `PluginSafetyValidator` checks strong‑naming in production.
 - Rollback on failure (the previous active set remains loaded until the new set is fully validated).
 
 ---
@@ -342,34 +238,20 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 
 ### 6.1 Task Types & Resource Reservation
 
-| Task Type | Priority | CPU Reservation | RAM Reservation | Notes |
-|-----------|----------|-----------------|-----------------|-------|
-| LiveTask | High | **1 dedicated core** | 1 GB | Reserved at startup; never pre‑empted |
-| BacktestTask | Medium | Shared (remaining) | Up to 2 GB per task | Configurable by Cloud |
-| OptimizationTask | Medium | Shared (remaining) | Up to 2 GB per task | Configurable |
-| ReportTask | Low | Shared | 256 MB | (Engine only streams raw data) |
-| LogsTask | Low | Shared | 128 MB | |
+| Task Type | Priority | CPU Reservation | Notes |
+|-----------|----------|-----------------|-------|
+| LiveTask | High | **1 dedicated core** | Reserved at startup; never pre‑empted |
+| BacktestTask | Medium | Shared (remaining) | Configurable by Cloud |
+| OptimizationTask | Medium | Shared (remaining) | Configurable |
+| Other | Low | Shared | Logs, reports, etc. |
 
-**Live Trading** always has a reserved core (hard affinity) and higher scheduling priority. The `TaskManager` uses `ThreadPool` limits and custom `TaskScheduler` implementations to enforce this.
+**Live Trading** always has a reserved core (hard affinity) and higher scheduling priority. The `TaskManager` uses dedicated `Thread` with `ThreadPriority.Highest` for live tasks.
 
-### 6.2 Task Scheduler
-
-- `TaskManager` maintains a list of running tasks.
-- Starts, stops, pauses, resumes tasks.
-- Each task has a `CancellationTokenSource`.
-- Tasks report progress via events sent to Cloud.
-
-### 6.3 Resource Monitoring
-
-- Engine periodically polls `Environment.ProcessorCount` and system memory.
-- If available resources change (e.g., server upgraded), `LiveTask` adjusts its reservation accordingly (Cloud can trigger a `ReconfigureResources` command).
-- The Task Scheduler respects `MaxParallelThreads` from execution specifications to avoid oversubscription.
-
-### 6.4 Task State Persistence (Minimal)
+### 6.2 Task State Persistence (Minimal)
 
 - Task states are held in memory. Cloud is the source of truth.
 - For recovery, the Engine sends `StateUpdate` events. Cloud stores them.
-- On restart, the Engine does **not** restore state locally; it waits for Cloud to send the appropriate commands to rebuild the state.
+- On restart, the Engine restores live state from SQLite (`state/engine_state.db`) via `StateManager`.
 
 ---
 
@@ -377,20 +259,15 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 
 ### 7.1 Cronjobs
 
-- Cloud sends `SetCronJob` with:
-  - `JobId`, `CronExpression`, `Command`, `Enabled`
-- Engine stores in memory (not persisted locally).
+- Cloud sends `SetCronJob` with `JobId`, `CronExpression`, `Command`, `Enabled`.
+- Engine stores in SQLite (`CronJobManager` in `Chronos.Core.Engine.Management.Scheduling`).
 - Uses `NCrontab` library to schedule.
 - When triggered, executes the command asynchronously.
-- Can `ListCronJobs`, `DeleteCronJob`, `Enable/Disable`.
 
 ### 7.2 Schedules (One‑Off)
 
-- Cloud sends `SetSchedule` with:
-  - `ScheduleId`, `ScheduledTimeUtc`, `Command`, `Repeat`
-- Engine uses an in‑memory `Timer`.
-- After execution, the schedule is deleted (unless recurring).
-- All schedules are re‑sent by Cloud on Engine restart (since they are not persisted locally).
+- Cloud sends `SetSchedule` with `ScheduleId`, `ScheduledTimeUtc`, `Command`, `Repeat`.
+- Engine uses an in‑memory `Timer` for immediate scheduling.
 
 ---
 
@@ -400,26 +277,20 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 
 - Engine maintains persistent WebSocket.
 - If connection drops, it attempts reconnection with exponential backoff (starting at 1s, doubling up to 60s, then stays at 60s).
-- Tracks time since last successful connection.
 
 ### 8.2 No Grace Period – Infinite Retry
 
 - The Engine **never** stops live tasks or exits due to Cloud unavailability.
 - It retries indefinitely until the connection is restored.
 - While offline:
-  - All user commands (Live, Backtest, Optimisation) continue running using the last known configuration.
-  - Outgoing data (results, logs, heartbeats) is queued in memory (with a bounded queue; if queue fills, older items are dropped with a warning).
-  - The Engine does not accept new commands (they are queued by Cloud and delivered when the connection re‑establishes).
+  - All user commands continue running using the last known configuration.
+  - Outgoing data is queued in memory and persisted to SQLite (`QueuedMessages` table).
+  - The Engine does not accept new commands (they are queued by Cloud).
 
 ### 8.3 User Notification
 
-- Cloud monitors Engine heartbeat. If offline > 5 minutes, sends alerts (email, SMS, push).
+- Cloud monitors Engine heartbeat. If offline > 5 minutes, sends alerts.
 - Cloud dashboard shows "Offline" with last contact time.
-
-### 8.4 Command Queuing Offline
-
-- Commands sent by Cloud while the Engine is offline are queued on the Cloud side and pushed when the Engine reconnects.
-- The Engine rejects commands only if it is in a `Lock` or `Ban` state.
 
 ---
 
@@ -429,34 +300,27 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 
 - Three‑factor: Username + Password + Instance API Key.
 - Credentials entered via CLI on each start; **never stored on disk**.
-- `--auth` flag supports automated restarts but the credentials are still only held in memory.
-- Encrypted in memory using a key derived from the session, not from a local seed.
+- Encrypted in memory using AES‑GCM with a key derived from PBKDF2 (`SecurityManager`).
 
 ### 9.2 Encryption (Transport)
 
 - ECDH (P‑256) for key exchange.
 - AES‑256‑GCM for symmetric encryption.
 - Sequence numbers to prevent replay.
-- Session keys rotated every 24 hours (Cloud sends `RotateSessionKey`).
+- Session keys rotated every 24 hours (via `HeartbeatResponse`).
 
 ### 9.3 Binary Protection
 
 - Obfuscation (symbol renaming, control flow, string encryption).
 - Signed with private key; Cloud verifies signature on updates.
-- Anti‑debugging checks (detect debugger; refuse to start).
-- Integrity checks at runtime (hash of critical sections) – stop on mismatch.
+- Anti‑debugging checks (`SecurityManager.IsDebuggerAttached()`).
+- Integrity checks (`SecurityManager.VerifyIntegrity()`).
 
 ### 9.4 Extension Security
 
-- All extensions must be strong‑named (signed).
+- All extensions must be strong‑named (signed) in production.
 - Loaded in isolated `AssemblyLoadContext`s.
 - SDK version and capability requirements validated before loading.
-- Double validation (Engine + Cloud) prevents malicious or incompatible extensions from activating.
-
-### 9.5 Log & Data Security
-
-- Logs may contain sensitive data; stored with user‑only permissions.
-- Sent to Cloud encrypted.
 
 ---
 
@@ -464,21 +328,20 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 
 ### 10.1 Logging Infrastructure
 
-- **Library:** Serilog (structured JSON logs).
-- **Output:** Daily‑rotated files in `logs/`, UTC date + deletion timestamp in filename: `chronos-{yyyy-MM-dd}-{deletionTimestamp}.log`.
-- **Retention:** Predefined (7,10,14,30,90,365,1000 days). Deletion daily at 00:01 UTC.
-- **Log Levels:** Trace, Debug, Information, Warning, Error, Critical. Default Information (overridable by Cloud).
+- **Library:** Serilog (structured JSON logs via `CompactJsonFormatter`).
+- **Output:** Daily‑rotated files in `logs/` with size limit (10 MB) and retention (31 days).
+- **Log Levels:** Trace, Debug, Information, Warning, Error, Critical. Default Information (overridable by Cloud via `SetLogLevel`).
 
 ### 10.2 Log Streaming to Cloud
 
 - Cloud sends `GetLogs` with optional filters.
 - Engine responds with a binary transfer of the matching log file(s).
-- **Performance:** For current day, Engine sends only the latest file (incremental). If same parameters requested again, it sends only the delta (to save bandwidth).
 
 ### 10.3 Telemetry
 
-- **Metrics:** OpenTelemetry (via `System.Diagnostics.Metrics`). Engine collects both Kernel metrics (`Metrics`) and Engine‑specific metrics (task count, CPU, memory).
-- **Export:** Sent to Cloud via heartbeat. Also available via a local HTTP endpoint (if enabled by Cloud) for Prometheus scraping.
+- **Metrics:** OpenTelemetry (via `System.Diagnostics.Metrics`).
+- Engine collects both Kernel metrics (`CoreMetrics`) and Engine‑specific metrics (`EngineTelemetry`).
+- Metrics include: command execution count, task count, connection state, live tick age, CPU usage, memory usage.
 
 ---
 
@@ -486,37 +349,28 @@ The activation flow guarantees that only compatible, signed, and Cloud‑approve
 
 ### 11.1 Purpose
 
-Record **only** the necessary data for RL training: the strategy’s state at decision points, the action taken, and the resulting reward.
+Record **only** the necessary data for RL training: the strategy's state at decision points, the action taken, and the resulting reward.
 
 ### 11.2 What Is Recorded (Per Record)
 
 - `TimestampUtc` – UTC time of the decision.
 - `SessionId` – unique ID for the backtest/live session.
-- `State` – a dictionary containing:
-  - Indicator values (with their version).
-  - Current open positions (symbol, type, volume, open price, current PnL).
-  - Balance, Equity, Margin used.
-  - Bid, Ask.
+- `State` – a dictionary of indicator values, positions, equity, etc.
 - `Action` – `Buy`, `Sell`, `Close`, `Modify`, `None`.
 - `Reward` – change in equity since the last recorded state.
-
-**Recording triggers:**
-- Strategy takes an action (default).
-- Or at a fixed interval (e.g., every 10 seconds) if configured by Cloud.
 
 ### 11.3 Storage & Flush to Cloud
 
 - **Local file:** Compressed binary (MessagePack + GZip) in `behavior_logs/`.
-- **Flush:** Engine flushes to Cloud periodically (interval configured by Cloud via heartbeat response).
-- **After successful upload:** Local file is deleted (or moved to archive for a configurable period).
+- **Flush:** Engine flushes to Cloud periodically (interval configured via Cloud).
+- **After successful upload:** Local file is deleted.
 
 ### 11.4 Performance Optimisations
 
 - **No‑op if disabled.**
-- **Batching:** Records buffered in memory (e.g., 10,000 records) and flushed to disk asynchronously.
+- **Batching:** Records buffered in memory and flushed to disk asynchronously.
 - **Compression:** GZip on the fly.
 - **Low‑priority I/O.**
-- **Sparse recording.**
 
 ---
 
@@ -526,18 +380,18 @@ Record **only** the necessary data for RL training: the strategy’s state at de
 
 1. Cloud includes `NewVersion`, `DownloadUrl`, and `Checksum` in the `HeartbeatResponse`.
 2. Engine detects that a new version is available.
-3. Engine downloads the new binary from `DownloadUrl` to a temporary location.
+3. Engine downloads the new binary to a temporary location.
 4. Engine verifies the SHA‑256 checksum.
-5. **Compatibility Check:** Engine checks that all currently loaded extensions’ required capabilities are supported by the new Engine’s capability set. If any extension requires a feature not present, update rejected.
-6. If compatible, Engine stages the new binary (moves it to a `update/` directory).
-7. Engine stops all tasks gracefully, saves minimal state to memory (just enough to resume).
-8. Engine launches the new binary with `--auth=... --command=restart` and exits.
-9. The new binary, upon seeing `--command=restart`, finalises the replacement (moves the staged binary into the main executable path) and resumes normal operation.
+5. **Compatibility Check:** Engine checks that all currently loaded extensions' required capabilities are supported by the new Engine's capability set.
+6. If compatible, Engine stages the new binary (moves it to `update/` directory).
+7. Engine writes a pending marker (`update.pending`) with version and backup path.
+8. Engine launches the new binary with `--command=restart` and exits.
+9. The new binary, upon seeing `--command=restart`, finalises the replacement (replaces the original executable) and resumes normal operation.
 
 ### 12.2 Rollback
 
 - Old executable kept as backup in `backup/`.
-- If new version fails to start 3 times, automatic rollback attempted (the launcher script or the new binary triggers the rollback).
+- If new version fails to start, automatic rollback attempted (via `RollbackAsync`).
 
 ---
 
@@ -545,20 +399,19 @@ Record **only** the necessary data for RL training: the strategy’s state at de
 
 ### 13.1 In‑Memory Only
 
-- The Engine holds **no persistent database**. No SQLite, no local JSON configs.
-- All state (live positions, orders, balance, optimisation populations, schedules) is synchronised with Cloud via events.
-- On restart, the Engine is a blank slate and waits for Cloud to send the initial state (via commands).
+- The Engine holds **no persistent database** for configurations. SQLite is used only for:
+  - Engine ID (`Metadata` table)
+  - Live state snapshots (`LiveState` table)
+  - Optimisation state snapshots (`OptimizationStates` table)
+  - Cron jobs (`CronJobs` table)
+  - Schedules (`Schedules` table)
+  - Queued outgoing messages (`QueuedMessages` table)
+  - Extension manifest (`ExtensionManifest` table)
 
 ### 13.2 Cloud Synchronisation
 
 - Engine sends `StateUpdate` events for significant changes.
 - Cloud may request full state via `GetState`.
-- Engine can pull state from Cloud if inconsistency detected (rare).
-
-### 13.3 Behaviour Logs Exception
-
-- Behaviour logs are the **only** data stored locally beyond logs.
-- They are temporary and are deleted after successful upload to Cloud.
 
 ---
 
@@ -589,13 +442,11 @@ Record **only** the necessary data for RL training: the strategy’s state at de
 
 ### 15.1 Windows
 
-- DPAPI for memory encryption.
-- Can run as Windows Service (`-service` flag).
+- Can run as Windows Service (`--service` flag).
 - Signal handling: `Console.CancelKeyPress`, `SessionEnding`.
 
 ### 15.2 Linux (Ubuntu)
 
-- `keyctl` for encryption (or file‑based with proper permissions).
 - Systemd unit file.
 - Signal handling: SIGTERM, SIGINT, SIGHUP.
 
@@ -607,7 +458,7 @@ Record **only** the necessary data for RL training: the strategy’s state at de
 
 ---
 
-## 16. Testing Strategy (Post‑Finalisation)
+## 16. Testing Strategy
 
 ### 16.1 Unit Tests
 
@@ -625,13 +476,9 @@ Record **only** the necessary data for RL training: the strategy’s state at de
 
 - Simulate heavy optimisation while live trading; measure CPU/memory, task switching overhead.
 
-*(Tests are planned but will be written **after** the entire solution is finalised and stable.)*
-
 ---
 
 ## 17. ID System for Features & Capabilities
-
-To ensure extensibility and version compatibility, every feature, command, and capability is assigned a unique numeric ID.
 
 ### 17.1 Feature ID Registry
 
@@ -651,16 +498,15 @@ To ensure extensibility and version compatibility, every feature, command, and c
 
 ### 17.2 Capability Negotiation
 
-- Engine sends its `Capabilities` (list of supported feature IDs and versions) during handshake.
+- Engine sends its `Capabilities` (list of supported feature IDs) during handshake.
 - Cloud validates and may reject the Engine if it lacks required features.
-- Used during self‑update compatibility check.
 
 ---
 
 ## 18. Admin Broadcast Messages
 
-- Cloud sends `BroadcastMessage` with `Text`, `Style` (info, warning, error, success), `Persistent` (boolean).
-- Engine displays on console with appropriate colour styling (ANSI or Windows console colours).
+- Cloud sends `BroadcastMessage` with `Text`, `Style` (info, warning, error, success).
+- Engine displays on console with appropriate colour styling.
 
 ---
 
@@ -674,32 +520,30 @@ To ensure extensibility and version compatibility, every feature, command, and c
 | **Telemetry** | Lock‑free histograms/counters; minimal overhead. |
 | **WebSocket** | Reuse buffers; chunked transfers; flow control. |
 | **Task Scheduling** | Resource reservation prevents contention; live‑first priority. |
-| **State Persistence** | No persistent local DB; Cloud is source of truth. |
+| **State Persistence** | Minimal SQLite usage; Cloud is source of truth. |
 
 ---
 
-## 20. Implementation Roadmap (No Phases – Integrated Whole)
+## 20. Implementation Status
 
-The Engine is built as a single, cohesive project. All components are developed in parallel, with continuous integration and testing. The blueprint serves as the source of truth for every feature.
+All components described in this blueprint are **fully implemented** in the `Chronos.Core.Engine` project, including:
 
-**Key Milestones (not phases):**
-- Core infrastructure (CLI, Cloud connector, command dispatcher).
-- Extension management and activation (double validation).
-- Task manager and concurrency (live‑first resource reservation).
-- Live, backtest, and optimisation tasks (fully integrated with Kernel).
-- Schedules, cronjobs.
-- BehaviorRecorder.
-- Self‑update, logging, telemetry.
-- Full security and anti‑tampering.
-- Comprehensive testing (post‑finalisation).
+- CLI with `--auth`, `--service`, `--development`, `--command=restart`
+- `CloudConnector` with infinite retry, heartbeat, binary transfers
+- `SecurityManager` with ECDH, AES‑256‑GCM, integrity checks
+- `CommandDispatcher` with 60+ command handlers
+- `ExtensionManager` with discovery, isolation, double validation
+- `TaskManager` with live‑first scheduling, state persistence
+- `CronJobManager` with NCrontab and SQLite persistence
+- `BehaviorRecorder` with MessagePack, GZip, and cloud upload
+- `SelfUpdateManager` with download, checksum, staging, and rollback
+- `KernelService` bridging to `Chronos.Core.Kernel` for backtest, live, and optimisation execution
 
 ---
 
 ## 21. Conclusion
 
-This blueprint defines the complete, performance‑conscious, **finalised** architecture of the Chronos Engine. It incorporates all required features while maintaining security, determinism, live‑first principles, and **infinite resiliency**.
-
-All components are specified with sufficient detail to begin implementation. The Engine will be the robust, scalable, and fully controllable execution node that powers the Chronos ecosystem.
+This blueprint defines the complete, performance‑conscious, **finalised** architecture of the Chronos Engine. It incorporates all required features while maintaining security, determinism, live‑first principles, and **infinite resiliency**. All components are implemented and operational in the current codebase.
 
 ---
 

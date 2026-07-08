@@ -6,12 +6,12 @@
 
 namespace Chronos.Core.Engine;
 
-using Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Engine.Kernel;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
 using Communication;
 using Core;
 using Core.Exceptions;
@@ -23,7 +23,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
-using Services.BehaviorRecorder;
 using Services.Update;
 using System.Diagnostics.CodeAnalysis;
 using ILogger = Microsoft.Extensions.Logging.ILogger;

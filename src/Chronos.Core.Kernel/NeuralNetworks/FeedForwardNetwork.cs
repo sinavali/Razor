@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Slots;
+using Chronos.Core.Sdk.Slots.NeuralNetwork;
 
 namespace Chronos.Core.Kernel.NeuralNetworks;
 
@@ -83,7 +83,7 @@ public sealed class FeedForwardNetwork : INeuralNetworkModel
     private void InitializeRandom()
     {
         // Use a fixed seed for reproducibility.
-        var rng = new Chronos.Core.Abstractions.Shared.CustomizedRandom(12345);
+        var rng = new Chronos.Core.Sdk.Shared.CustomizedRandom(12345);
         for (int layer = 0; layer < _layerSizes.Length - 1; layer++)
         {
             int inSize = _layerSizes[layer];
