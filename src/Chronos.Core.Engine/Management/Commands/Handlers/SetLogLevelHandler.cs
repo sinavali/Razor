@@ -20,7 +20,7 @@ internal sealed class SetLogLevelHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1603;
+    public override int CommandId => CommandIds.SetLogLevel;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

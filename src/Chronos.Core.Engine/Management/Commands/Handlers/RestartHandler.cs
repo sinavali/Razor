@@ -36,7 +36,7 @@ internal sealed class RestartHandler : CommandHandlerBase
         _cloudConnector = cloudConnector;
     }
 
-    public override int CommandId => 1007;
+    public override int CommandId => CommandIds.Restart;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

@@ -29,14 +29,13 @@ internal sealed class PauseEngineHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1004;
+    public override int CommandId => CommandIds.PauseEngine;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         _logPausingEngine(Logger, null);
 
         // Pause all backtest and optimisation tasks, but leave live trading running.
-        // We do this by pausing all tasks that are not live.
         foreach (var task in _taskManager.AllTasks)
         {
             if (task.TaskType != "Live" && task.State == TaskState.Running)

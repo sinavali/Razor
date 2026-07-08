@@ -23,7 +23,7 @@ internal sealed class StartLiveHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1100;
+    public override int CommandId => CommandIds.StartLive;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

@@ -5,10 +5,11 @@ namespace Chronos.Core.Kernel.Messaging;
 /// <summary>
 /// Default implementation of <see cref="IMessageBus"/>.
 /// Thread‑safe, with deduplication and clean‑up.
+/// Uses <see cref="WeakReference{T}"/> to avoid memory leaks from subscribers.
 /// </summary>
 public sealed class MessageBus : IMessageBus, IDisposable
 {
-    private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
+    private readonly ConcurrentDictionary<Type, List<WeakReference<Delegate>>> _handlers = new();
     private readonly Lock _subscriptionLock = new();
     private readonly ConcurrentDictionary<string, long> _recentEventIds = new();
     private readonly Timer _cleanupTimer;
@@ -28,7 +29,24 @@ public sealed class MessageBus : IMessageBus, IDisposable
             long cutoff = Environment.TickCount64 - _dedupWindowMilliseconds;
             foreach (var key in _recentEventIds.Where(kvp => kvp.Value < cutoff).Select(kvp => kvp.Key).ToList())
             {
-                _recentEventIds.TryRemove(key, out long _);
+                _recentEventIds.TryRemove(key, out var _);
+            }
+
+            // Clean up dead weak references.
+            lock (_subscriptionLock)
+            {
+                foreach (var type in _handlers.Keys.ToList())
+                {
+                    if (_handlers.TryGetValue(type, out var list))
+                    {
+                        // Remove dead weak references.
+                        list.RemoveAll(wr => !wr.TryGetTarget(out var _));
+                        if (list.Count == 0)
+                        {
+                            _handlers.TryRemove(type, out var _);
+                        }
+                    }
+                }
             }
         }, null, Timeout.Infinite, Timeout.Infinite);
 
@@ -59,13 +77,20 @@ public sealed class MessageBus : IMessageBus, IDisposable
             return;
         }
 
-        Delegate[] snapshot;
+        // Take a snapshot of alive handlers.
+        List<Delegate> aliveDelegates = new();
         lock (_subscriptionLock)
         {
-            snapshot = [.. handlers];
+            foreach (var weakRef in handlers)
+            {
+                if (weakRef.TryGetTarget(out var handler))
+                {
+                    aliveDelegates.Add(handler);
+                }
+            }
         }
 
-        foreach (var handler in snapshot)
+        foreach (var handler in aliveDelegates)
         {
             try
             {
@@ -88,8 +113,8 @@ public sealed class MessageBus : IMessageBus, IDisposable
 
         lock (_subscriptionLock)
         {
-            var handlers = _handlers.GetOrAdd(type, _ => []);
-            handlers.Add(handler);
+            var handlers = _handlers.GetOrAdd(type, _ => new List<WeakReference<Delegate>>());
+            handlers.Add(new WeakReference<Delegate>(handler));
         }
 
         return new Unsubscriber(() =>
@@ -98,10 +123,11 @@ public sealed class MessageBus : IMessageBus, IDisposable
             {
                 if (_handlers.TryGetValue(type, out var list))
                 {
-                    list.Remove(handler);
+                    // Use ReferenceEquals for delegate comparison to avoid CS0252.
+                    list.RemoveAll(wr => !wr.TryGetTarget(out var existing) || !ReferenceEquals(existing, handler));
                     if (list.Count == 0)
                     {
-                        _handlers.TryRemove(type, out _);
+                        _handlers.TryRemove(type, out var _);
                     }
                 }
             }

@@ -25,7 +25,7 @@ internal sealed class DeleteLogsAllHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1601;
+    public override int CommandId => CommandIds.DeleteLogsAll;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

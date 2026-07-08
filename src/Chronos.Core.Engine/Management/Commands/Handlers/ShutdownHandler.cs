@@ -20,7 +20,7 @@ internal sealed class ShutdownHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1006;
+    public override int CommandId => CommandIds.Shutdown;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

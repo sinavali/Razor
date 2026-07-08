@@ -22,7 +22,7 @@ internal sealed class SetScheduleHandler : CommandHandlerBase
         _cronJobManager = cronJobManager;
     }
 
-    public override int CommandId => 1703;
+    public override int CommandId => CommandIds.SetSchedule;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

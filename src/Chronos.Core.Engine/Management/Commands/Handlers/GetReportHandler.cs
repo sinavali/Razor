@@ -17,7 +17,7 @@ internal sealed class GetReportHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1501;
+    public override int CommandId => CommandIds.GetReport;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

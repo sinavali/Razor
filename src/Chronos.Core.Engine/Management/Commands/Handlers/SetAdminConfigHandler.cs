@@ -22,7 +22,7 @@ internal sealed class SetAdminConfigHandler : CommandHandlerBase
         _stateManager = stateManager;
     }
 
-    public override int CommandId => 1901;
+    public override int CommandId => CommandIds.SetAdminConfig;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

@@ -21,7 +21,7 @@ internal sealed class DeleteCronJobHandler : CommandHandlerBase
         _cronJobManager = cronJobManager;
     }
 
-    public override int CommandId => 1701;
+    public override int CommandId => CommandIds.DeleteCronJob;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
@@ -33,7 +33,6 @@ internal sealed class DeleteCronJobHandler : CommandHandlerBase
 
         string jobId = jobIdObj?.ToString()!;
         await _cronJobManager.DeleteCronJobAsync(jobId, cancellationToken).ConfigureAwait(false);
-
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { JobId = jobId }, cancellationToken).ConfigureAwait(false);
     }
 }

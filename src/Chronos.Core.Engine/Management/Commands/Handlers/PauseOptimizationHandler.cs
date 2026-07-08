@@ -21,7 +21,7 @@ internal sealed class PauseOptimizationHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1302;
+    public override int CommandId => CommandIds.PauseOptimization;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

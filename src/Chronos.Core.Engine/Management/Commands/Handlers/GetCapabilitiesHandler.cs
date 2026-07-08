@@ -18,7 +18,7 @@ internal sealed class GetCapabilitiesHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1010;
+    public override int CommandId => CommandIds.GetCapabilities;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

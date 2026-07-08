@@ -80,89 +80,83 @@ internal sealed class CommandDispatcher : ICommandDispatcher
     private void RegisterDefaultHandlers()
     {
         // System Management (1000-1099)
-        this.RegisterHandler(1003, new GetStatusHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetStatusHandler>(), _taskManager));
-        this.RegisterHandler(1004, new PauseEngineHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<PauseEngineHandler>()));
-        this.RegisterHandler(1005, new ResumeEngineHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ResumeEngineHandler>()));
-        this.RegisterHandler(1006, new ShutdownHandler(_cloudConnector, this, _loggerFactory.CreateLogger<ShutdownHandler>()));
-        this.RegisterHandler(1007, new RestartHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<RestartHandler>()));
-        this.RegisterHandler(1008, new SetConfigHandler(_cloudConnector, this, _configStore, _loggerFactory.CreateLogger<SetConfigHandler>()));
-        this.RegisterHandler(1009, new GetConfigHandler(_cloudConnector, this, _configStore, _loggerFactory.CreateLogger<GetConfigHandler>()));
-        this.RegisterHandler(1010, new GetCapabilitiesHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetCapabilitiesHandler>()));
+        this.RegisterHandler(CommandIds.GetStatus, new GetStatusHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetStatusHandler>(), _taskManager));
+        this.RegisterHandler(CommandIds.PauseEngine, new PauseEngineHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<PauseEngineHandler>()));
+        this.RegisterHandler(CommandIds.ResumeEngine, new ResumeEngineHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ResumeEngineHandler>()));
+        this.RegisterHandler(CommandIds.Shutdown, new ShutdownHandler(_cloudConnector, this, _loggerFactory.CreateLogger<ShutdownHandler>()));
+        this.RegisterHandler(CommandIds.Restart, new RestartHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<RestartHandler>()));
+        this.RegisterHandler(CommandIds.SetConfig, new SetConfigHandler(_cloudConnector, this, _configStore, _loggerFactory.CreateLogger<SetConfigHandler>()));
+        this.RegisterHandler(CommandIds.GetConfig, new GetConfigHandler(_cloudConnector, this, _configStore, _loggerFactory.CreateLogger<GetConfigHandler>()));
+        this.RegisterHandler(CommandIds.GetCapabilities, new GetCapabilitiesHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetCapabilitiesHandler>()));
 
         // Live Trading (1100-1199)
-        this.RegisterHandler(1100, new StartLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<StartLiveHandler>()));
-        this.RegisterHandler(1101, new StopLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<StopLiveHandler>()));
-        this.RegisterHandler(1102, new InjectGenesHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<InjectGenesHandler>()));
-        this.RegisterHandler(1103, new PauseLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<PauseLiveHandler>()));
-        this.RegisterHandler(1104, new ResumeLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ResumeLiveHandler>()));
-        this.RegisterHandler(1105, new GetLiveStateHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetLiveStateHandler>()));
-        this.RegisterHandler(1106, new SyncLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<SyncLiveHandler>()));
-        this.RegisterHandler(1107, new SetLiveConfigHandler(_cloudConnector, this, _taskManager, _configStore, _loggerFactory.CreateLogger<SetLiveConfigHandler>()));
-        this.RegisterHandler(1108, new GetLiveMetricsHandler(_cloudConnector, this, _taskManager, _telemetry, _loggerFactory.CreateLogger<GetLiveMetricsHandler>()));
+        this.RegisterHandler(CommandIds.StartLive, new StartLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<StartLiveHandler>()));
+        this.RegisterHandler(CommandIds.StopLive, new StopLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<StopLiveHandler>()));
+        this.RegisterHandler(CommandIds.InjectGenes, new InjectGenesHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<InjectGenesHandler>()));
+        this.RegisterHandler(CommandIds.PauseLive, new PauseLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<PauseLiveHandler>()));
+        this.RegisterHandler(CommandIds.ResumeLive, new ResumeLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ResumeLiveHandler>()));
+        this.RegisterHandler(CommandIds.GetLiveState, new GetLiveStateHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetLiveStateHandler>()));
+        this.RegisterHandler(CommandIds.SyncLive, new SyncLiveHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<SyncLiveHandler>()));
+        this.RegisterHandler(CommandIds.SetLiveConfig, new SetLiveConfigHandler(_cloudConnector, this, _taskManager, _configStore, _loggerFactory.CreateLogger<SetLiveConfigHandler>()));
+        this.RegisterHandler(CommandIds.GetLiveMetrics, new GetLiveMetricsHandler(_cloudConnector, this, _taskManager, _telemetry, _loggerFactory.CreateLogger<GetLiveMetricsHandler>()));
 
         // Backtesting (1200-1299)
-        this.RegisterHandler(1200, new RunBacktestHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<RunBacktestHandler>()));
-        this.RegisterHandler(1201, new CancelBacktestHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<CancelBacktestHandler>()));
-        this.RegisterHandler(1202, new GetBacktestResultHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetBacktestResultHandler>()));
-        this.RegisterHandler(1203, new ListBacktestsHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ListBacktestsHandler>()));
+        this.RegisterHandler(CommandIds.RunBacktest, new RunBacktestHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<RunBacktestHandler>()));
+        this.RegisterHandler(CommandIds.CancelBacktest, new CancelBacktestHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<CancelBacktestHandler>()));
+        this.RegisterHandler(CommandIds.GetBacktestResult, new GetBacktestResultHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetBacktestResultHandler>()));
+        this.RegisterHandler(CommandIds.ListBacktests, new ListBacktestsHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ListBacktestsHandler>()));
 
         // Optimisation (1300-1399)
-        this.RegisterHandler(1300, new StartOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<StartOptimizationHandler>()));
-        this.RegisterHandler(1301, new CancelOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<CancelOptimizationHandler>()));
-        this.RegisterHandler(1302, new PauseOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<PauseOptimizationHandler>()));
-        this.RegisterHandler(1303, new ResumeOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ResumeOptimizationHandler>()));
-        this.RegisterHandler(1304, new GetOptimizationStateHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetOptimizationStateHandler>()));
-        this.RegisterHandler(1305, new GetOptimizationResultHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetOptimizationResultHandler>()));
-        this.RegisterHandler(1306, new ListOptimizationsHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ListOptimizationsHandler>()));
+        this.RegisterHandler(CommandIds.StartOptimization, new StartOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<StartOptimizationHandler>()));
+        this.RegisterHandler(CommandIds.CancelOptimization, new CancelOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<CancelOptimizationHandler>()));
+        this.RegisterHandler(CommandIds.PauseOptimization, new PauseOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<PauseOptimizationHandler>()));
+        this.RegisterHandler(CommandIds.ResumeOptimization, new ResumeOptimizationHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ResumeOptimizationHandler>()));
+        this.RegisterHandler(CommandIds.GetOptimizationState, new GetOptimizationStateHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetOptimizationStateHandler>()));
+        this.RegisterHandler(CommandIds.GetOptimizationResult, new GetOptimizationResultHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<GetOptimizationResultHandler>()));
+        this.RegisterHandler(CommandIds.ListOptimizations, new ListOptimizationsHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<ListOptimizationsHandler>()));
 
         // Extensions (1400-1499)
-        this.RegisterHandler(1400, new ReloadExtensionsHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<ReloadExtensionsHandler>()));
-        this.RegisterHandler(1401, new DeployExtensionHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<DeployExtensionHandler>()));
-        this.RegisterHandler(1402, new RemoveExtensionHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<RemoveExtensionHandler>()));
-        this.RegisterHandler(1403, new ListExtensionsHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<ListExtensionsHandler>()));
-        this.RegisterHandler(1404, new ActivateExtensionsHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<ActivateExtensionsHandler>()));
+        this.RegisterHandler(CommandIds.ReloadExtensions, new ReloadExtensionsHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<ReloadExtensionsHandler>()));
+        this.RegisterHandler(CommandIds.DeployExtension, new DeployExtensionHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<DeployExtensionHandler>()));
+        this.RegisterHandler(CommandIds.RemoveExtension, new RemoveExtensionHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<RemoveExtensionHandler>()));
+        this.RegisterHandler(CommandIds.ListExtensions, new ListExtensionsHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<ListExtensionsHandler>()));
+        this.RegisterHandler(CommandIds.ActivateExtensions, new ActivateExtensionsHandler(_cloudConnector, this, _extensionManager, _loggerFactory.CreateLogger<ActivateExtensionsHandler>()));
 
         // Reports (1500-1599)
-        this.RegisterHandler(1500, new GenerateReportHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GenerateReportHandler>()));
-        this.RegisterHandler(1501, new GetReportHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetReportHandler>()));
+        this.RegisterHandler(CommandIds.GenerateReport, new GenerateReportHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GenerateReportHandler>()));
+        this.RegisterHandler(CommandIds.GetReport, new GetReportHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetReportHandler>()));
 
         // Logs & Telemetry (1600-1699)
-        this.RegisterHandler(1600, new GetLogsHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetLogsHandler>()));
-        this.RegisterHandler(1601, new DeleteLogsAllHandler(_cloudConnector, this, _loggerFactory.CreateLogger<DeleteLogsAllHandler>()));
-        this.RegisterHandler(1602, new DeleteLogsExpiredHandler(_cloudConnector, this, _loggerFactory.CreateLogger<DeleteLogsExpiredHandler>()));
-        this.RegisterHandler(1603, new SetLogLevelHandler(_cloudConnector, this, _loggerFactory.CreateLogger<SetLogLevelHandler>()));
-        this.RegisterHandler(1604, new GetMetricsHandler(_cloudConnector, this, _telemetry, _loggerFactory.CreateLogger<GetMetricsHandler>()));
-        this.RegisterHandler(1605, new ExportMetricsHandler(_cloudConnector, this, _telemetry, _loggerFactory.CreateLogger<ExportMetricsHandler>()));
+        this.RegisterHandler(CommandIds.GetLogs, new GetLogsHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetLogsHandler>()));
+        this.RegisterHandler(CommandIds.DeleteLogsAll, new DeleteLogsAllHandler(_cloudConnector, this, _loggerFactory.CreateLogger<DeleteLogsAllHandler>()));
+        this.RegisterHandler(CommandIds.DeleteLogsExpired, new DeleteLogsExpiredHandler(_cloudConnector, this, _loggerFactory.CreateLogger<DeleteLogsExpiredHandler>()));
+        this.RegisterHandler(CommandIds.SetLogLevel, new SetLogLevelHandler(_cloudConnector, this, _loggerFactory.CreateLogger<SetLogLevelHandler>()));
+        this.RegisterHandler(CommandIds.GetMetrics, new GetMetricsHandler(_cloudConnector, this, _telemetry, _loggerFactory.CreateLogger<GetMetricsHandler>()));
+        this.RegisterHandler(CommandIds.ExportMetrics, new ExportMetricsHandler(_cloudConnector, this, _telemetry, _loggerFactory.CreateLogger<ExportMetricsHandler>()));
 
         // Schedules & Cron (1700-1799)
-        this.RegisterHandler(1700, new SetCronJobHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<SetCronJobHandler>()));
-        this.RegisterHandler(1701, new DeleteCronJobHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<DeleteCronJobHandler>()));
-        this.RegisterHandler(1702, new ListCronJobsHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<ListCronJobsHandler>()));
-        this.RegisterHandler(1703, new SetScheduleHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<SetScheduleHandler>()));
-        this.RegisterHandler(1704, new DeleteScheduleHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<DeleteScheduleHandler>()));
-        this.RegisterHandler(1705, new ListSchedulesHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<ListSchedulesHandler>()));
-
-        // Mining (1800-1899)
-        this.RegisterHandler(1800, new StartMiningHandler(_cloudConnector, this, _miningIntegration, _loggerFactory.CreateLogger<StartMiningHandler>()));
-        this.RegisterHandler(1801, new StopMiningHandler(_cloudConnector, this, _miningIntegration, _loggerFactory.CreateLogger<StopMiningHandler>()));
-        this.RegisterHandler(1802, new GetMiningStatusHandler(_cloudConnector, this, _miningIntegration, _loggerFactory.CreateLogger<GetMiningStatusHandler>()));
-        this.RegisterHandler(1803, new UpdateMiningConfigHandler(_cloudConnector, this, _miningIntegration, _loggerFactory.CreateLogger<UpdateMiningConfigHandler>()));
+        this.RegisterHandler(CommandIds.SetCronJob, new SetCronJobHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<SetCronJobHandler>()));
+        this.RegisterHandler(CommandIds.DeleteCronJob, new DeleteCronJobHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<DeleteCronJobHandler>()));
+        this.RegisterHandler(CommandIds.ListCronJobs, new ListCronJobsHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<ListCronJobsHandler>()));
+        this.RegisterHandler(CommandIds.SetSchedule, new SetScheduleHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<SetScheduleHandler>()));
+        this.RegisterHandler(CommandIds.DeleteSchedule, new DeleteScheduleHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<DeleteScheduleHandler>()));
+        this.RegisterHandler(CommandIds.ListSchedules, new ListSchedulesHandler(_cloudConnector, this, _cronJobManager, _loggerFactory.CreateLogger<ListSchedulesHandler>()));
 
         // Admin & Broadcast (1900-1999)
-        this.RegisterHandler(1900, new BroadcastMessageHandler(_cloudConnector, this, _loggerFactory.CreateLogger<BroadcastMessageHandler>()));
-        this.RegisterHandler(1901, new SetAdminConfigHandler(_cloudConnector, this, _stateManager, _loggerFactory.CreateLogger<SetAdminConfigHandler>()));
-        this.RegisterHandler(1902, new GetEngineCapabilitiesHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetEngineCapabilitiesHandler>()));
-        this.RegisterHandler(1903, new GetEngineVersionHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetEngineVersionHandler>()));
+        this.RegisterHandler(CommandIds.BroadcastMessage, new BroadcastMessageHandler(_cloudConnector, this, _loggerFactory.CreateLogger<BroadcastMessageHandler>()));
+        this.RegisterHandler(CommandIds.SetAdminConfig, new SetAdminConfigHandler(_cloudConnector, this, _stateManager, _loggerFactory.CreateLogger<SetAdminConfigHandler>()));
+        this.RegisterHandler(CommandIds.GetEngineCapabilities, new GetEngineCapabilitiesHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetEngineCapabilitiesHandler>()));
+        this.RegisterHandler(CommandIds.GetEngineVersion, new GetEngineVersionHandler(_cloudConnector, this, _loggerFactory.CreateLogger<GetEngineVersionHandler>()));
 
         // Kill & Emergency (2000-2099)
-        this.RegisterHandler(2000, new KillSwitchHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<KillSwitchHandler>()));
-        this.RegisterHandler(2001, new EmergencyStopHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<EmergencyStopHandler>()));
+        this.RegisterHandler(CommandIds.KillSwitch, new KillSwitchHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<KillSwitchHandler>()));
+        this.RegisterHandler(CommandIds.EmergencyStop, new EmergencyStopHandler(_cloudConnector, this, _taskManager, _loggerFactory.CreateLogger<EmergencyStopHandler>()));
 
         // Behavior Logging (2100-2199)
-        this.RegisterHandler(2100, new EnableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _extensionManager, _loggerFactory.CreateLogger<EnableBehaviorLoggingHandler>()));
-        this.RegisterHandler(2101, new DisableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _extensionManager, _loggerFactory.CreateLogger<DisableBehaviorLoggingHandler>()));
-        this.RegisterHandler(2102, new GetBehaviorLogsHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<GetBehaviorLogsHandler>()));
-        this.RegisterHandler(2103, new DeleteBehaviorLogsHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<DeleteBehaviorLogsHandler>()));
+        this.RegisterHandler(CommandIds.EnableBehaviorLogging, new EnableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _extensionManager, _loggerFactory.CreateLogger<EnableBehaviorLoggingHandler>()));
+        this.RegisterHandler(CommandIds.DisableBehaviorLogging, new DisableBehaviorLoggingHandler(_cloudConnector, this, _behaviorRecorder, _extensionManager, _loggerFactory.CreateLogger<DisableBehaviorLoggingHandler>()));
+        this.RegisterHandler(CommandIds.GetBehaviorLogs, new GetBehaviorLogsHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<GetBehaviorLogsHandler>()));
+        this.RegisterHandler(CommandIds.DeleteBehaviorLogs, new DeleteBehaviorLogsHandler(_cloudConnector, this, _behaviorRecorder, _loggerFactory.CreateLogger<DeleteBehaviorLogsHandler>()));
     }
 
     public void Initialize()

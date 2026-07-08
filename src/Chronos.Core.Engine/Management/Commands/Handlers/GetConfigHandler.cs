@@ -26,7 +26,7 @@ internal sealed class GetConfigHandler : CommandHandlerBase
         _configStore = configStore;
     }
 
-    public override int CommandId => 1009;
+    public override int CommandId => CommandIds.GetConfig;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

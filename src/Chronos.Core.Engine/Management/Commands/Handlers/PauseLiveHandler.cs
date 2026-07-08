@@ -29,7 +29,7 @@ internal sealed class PauseLiveHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1103;
+    public override int CommandId => CommandIds.PauseLive;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
@@ -45,14 +45,6 @@ internal sealed class PauseLiveHandler : CommandHandlerBase
         _logPausingLive(Logger, taskId, null);
 
         await _taskManager.PauseTaskAsync(taskId, cancellationToken).ConfigureAwait(false);
-
-        // Update the live task state
-        if (_taskManager.GetTask(taskId) is LiveTask liveTask)
-        {
-            // The actual pause logic is in the KernelService.PauseLiveAsync
-            // which is called by TaskManager.PauseTaskAsync
-        }
-
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { TaskId = taskId, State = "Paused" }, cancellationToken)
             .ConfigureAwait(false);
     }

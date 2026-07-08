@@ -21,7 +21,7 @@ internal sealed class GetOptimizationStateHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1304;
+    public override int CommandId => CommandIds.GetOptimizationState;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

@@ -22,7 +22,7 @@ internal sealed class GetLogsHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1600;
+    public override int CommandId => CommandIds.GetLogs;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

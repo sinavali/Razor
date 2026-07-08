@@ -23,7 +23,7 @@ internal sealed class ActivateExtensionsHandler : CommandHandlerBase
         _extensionManager = extensionManager;
     }
 
-    public override int CommandId => 1404;
+    public override int CommandId => CommandIds.ActivateExtensions;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

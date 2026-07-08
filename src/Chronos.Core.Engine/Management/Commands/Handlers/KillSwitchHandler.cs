@@ -26,7 +26,7 @@ internal sealed class KillSwitchHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 2000;
+    public override int CommandId => CommandIds.KillSwitch;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

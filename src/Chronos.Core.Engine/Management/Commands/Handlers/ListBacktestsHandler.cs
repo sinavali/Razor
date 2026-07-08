@@ -21,7 +21,7 @@ internal sealed class ListBacktestsHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1203;
+    public override int CommandId => CommandIds.ListBacktests;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

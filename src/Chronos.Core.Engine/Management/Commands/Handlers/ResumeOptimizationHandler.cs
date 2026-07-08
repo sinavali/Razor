@@ -21,7 +21,7 @@ internal sealed class ResumeOptimizationHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1303;
+    public override int CommandId => CommandIds.ResumeOptimization;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

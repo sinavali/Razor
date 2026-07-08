@@ -70,8 +70,9 @@ public class OptimizationException : AppException
 
 /// <summary>
 /// Exception thrown when an immutable specification contains invalid values.
+/// Now inherits from <see cref="AppException"/> for consistency.
 /// </summary>
-public sealed class ConfigurationException : Exception
+public sealed class ConfigurationException : AppException
 {
     /// <summary>Creates a new instance with a message.</summary>
     public ConfigurationException(string message) : base(message)

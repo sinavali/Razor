@@ -21,7 +21,7 @@ internal sealed class RemoveExtensionHandler : CommandHandlerBase
         _extensionManager = extensionManager;
     }
 
-    public override int CommandId => 1402;
+    public override int CommandId => CommandIds.RemoveExtension;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
@@ -33,7 +33,6 @@ internal sealed class RemoveExtensionHandler : CommandHandlerBase
 
         string name = nameObj?.ToString()!;
         await _extensionManager.RemoveExtensionAsync(name, cancellationToken).ConfigureAwait(false);
-
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { Name = name }, cancellationToken).ConfigureAwait(false);
     }
 }

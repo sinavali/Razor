@@ -24,7 +24,7 @@ internal sealed class InjectGenesHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1102;
+    public override int CommandId => CommandIds.InjectGenes;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

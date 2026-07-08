@@ -29,7 +29,7 @@ internal sealed class SyncLiveHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1106;
+    public override int CommandId => CommandIds.SyncLive;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
@@ -52,9 +52,7 @@ internal sealed class SyncLiveHandler : CommandHandlerBase
             return;
         }
 
-        // Get the current live state from the kernel service
         var state = await _taskManager.GetLiveStateAsync(taskId, cancellationToken).ConfigureAwait(false);
-
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { TaskId = taskId, State = state }, cancellationToken)
             .ConfigureAwait(false);
     }

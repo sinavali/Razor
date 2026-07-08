@@ -29,7 +29,7 @@ internal sealed class ResumeEngineHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1005;
+    public override int CommandId => CommandIds.ResumeEngine;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

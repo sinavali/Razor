@@ -24,7 +24,7 @@ internal sealed class EmergencyStopHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 2001;
+    public override int CommandId => CommandIds.EmergencyStop;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

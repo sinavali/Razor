@@ -21,7 +21,7 @@ internal sealed class GetLiveStateHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1105;
+    public override int CommandId => CommandIds.GetLiveState;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

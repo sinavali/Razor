@@ -22,7 +22,7 @@ internal sealed class BroadcastMessageHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1900;
+    public override int CommandId => CommandIds.BroadcastMessage;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

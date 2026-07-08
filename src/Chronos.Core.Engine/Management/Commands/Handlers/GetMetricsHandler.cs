@@ -21,7 +21,7 @@ internal sealed class GetMetricsHandler : CommandHandlerBase
         _telemetry = telemetry;
     }
 
-    public override int CommandId => 1604;
+    public override int CommandId => CommandIds.GetMetrics;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

@@ -21,7 +21,7 @@ internal sealed class CancelOptimizationHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1301;
+    public override int CommandId => CommandIds.CancelOptimization;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

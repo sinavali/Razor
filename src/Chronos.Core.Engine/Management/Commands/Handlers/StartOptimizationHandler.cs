@@ -23,7 +23,7 @@ internal sealed class StartOptimizationHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1300;
+    public override int CommandId => CommandIds.StartOptimization;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

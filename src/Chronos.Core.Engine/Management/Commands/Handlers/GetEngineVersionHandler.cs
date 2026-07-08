@@ -18,7 +18,7 @@ internal sealed class GetEngineVersionHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1903;
+    public override int CommandId => CommandIds.GetEngineVersion;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

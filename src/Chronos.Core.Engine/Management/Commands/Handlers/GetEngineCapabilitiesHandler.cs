@@ -18,7 +18,7 @@ internal sealed class GetEngineCapabilitiesHandler : CommandHandlerBase
     {
     }
 
-    public override int CommandId => 1902;
+    public override int CommandId => CommandIds.GetEngineCapabilities;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

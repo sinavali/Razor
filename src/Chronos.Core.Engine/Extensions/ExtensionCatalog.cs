@@ -3,6 +3,8 @@ using Chronos.Core.Abstractions.Hooks;
 using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Abstractions.Slots;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Chronos.Core.Engine.Extensions;
@@ -22,10 +24,12 @@ internal sealed class ExtensionCatalog : IDisposable
     private readonly ILogger<ExtensionCatalog> _logger;
     private bool _disposed;
 
+    // QLT‑07: Constructor cache for fast instantiation.
+    private static readonly ConcurrentDictionary<Type, Func<object>> _ctorCache = new();
+
     // LoggerMessage delegate
     private static readonly Action<ILogger, string, Exception?> _logAdapterInstantiationFailed =
         LoggerMessage.Define<string>(LogLevel.Warning, 0, "Failed to instantiate adapter type {Type} to read its name.");
-
 
     /// <param name="basePath"></param>
     /// <param name="logger"></param>
@@ -44,7 +48,7 @@ internal sealed class ExtensionCatalog : IDisposable
             throw new InvalidOperationException($"Adapter '{name}' not found.");
         }
 
-        return (IAdapterCapability)Activator.CreateInstance(type)!;
+        return (IAdapterCapability)CreateInstance(type)!;
     }
 
     public IStrategyCapability CreateStrategy(string name)
@@ -54,7 +58,7 @@ internal sealed class ExtensionCatalog : IDisposable
             throw new InvalidOperationException($"Strategy '{name}' not found.");
         }
 
-        return (IStrategyCapability)Activator.CreateInstance(type)!;
+        return (IStrategyCapability)CreateInstance(type)!;
     }
 
     public INeuralNetworkModel CreateNeuralNetworkModel(string name)
@@ -64,7 +68,7 @@ internal sealed class ExtensionCatalog : IDisposable
             throw new InvalidOperationException($"Neural network model '{name}' not found.");
         }
 
-        return (INeuralNetworkModel)Activator.CreateInstance(type)!;
+        return (INeuralNetworkModel)CreateInstance(type)!;
     }
 
     public Indicator CreateIndicator(string name)
@@ -74,7 +78,7 @@ internal sealed class ExtensionCatalog : IDisposable
             throw new InvalidOperationException($"Indicator '{name}' not found.");
         }
 
-        return (Indicator)Activator.CreateInstance(type)!;
+        return (Indicator)CreateInstance(type)!;
     }
 
     public IReadOnlyList<IHookManifest> HookManifests => _hookManifests.AsReadOnly();
@@ -82,6 +86,21 @@ internal sealed class ExtensionCatalog : IDisposable
     public IReadOnlyList<string> StrategyNames => _strategyTypes.Keys.ToList().AsReadOnly();
     public IReadOnlyList<string> IndicatorNames => _indicatorTypes.Keys.ToList().AsReadOnly();
     public IReadOnlyList<string> NeuralNetworkNames => _nnModelTypes.Keys.ToList().AsReadOnly();
+
+    private object CreateInstance(Type type)
+    {
+        return _ctorCache.GetOrAdd(type, t =>
+        {
+            var ctor = t.GetConstructor(Type.EmptyTypes);
+            if (ctor == null)
+            {
+                throw new InvalidOperationException($"Type {t.FullName} lacks a parameterless constructor.");
+            }
+            var newExpr = Expression.New(ctor);
+            var lambda = Expression.Lambda<Func<object>>(newExpr);
+            return lambda.Compile();
+        })();
+    }
 
     private void ScanAll()
     {
@@ -161,7 +180,7 @@ internal sealed class ExtensionCatalog : IDisposable
 
                     if (typeof(IHookManifest).IsAssignableFrom(type))
                     {
-                        _hookManifests.Add((IHookManifest)Activator.CreateInstance(type)!);
+                        _hookManifests.Add((IHookManifest)CreateInstance(type)!);
                     }
                 }
             }
@@ -183,7 +202,7 @@ internal sealed class ExtensionCatalog : IDisposable
         }
         try
         {
-            var temp = (IAdapterCapability)Activator.CreateInstance(type)!;
+            var temp = (IAdapterCapability)CreateInstance(type)!;
             _adapterTypes[temp.Name] = type;
         }
         catch (Exception ex)

@@ -29,7 +29,7 @@ internal sealed class ResumeLiveHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1104;
+    public override int CommandId => CommandIds.ResumeLive;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
@@ -45,7 +45,6 @@ internal sealed class ResumeLiveHandler : CommandHandlerBase
         _logResumingLive(Logger, taskId, null);
 
         await _taskManager.ResumeTaskAsync(taskId, cancellationToken).ConfigureAwait(false);
-
         await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { TaskId = taskId, State = "Resumed" }, cancellationToken)
             .ConfigureAwait(false);
     }

@@ -23,7 +23,7 @@ internal sealed class GetBehaviorLogsHandler : CommandHandlerBase
     }
 
     /// <inheritdoc/>
-    public override int CommandId => 2102;
+    public override int CommandId => CommandIds.GetBehaviorLogs;
 
     /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)

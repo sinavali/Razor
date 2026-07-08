@@ -33,7 +33,7 @@ internal sealed class SetLiveConfigHandler : CommandHandlerBase
         _configStore = configStore;
     }
 
-    public override int CommandId => 1107;
+    public override int CommandId => CommandIds.SetLiveConfig;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
@@ -62,7 +62,6 @@ internal sealed class SetLiveConfigHandler : CommandHandlerBase
             return;
         }
 
-        // Update live configuration in the config store
         var updatedConfig = new Dictionary<string, object>();
 
         if (dict.TryGetValue("StopOutLevel", out object? stopOutObj))

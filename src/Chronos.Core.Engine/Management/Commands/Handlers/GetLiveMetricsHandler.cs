@@ -30,7 +30,7 @@ internal sealed class GetLiveMetricsHandler : CommandHandlerBase
         _telemetry = telemetry;
     }
 
-    public override int CommandId => 1108;
+    public override int CommandId => CommandIds.GetLiveMetrics;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
@@ -52,10 +52,7 @@ internal sealed class GetLiveMetricsHandler : CommandHandlerBase
             return;
         }
 
-        // Get live state
         var state = await _taskManager.GetLiveStateAsync(taskId, cancellationToken).ConfigureAwait(false);
-
-        // Get telemetry snapshot
         var telemetrySnapshot = _telemetry.GetMetricsSnapshot();
 
         var metrics = new

@@ -24,7 +24,7 @@ internal sealed class GetStatusHandler : CommandHandlerBase
         _taskManager = taskManager;
     }
 
-    public override int CommandId => 1003;
+    public override int CommandId => CommandIds.GetStatus;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

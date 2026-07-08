@@ -23,7 +23,7 @@ internal sealed class DeleteBehaviorLogsHandler : CommandHandlerBase
     }
 
     /// <inheritdoc/>
-    public override int CommandId => 2103;
+    public override int CommandId => CommandIds.DeleteBehaviorLogs;
 
     /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)

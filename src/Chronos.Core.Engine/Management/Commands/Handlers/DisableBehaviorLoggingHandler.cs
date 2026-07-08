@@ -27,13 +27,11 @@ internal sealed class DisableBehaviorLoggingHandler : CommandHandlerBase
     }
 
     /// <inheritdoc/>
-    public override int CommandId => 2101;
+    public override int CommandId => CommandIds.DisableBehaviorLogging;
 
     /// <inheritdoc/>
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
-        // Cast to concrete to call Disable() if needed, but IBehaviorRecorder has no Disable.
-        // We'll rely on the concrete type via the extension manager.
         _extensionManager.DisableBehaviorLoggingOnStrategy();
 
         if (_behaviorRecorder is BehaviorRecorder concrete)

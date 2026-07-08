@@ -22,7 +22,7 @@ internal sealed class ExportMetricsHandler : CommandHandlerBase
         _telemetry = telemetry;
     }
 
-    public override int CommandId => 1605;
+    public override int CommandId => CommandIds.ExportMetrics;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

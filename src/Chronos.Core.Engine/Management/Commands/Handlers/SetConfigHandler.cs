@@ -29,7 +29,7 @@ internal sealed class SetConfigHandler : CommandHandlerBase
         _configStore = configStore;
     }
 
-    public override int CommandId => 1008;
+    public override int CommandId => CommandIds.SetConfig;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {

@@ -29,7 +29,7 @@ internal sealed class ReloadExtensionsHandler : CommandHandlerBase
         _cloudConnector = cloudConnector;
     }
 
-    public override int CommandId => 1400;
+    public override int CommandId => CommandIds.ReloadExtensions;
 
     public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
     {
