@@ -13,7 +13,6 @@ using Chronos.Core.Engine.Extensions;
 using Chronos.Core.Engine.Management.Commands.Handlers;
 using Chronos.Core.Engine.Management.Scheduling;
 using Chronos.Core.Engine.Management.Tasks;
-using Chronos.Core.Engine.Services.Mining;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
@@ -27,7 +26,6 @@ internal sealed class CommandDispatcher : ICommandDispatcher
     private readonly IExtensionManager _extensionManager;
     private readonly IEngineTelemetry _telemetry;
     private readonly ICronJobManager _cronJobManager;
-    private readonly IMiningIntegration _miningIntegration;
     private readonly IStateManager _stateManager;
     private readonly IBehaviorRecorder _behaviorRecorder;
     private readonly ILoggerFactory _loggerFactory;
@@ -57,7 +55,6 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         IExtensionManager extensionManager,
         IEngineTelemetry telemetry,
         ICronJobManager cronJobManager,
-        IMiningIntegration miningIntegration,
         IStateManager stateManager,
         IBehaviorRecorder behaviorRecorder,
         ILoggerFactory loggerFactory,
@@ -69,7 +66,6 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         _extensionManager = extensionManager;
         _telemetry = telemetry;
         _cronJobManager = cronJobManager;
-        _miningIntegration = miningIntegration;
         _stateManager = stateManager;
         _behaviorRecorder = behaviorRecorder;
         _loggerFactory = loggerFactory;

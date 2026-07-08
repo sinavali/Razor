@@ -45,7 +45,6 @@ internal static class AppConstants
         104, // Hooks
         105, // Cronjobs
         106, // Schedules
-        107, // Mining
         108, // Self-Update
         109, // Log Streaming
         110, // Telemetry Export

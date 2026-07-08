@@ -24,7 +24,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Services.BehaviorRecorder;
-using Services.Mining;
 using Services.Update;
 using System.Diagnostics.CodeAnalysis;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
@@ -189,7 +188,6 @@ internal sealed class Program
 
         // Services
         services.AddSingleton<IBehaviorRecorder, Services.BehaviorRecorder.BehaviorRecorder>();
-        services.AddSingleton<IMiningIntegration, MiningIntegration>();
         services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
 
         // Hooks
@@ -298,7 +296,6 @@ internal sealed class Program
                 services.AddSingleton<ICoreMetrics>(sp => new CoreMetrics("engine"));
                 services.AddSingleton<IKernelService, KernelService>();
                 services.AddSingleton<IBehaviorRecorder, Services.BehaviorRecorder.BehaviorRecorder>();
-                services.AddSingleton<IMiningIntegration, MiningIntegration>();
                 services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
                 services.AddSingleton<IHookRegistry, HookRegistry>();
                 services.AddHostedService<EngineHostedService>();
