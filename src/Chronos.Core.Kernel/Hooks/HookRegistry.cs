@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Hooks;
+using Chronos.Core.Sdk.Hooks;
 
 namespace Chronos.Core.Kernel.Hooks;
 
@@ -29,5 +29,16 @@ public sealed class HookRegistry : IHookRegistry
         Live = new LiveHooks();
         Optimization = new OptimizationHooks();
         Report = new ReportHooks();
+    }
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points across all pipelines.
+    /// </summary>
+    public void ClearAll()
+    {
+        ((BacktestHooks)Backtest).ClearAll();
+        ((LiveHooks)Live).ClearAll();
+        ((OptimizationHooks)Optimization).ClearAll();
+        ((ReportHooks)Report).ClearAll();
     }
 }

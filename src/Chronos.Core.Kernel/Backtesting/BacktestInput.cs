@@ -1,9 +1,10 @@
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Kernel.Configuration;
 using Chronos.Core.Kernel.Messaging;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.NeuralNetwork;
+using Chronos.Core.Sdk.Slots.Strategy;
 
 namespace Chronos.Core.Kernel.Backtesting;
 
@@ -58,4 +59,14 @@ public sealed record BacktestInput
     /// Optional hook registry for invoking backtest pipeline hooks.
     /// </summary>
     public IHookRegistry? HookRegistry { get; init; }
+
+    /// <summary>
+    /// Optional currency converter for cross‑currency PnL and margin calculations.
+    /// </summary>
+    public ICurrencyConverter? CurrencyConverter { get; init; }
+
+    /// <summary>
+    /// Account base currency (e.g., "USD"). Used with <see cref="CurrencyConverter"/>.
+    /// </summary>
+    public string? AccountCurrency { get; init; }
 }

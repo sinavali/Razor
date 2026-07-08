@@ -1,15 +1,15 @@
-## Chronos Extension Developer Guide
+# Chronos Extension Developer Guide
 
-**Version:** 1.0.0 LTS
-**Audience:** Extension developers (adapters, strategies, indicators, hook plugins, NN models)
-**Status:** Authoritative
-**Last Updated:** 2026-06-15
+**Version:** 1.0.0 LTS  
+**Audience:** Extension developers (adapters, strategies, indicators, hook plugins, NN models)  
+**Status:** Authoritative  
+**Last Updated:** 2026-07-09  
 
 ---
 
 ## 1. Introduction
 
-This guide teaches you how to create extensions for Chronos. An extension is a .NET DLL that implements one or more public contracts from the `Chronos.Core.Abstractions` NuGet package. The engine discovers and loads extensions at runtime through isolated contexts, and activation is managed through Chronos Cloud.
+This guide teaches you how to create extensions for Chronos. An extension is a .NET DLL that implements one or more public contracts from the `Chronos.Core.Sdk` NuGet package. The engine discovers and loads extensions at runtime through isolated contexts, and activation is managed through Chronos Cloud.
 
 In v1.0.0 LTS, the following extension types are supported:
 
@@ -29,8 +29,7 @@ A single DLL can combine any of these — for example, a strategy that also regi
 
 ### 1.2 Where to Get Help
 
-- The `Chronos.Core.Abstractions` NuGet package contains XML documentation for every public member.
-- The `Chronos.Samples` repository provides full, working examples.
+- The `Chronos.Core.Sdk` NuGet package contains XML documentation for every public member.
 - This guide is your primary reference.
 
 ---
@@ -53,9 +52,9 @@ Chronos extensions are organized into three concepts:
 
 ### 2.2 The Chronos SDK
 
-The SDK is the `Chronos.Core.Abstractions` NuGet package. It contains **only** contracts (interfaces, abstract classes, records, enums, and utilities) – no runtime logic, no GA engine, no broker implementations. You can freely redistribute the package.
+The SDK is the `Chronos.Core.Sdk` NuGet package. It contains **only** contracts (interfaces, abstract classes, records, enums, and utilities) – no runtime logic, no GA engine, no broker implementations. You can freely redistribute the package.
 
-The SDK includes helper types like `ChronosRandom` (portable RNG), `TickWindow`, `BinaryDataMapper`, etc. These are helpers for your extension code; you are free to use them or implement your own. However, any randomness that affects trading decisions must derive from the master seed (see §8.4).
+The SDK includes helper types like `CustomizedRandom` (portable RNG), `TickWindow`, `TickSynthesizer`, and `GeneInjector`. These are helpers for your extension code; you are free to use them or implement your own. However, any randomness that affects trading decisions must derive from the master seed (see §8.4).
 
 ---
 
@@ -77,7 +76,7 @@ Create a .NET class library targeting `net10.0`. Example `.csproj`:
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Chronos.Core.Abstractions" Version="1.0.0" />
+        <PackageReference Include="Chronos.Core.Sdk" Version="1.0.0" />
     </ItemGroup>
 
 </Project>
@@ -87,12 +86,12 @@ Create a .NET class library targeting `net10.0`. Example `.csproj`:
 
 ### 3.2 Assembly Attributes
 
-Every extension assembly must declare the **target SDK version** using `ChronosSdkVersionAttribute`. Example `AssemblyInfo.cs`:
+Every extension assembly must declare the **target SDK version** using `SdkVersionAttribute`. Example `AssemblyInfo.cs` or in your `csproj`:
 
 ```csharp
-using Chronos.Core.Abstractions;
+using Chronos.Core.Sdk.Shared;
 
-[assembly: ChronosSdkVersion("1.0.0")]
+[assembly: SdkVersion("1.0.0")]
 ```
 
 The engine validates this version at load time. A major version mismatch will prevent loading (see §10).
@@ -105,7 +104,7 @@ An adapter bridges Chronos and a real exchange/broker. You must implement `IAdap
 
 ### 4.1 The `IAdapterCapability` Interface
 
-The interface is in `Chronos.Core.Abstractions.Slots`. It replaces the older `IAdapter`, `IHistoricalDataProvider`, `ILiveDataProvider`, and `IExecutionProvider`.
+The interface is in `Chronos.Core.Sdk.Slots.Adapter`.
 
 ```csharp
 public interface IAdapterCapability
@@ -225,7 +224,7 @@ Stream real‑time tick data directly into the engine.
 
 ### 4.6 Market Calculator
 
-The `Calculator` property returns an instance of `IMarketCalculator` (in `Chronos.Core.Abstractions.Shared`). You must implement this interface with exchange‑specific math.
+The `Calculator` property returns an instance of `IMarketCalculator` (in `Chronos.Core.Sdk.Shared`). You must implement this interface with exchange‑specific math.
 
 ```csharp
 public interface IMarketCalculator
@@ -239,6 +238,7 @@ public interface IMarketCalculator
     double CalculateFunding(SymbolProperties props, double volume, double openPrice, OrderType type, long currentTime, long lastFundingTime);
     bool IsPendingOrderTriggered(SymbolProperties props, OrderType pendingType, double bid, double ask, double orderPrice);
     double CalculateHoldingCost(SymbolProperties props, double volume, double openPrice, OrderType type, long fromTime, long toTime);
+    double CalculateSlippage(SymbolProperties props, OrderType type, double volume, double price);
 }
 ```
 
@@ -247,12 +247,12 @@ public interface IMarketCalculator
 **Example margin calculation (crypto perpetual):**
 ```csharp
 public double CalculateRequiredMargin(SymbolProperties props, double price, double volume, double leverage)
-    => (price * volume * props.ContractSize) / leverage;
+    => (price * volume * props.ContractSize) / leverage * props.InitialMarginRate;
 ```
 
 **Important:** All price/volume normalization must round to the exchange's tick size. Failure to do so will cause rejections and parity mismatches.
 
-Slippage and commission are now adapter‑internal. The `IMarketCalculator` provides `CalculateCommission`; slippage is handled by the adapter's order execution logic. The engine no longer uses a separate `ISimulationFriction` — the adapter owns all friction.
+Slippage and commission are now adapter‑internal. The `IMarketCalculator` provides `CalculateCommission` and `CalculateSlippage`; slippage is handled by the adapter's order execution logic. The engine no longer uses a separate `ISimulationFriction` — the adapter owns all friction.
 
 ### 4.7 Connection Lifecycle
 
@@ -261,6 +261,10 @@ Implement `ConnectAsync` and `DisconnectAsync` to manage the underlying transpor
 ### 4.8 Example Adapter Skeleton
 
 ```csharp
+using Chronos.Core.Sdk.Slots.Adapter;
+using Chronos.Core.Sdk.Shared;
+
+[AdapterName("MyExchange")]
 public class MyExchangeAdapter : IAdapterCapability
 {
     public string Name => "MyExchange";
@@ -297,7 +301,7 @@ Strategies contain the decision logic. They react to ticks, use indicators, plac
 
 ### 5.1 The `IStrategyCapability` Interface
 
-The interface is in `Chronos.Core.Abstractions.Slots`. It replaces the older `IStrategy`.
+The interface is in `Chronos.Core.Sdk.Slots.Strategy`.
 
 ```csharp
 public interface IStrategyCapability
@@ -343,18 +347,21 @@ A simpler approach is to derive from `StrategyBase`, which provides convenience 
 - `NeuralNetwork` – Your optional `INeuralNetworkModel` instance, set by the engine.
 - `TotalGeneCount` – Computed automatically from property genes + NN parameter count.
 - Helper methods: `BuyAsync`, `SellAsync`, `ModifyOrderAsync`, `CloseAllAsync`, etc.
+- `GeneLock` – A `ReaderWriterLockSlim` to protect gene injection while processing ticks.
 
 Override the virtual lifecycle methods and add your logic.
 
 ### 5.4 Example Strategy Skeleton
 
 ```csharp
+using Chronos.Core.Sdk.Shared;
+
 public class SimpleMaStrategy : StrategyBase
 {
-    [Gene(10, 200, Step = 1)]
+    [Gene(10, 200, Step = 1, Type = GeneType.Discrete)]
     public int FastPeriod { get; set; } = 50;
 
-    [Gene(50, 500, Step = 1)]
+    [Gene(50, 500, Step = 1, Type = GeneType.Discrete)]
     public int SlowPeriod { get; set; } = 200;
 
     private Indicator _fastSma = null!;
@@ -408,7 +415,7 @@ if (isComplete) { /* use OHLC */ }
 To make your strategy optimizable, mark properties with `[Gene]`. The GA will automatically discover them via reflection.
 
 ```csharp
-[Gene(0.1, 5.0, Step = 0.1)]
+[Gene(0.1, 5.0, Step = 0.1, Type = GeneType.Discrete)]
 public double RiskPercent { get; set; } = 1.0;
 ```
 
@@ -425,7 +432,7 @@ If your strategy uses a neural network, set `RequiresNeuralNetwork = true` in yo
 
 The `GeneInjector` will automatically include the model's `ParameterCount` in `TotalGeneCount` and inject the neural network genes during `InjectGenes`. You can call `NeuralNetwork.Predict(inputs)` inside `OnTick` to get predictions.
 
-You may also implement `INeuralNetworkModel` yourself to create custom architectures, ONNX wrappers, or RL models. See §8.
+You may also implement `INeuralNetworkModel` yourself to create custom architectures, ONNX wrappers, or RL models. See §7.
 
 ---
 
@@ -476,7 +483,74 @@ return FilterResult.Reject<T>("Reason for rejection");
 
 An **action hook** observes events without modifying data. Use `IActionRegistration<T>.Register(Action<T, IHookContext> callback, int priority)` for typed events, or `IActionRegistration.Register(Action<IHookContext> callback, int priority)` for parameterless events.
 
-> **⚠ Critical:** Action hook callbacks **must be synchronous**. Do **not** use `async void` — exceptions thrown inside an `async void` delegate cannot be caught by the engine and will crash the process. If you need to perform asynchronous work (e.g., HTTP calls to an external API), queue the work externally with its own exception handling. For example, use `Task.Run(() => ...).ContinueWith(t => { /* log t.Exception */ }, TaskContinuationOptions.OnlyOnFaulted)` or a dedicated background channel. See §6.9 for a safe notification example.
+> **⚠ Critical:** Action hook callbacks **must be synchronous**. Do **not** use `async void` — exceptions thrown inside an `async void` delegate cannot be caught by the engine and will crash the process. If you need to perform asynchronous work (e.g., HTTP calls to an external API), queue the work externally with its own exception handling. See the dedicated subsection below for safe patterns.
+
+---
+
+### Safe Fire‑and‑Forget Async Patterns
+
+Because action hook callbacks **must be synchronous**, you cannot use `async`/`await` directly. However, you may need to perform asynchronous operations (e.g., sending an HTTP request to a webhook, writing to a remote database, or sending an email) without blocking the engine's tick processing pipeline.
+
+The safe pattern is to **fire‑and‑forget** using `Task.Run` with explicit exception handling. **Never** use `async void` – unhandled exceptions in `async void` methods will crash the engine process.
+
+**Correct pattern (copy‑paste ready):**
+
+```csharp
+public class TelegramNotifier : IHookManifest
+{
+    public void RegisterHooks(IHookRegistry registry)
+    {
+        registry.Backtest.OnCompleted.Register(ctx =>
+        {
+            // Fire and forget – do NOT use async void directly.
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await SendTelegramNotificationAsync("Backtest completed.");
+                }
+                catch (Exception ex)
+                {
+                    // Log the error; the engine will not catch it for you.
+                    // Use your preferred logging mechanism.
+                    Console.Error.WriteLine($"[TelegramNotifier] Failed: {ex.Message}");
+                }
+            });
+        });
+    }
+
+    private async Task SendTelegramNotificationAsync(string message)
+    {
+        // Your HTTP call here...
+        await Task.CompletedTask;
+    }
+}
+```
+
+**Why this works:**
+
+- `Task.Run` schedules the async delegate on the thread pool, freeing the hook callback to return immediately.
+- The `try/catch` inside the delegate ensures that any exception is logged and does not propagate to the CLR.
+- The engine's tick processing is not blocked, preserving determinism and performance.
+
+**Alternative pattern (using `ContinueWith`):**
+
+```csharp
+Task.Run(() => SendTelegramNotificationAsync("Backtest completed."))
+    .ContinueWith(t =>
+    {
+        if (t.IsFaulted && t.Exception != null)
+        {
+            Console.Error.WriteLine($"[TelegramNotifier] Failed: {t.Exception.Message}");
+        }
+    }, TaskContinuationOptions.OnlyOnFaulted);
+```
+
+Both patterns are acceptable. The first is more readable and recommended.
+
+**Important:** Always ensure that your background tasks do not hold references to engine objects that might be disposed (e.g., `IBroker`, `TickWindow`). If you need to capture such objects, do so only during the hook callback and do not keep them alive beyond the callback's scope.
+
+---
 
 ### 6.5 Priorities
 
@@ -537,6 +611,7 @@ Each hook registration accepts a `priority` parameter (default 100). Lower numbe
 | `OnGenerationCompleted` | Action\<(int, double, bool)\> | Action at the end of each generation. |
 | `OnStagnationDetected` | Action\<int\> | Action when stagnation is detected. |
 | `OnCompleted` | Action\<Chromosome\> | Fires when optimization completes. |
+| `OnFitnessEvaluation` | Action\<IFitnessEvaluationContext\> | Hook for calculating fitness; plugins set `context.Fitness`. |
 
 #### Report Hooks (via `registry.Report`)
 
@@ -583,7 +658,7 @@ public class DrawdownGuard : IHookManifest
 
 ### 6.9 Example: Custom Notifications via Hooks
 
-Because action hooks are synchronous, fire‑and‑forget asynchronous work safely using a background task with explicit exception handling:
+The safe fire‑and‑forget pattern is demonstrated in §6.4. Here is a complete example:
 
 ```csharp
 public class TelegramNotifier : IHookManifest
@@ -592,7 +667,6 @@ public class TelegramNotifier : IHookManifest
     {
         registry.Backtest.OnCompleted.Register(ctx =>
         {
-            // Fire and forget — do NOT use async void directly.
             Task.Run(async () =>
             {
                 try
@@ -601,7 +675,6 @@ public class TelegramNotifier : IHookManifest
                 }
                 catch (Exception ex)
                 {
-                    // Log the error; the engine will not catch it for you.
                     Console.Error.WriteLine($"[TelegramNotifier] Failed: {ex.Message}");
                 }
             });
@@ -615,8 +688,6 @@ public class TelegramNotifier : IHookManifest
     }
 }
 ```
-
-> **Why not `async void`?** An `async void` delegate compiles to a fire‑and‑forget operation where unhandled exceptions propagate directly to the CLR, crashing the process. The pattern above captures exceptions and logs them safely.
 
 ### 6.10 Example: Custom Metrics via Hooks
 
@@ -645,7 +716,7 @@ public class UlcerIndexMetric : IHookManifest
 
 ## 7. Developing a Neural Network Model
 
-Neural network models are slot capabilities. Implement `INeuralNetworkModel` (in `Chronos.Core.Abstractions.Slots`) and place the DLL in the `NeuralNetworks/` directory. The engine activates the model when the active strategy declares `RequiresNeuralNetwork = true`.
+Neural network models are slot capabilities. Implement `INeuralNetworkModel` (in `Chronos.Core.Sdk.Slots.NeuralNetwork`) and place the DLL in the `NeuralNetworks/` directory. The engine activates the model when the active strategy declares `RequiresNeuralNetwork = true`.
 
 ### 7.1 The `INeuralNetworkModel` Interface
 
@@ -706,7 +777,7 @@ For reinforcement learning, implement `INeuralNetworkModel` and use `Reset()` to
 ### 8.3 Determinism for Strategies and Hooks
 
 - Do not use `System.Random` unless it's seeded deterministically and only for non‑trading purposes (e.g., logging).
-- Use `ChronosRandom` if you need a PRNG; seed it from the master seed passed through configuration or genes. **Use only non‑negative seeds** with the `int` constructor — negative seeds are rejected to prevent unpredictable sequences.
+- Use `CustomizedRandom` if you need a PRNG; seed it from the master seed passed through configuration or genes. **Use only non‑negative seeds** with the `int` constructor — negative seeds are rejected to prevent unpredictable sequences.
 - Do not access `DateTime.UtcNow` or system clocks in trading logic.
 - Hook callbacks execute deterministically by priority and name ordering. Do not rely on non‑deterministic behavior.
 
@@ -748,7 +819,7 @@ During development, place your DLL in the appropriate directory of a locally run
 
 ### 10.1 Declaring Compatibility
 
-Your extension assembly must include `[assembly: ChronosSdkVersion("1.0.0")]`. The engine's version manager checks this attribute.
+Your extension assembly must include `[assembly: SdkVersion("1.0.0")]`. The engine's version manager checks this attribute.
 
 - Extensions targeting an older major version may be loaded if backward‑compatible.
 - Extensions targeting a newer major version are rejected unless an explicit compatibility mode is configured.
@@ -768,11 +839,7 @@ Chronos follows SemVer. Minor releases add new hook points or interface members 
 
 ## 12. Further Resources
 
-- **Chronos.Core.Abstractions** NuGet package – contains XML documentation for every public member.
-- **Sample Extensions**: See the `Chronos.Samples` repository for complete working examples.
-- **Chronos Principles**: For a high‑level understanding of the engine's design rules.
-- **Configuration Reference**: For all configuration objects and validation rules.
-
----
-
-*Ready for the next document.*
+- **Chronos.Core.Sdk** NuGet package – contains XML documentation for every public member.
+- **Chronos Principles** – For a high‑level understanding of the engine's design rules.
+- **Configuration Reference** – For all configuration objects and validation rules.
+- **Installation & Deployment Guide** – For setting up the engine.

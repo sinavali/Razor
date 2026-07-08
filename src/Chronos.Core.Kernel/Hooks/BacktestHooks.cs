@@ -1,5 +1,5 @@
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
 
 namespace Chronos.Core.Kernel.Hooks;
 
@@ -47,4 +47,24 @@ public sealed class BacktestHooks : IBacktestHooks
 
     /// <inheritdoc/>
     public IActionRegistration OnCompleted { get; } = new ActionRegistration();
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points.
+    /// </summary>
+    public void ClearAll()
+    {
+        ((FilterRegistration<Tick>)OnTickReceived).Clear();
+        ((FilterRegistration<Tick>)OnTickStrategyBefore).Clear();
+        ((FilterRegistration<AdapterOrderRequest>)OnOrderValidation).Clear();
+        ((FilterRegistration<AdapterOrderRequest>)OnOrderBeforeExecute).Clear();
+        ((ActionRegistration<Tick>)OnTickStrategyAfter).Clear();
+        ((ActionRegistration<Tick>)OnTickCompleted).Clear();
+        ((ActionRegistration<(AdapterOrderRequest, AdapterOrderResponse)>)OnOrderAfterExecute).Clear();
+        ((ActionRegistration<Position>)OnPositionOpened).Clear();
+        ((ActionRegistration<Position>)OnPositionClosed).Clear();
+        ((ActionRegistration<Position>)OnPositionStopout).Clear();
+        ((ActionRegistration<EquitySnapshot>)OnEquityUpdated).Clear();
+        ((ActionRegistration)OnStart).Clear();
+        ((ActionRegistration)OnCompleted).Clear();
+    }
 }

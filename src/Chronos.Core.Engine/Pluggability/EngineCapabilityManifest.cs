@@ -11,8 +11,8 @@ internal sealed record EngineCapabilityManifest
     /// <summary>Gets the kernel version.</summary>
     public required string KernelVersion { get; init; }
 
-    /// <summary>Gets the abstractions version.</summary>
-    public required string AbstractionsVersion { get; init; }
+    /// <summary>Gets the SDK version.</summary>
+    public required string SdkVersion { get; init; }
 
     /// <summary>Gets the runtime version.</summary>
     public required string RuntimeVersion { get; init; }

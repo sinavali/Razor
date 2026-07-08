@@ -1,7 +1,9 @@
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.Adapter;
+using Chronos.Core.Sdk.Slots.NeuralNetwork;
+using Chronos.Core.Sdk.Slots.Strategy;
 using System.Reflection;
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 
 namespace Chronos.Core.Engine.Extensions;
 
@@ -15,6 +17,18 @@ internal static class PluginSafetyValidator
         ArgumentNullException.ThrowIfNull(assembly);
 
         var issues = new List<string>();
+
+        // SEC‑03: Check assembly signing in production mode.
+        if (Core.RuntimeEnvironment.IsProduction)
+        {
+            var publicKey = assembly.GetName().GetPublicKey();
+            if (publicKey == null || publicKey.Length == 0)
+            {
+                issues.Add($"Assembly '{assembly.FullName}' is not strong‑named (unsigned). Unsigned extensions are rejected in production mode.");
+                return issues; // Early return to avoid further checks on an unsigned assembly.
+            }
+        }
+
         var types = assembly.GetExportedTypes();
 
         foreach (var type in types.Where(t => t.IsClass && !t.IsAbstract))

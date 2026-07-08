@@ -1,5 +1,5 @@
+using Chronos.Core.Sdk.Hooks;
 using System.Diagnostics;
-using Chronos.Core.Abstractions.Hooks;
 
 namespace Chronos.Core.Kernel.Hooks;
 
@@ -36,8 +36,13 @@ public static class HookInvoker
                     return result;
                 }
 
-                // Use null‑forgiving because result.IsAllowed guarantees Data is non‑null
-                currentData = result.Data ?? currentData;
+                // DAT‑08: Respect null as a valid allowed value.
+                // The previous code used `currentData = result.Data ?? currentData`,
+                // which incorrectly preserved old data when result.Data was null.
+                if (result.IsAllowed)
+                {
+                    currentData = result.Data;
+                }
             }
 #pragma warning disable CA1031 // Reason: Filters must not crash the pipeline; log and reject.
             catch (Exception ex)

@@ -1,5 +1,5 @@
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
 
 namespace Chronos.Core.Kernel.Hooks;
 
@@ -14,4 +14,13 @@ public sealed class ReportHooks : IReportHooks
     /// <inheritdoc/>
     public IActionRegistration<(byte[] Data, string Format)> OnAfterGenerate { get; }
         = new ActionRegistration<(byte[], string)>();
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points.
+    /// </summary>
+    public void ClearAll()
+    {
+        ((FilterRegistration<ReportRequest>)OnBeforeGenerate).Clear();
+        ((ActionRegistration<(byte[], string)>)OnAfterGenerate).Clear();
+    }
 }

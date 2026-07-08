@@ -31,7 +31,4 @@ internal abstract class ICommandDispatcher
 
     /// <summary>Stops all user tasks (live, backtest, optimization).</summary>
     public abstract Task StopUserTasksAsync(CancellationToken cancellationToken);
-
-    /// <summary>Executes shutdown due to grace period expiry.</summary>
-    public abstract Task ExecuteGracePeriodShutdownAsync(CancellationToken cancellationToken);
 }

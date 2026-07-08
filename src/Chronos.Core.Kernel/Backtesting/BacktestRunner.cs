@@ -1,14 +1,13 @@
-using System.Diagnostics;
-using Chronos.Core.Abstractions.Shared;
-using Chronos.Core.Abstractions.Slots;
 using Chronos.Core.Kernel.Brokers;
 using Chronos.Core.Kernel.Clock;
 using Chronos.Core.Kernel.Events;
 using Chronos.Core.Kernel.Hooks;
 using Chronos.Core.Kernel.Indicators;
 using Chronos.Core.Kernel.Metrics;
-using Chronos.Core.Kernel.Reporting;
 using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Shared;
+using Chronos.Core.Sdk.Slots.Strategy;
+using System.Diagnostics;
 
 namespace Chronos.Core.Kernel.Backtesting;
 
@@ -49,7 +48,10 @@ public sealed class BacktestRunner : IBacktestRunner
                 input.ExecutionSpecification.MaxOpenPositions,
                 input.ExecutionSpecification.StopOutLevel,
                 input.MessageBus,
-                hooks);
+                hooks,
+                input.CurrencyConverter,
+                input.AccountCurrency,
+                null); // logger not needed in backtest
 
             var timeframes = input.StrategySpecification.RequestedSymbols
                 .SelectMany(r => r.TimeFrames)
@@ -259,13 +261,7 @@ public sealed class BacktestRunner : IBacktestRunner
                     EventId = $"bt-{Interlocked.Increment(ref _eventCounter)}"
                 });
 
-                // Generate report if hooks are available
-                if (input.HookRegistry is not null)
-                {
-                    var sysClock = new SystemClock();
-                    var reportGen = new ReportGenerator(input.HookRegistry.Report, sysClock);
-                    reportGen.GenerateBacktestReport(result, input.StrategySpecification, input.ExecutionSpecification);
-                }
+                // IMP-02: Removed ReportGenerator usage – report rendering is handled by Cloud.
 
                 // backtest.completed hook – pass ct
                 hooks?.OnCompleted.InvokeActionChain(

@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Hooks;
+using Chronos.Core.Sdk.Hooks;
 
 namespace Chronos.Core.Kernel.Hooks;
 
@@ -43,4 +43,22 @@ public sealed class OptimizationHooks : IOptimizationHooks
     /// <inheritdoc/>
     public IActionRegistration<IFitnessEvaluationContext> OnFitnessEvaluation { get; }
         = new ActionRegistration<IFitnessEvaluationContext>();
+
+    /// <summary>
+    /// Clears all registered callbacks from all hook points.
+    /// </summary>
+    public void ClearAll()
+    {
+        ((ActionRegistration)OnStart).Clear();
+        ((ActionRegistration<int>)OnGenerationStart).Clear();
+        ((FilterRegistration<Chromosome>)OnChromosomeCreated).Clear();
+        ((ActionRegistration<(Chromosome, double)>)OnChromosomeEvaluated).Clear();
+        ((ActionRegistration<(Chromosome, Chromosome)>)OnSelectionApplied).Clear();
+        ((ActionRegistration<Chromosome>)OnCrossoverApplied).Clear();
+        ((ActionRegistration<Chromosome>)OnMutationApplied).Clear();
+        ((ActionRegistration<(int, double, bool)>)OnGenerationCompleted).Clear();
+        ((ActionRegistration<int>)OnStagnationDetected).Clear();
+        ((ActionRegistration<Chromosome>)OnCompleted).Clear();
+        ((ActionRegistration<IFitnessEvaluationContext>)OnFitnessEvaluation).Clear();
+    }
 }

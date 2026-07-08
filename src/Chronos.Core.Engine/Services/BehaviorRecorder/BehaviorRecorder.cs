@@ -1,32 +1,17 @@
-using System.Collections.Concurrent;
-using System.IO.Compression;
+using Chronos.Core.Engine.Communication;
+using Chronos.Core.Engine.Core;
+using Chronos.Core.Sdk.Shared;
 using MessagePack;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.IO.Compression;
 
 namespace Chronos.Core.Engine.Services.BehaviorRecorder;
 
-internal interface IBehaviorRecorder
-{
-    void Enable(string sessionId, string strategyName, double[] genes);
-    bool IsEnabled { get; }
-    void Disable();
-    void Record(BehaviorRecord record);
-    Task FlushAsync(CancellationToken cancellationToken);
-    Task<object> GetLogsAsync(string sessionId, CancellationToken cancellationToken);
-    Task DeleteLogsAsync(string sessionId, CancellationToken cancellationToken);
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class BehaviorRecord
-{
-    [Key(0)] public DateTime TimestampUtc { get; set; }
-    [Key(1)] public string SessionId { get; set; } = string.Empty;
-    [Key(2)] public Dictionary<string, double> State { get; set; } = new();
-    [Key(3)] public string Action { get; set; } = string.Empty;
-    [Key(4)] public double? Reward { get; set; }
-    [Key(5)] public string StrategyName { get; set; } = string.Empty;
-}
-
+/// <summary>
+/// Default implementation of <see cref="IBehaviorRecorder"/>.
+/// Buffers records in memory and flushes them to compressed binary files.
+/// </summary>
 internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
 {
     private readonly ILogger<BehaviorRecorder> _logger;
@@ -34,6 +19,7 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
     private readonly ConcurrentQueue<BehaviorRecord> _buffer = new();
     private readonly Timer _flushTimer;
     private readonly SemaphoreSlim _flushLock = new(1, 1);
+    private Timer? _uploadTimer;
     private bool _isEnabled;
     private string _sessionId = string.Empty;
     private string _strategyName = string.Empty;
@@ -41,6 +27,7 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
     private int _recordCount;
     private readonly int _flushThreshold = 10000;
     private bool _disposed;
+    private int _uploadIntervalSeconds = AppConstants.DefaultBehaviorUploadIntervalSeconds;
 
     private static readonly Action<ILogger, string, Exception?> _logBehaviorLoggingEnabled =
         LoggerMessage.Define<string>(LogLevel.Information, 0, "Behavior logging enabled for session {SessionId}.");
@@ -50,27 +37,49 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         LoggerMessage.Define<int, string>(LogLevel.Debug, 2, "Flushed {Count} records to {FilePath}.");
     private static readonly Action<ILogger, string, Exception?> _logDeletedBehaviorLog =
         LoggerMessage.Define<string>(LogLevel.Information, 3, "Deleted behavior log: {File}");
+    private static readonly Action<ILogger, string, Exception?> _logUploadingBehaviorLog =
+        LoggerMessage.Define<string>(LogLevel.Information, 4, "Uploading behavior log: {File}");
+    private static readonly Action<ILogger, string, Exception?> _logUploadedBehaviorLog =
+        LoggerMessage.Define<string>(LogLevel.Information, 5, "Uploaded behavior log: {File}");
+    private static readonly Action<ILogger, string, Exception?> _logUploadBehaviorFailed =
+        LoggerMessage.Define<string>(LogLevel.Error, 6, "Failed to upload behavior log: {File}");
+    private static readonly Action<ILogger, Exception?> _logUploadTimerStarted =
+        LoggerMessage.Define(LogLevel.Information, 8, "Behavior log upload timer started.");
+    private static readonly Action<ILogger, Exception?> _logUploadTimerStopped =
+        LoggerMessage.Define(LogLevel.Information, 9, "Behavior log upload timer stopped.");
 
+    /// <inheritdoc/>
     public bool IsEnabled => _isEnabled;
 
-    public BehaviorRecorder(ILogger<BehaviorRecorder> logger)
+    private readonly Lazy<ICloudConnector> _cloudConnectorLazy;
+
+    /// <summary>Initializes a new instance of the <see cref="BehaviorRecorder"/> class.</summary>
+    public BehaviorRecorder(
+        ILogger<BehaviorRecorder> logger,
+        Lazy<ICloudConnector> cloudConnectorLazy)
     {
         _logger = logger;
+        _cloudConnectorLazy = cloudConnectorLazy;
         _baseDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "behavior_logs");
         Directory.CreateDirectory(_baseDirectory);
         _flushTimer = new Timer(async _ => await FlushAsync(CancellationToken.None).ConfigureAwait(false), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
-    public void Enable(string sessionId, string strategyName, double[] genes)
+    /// <inheritdoc/>
+    public void Enable(string sessionId, string strategyName, double[] genes, int uploadIntervalSeconds)
     {
         _sessionId = sessionId;
         _strategyName = strategyName;
         _genes = genes ?? Array.Empty<double>();
+        _uploadIntervalSeconds = uploadIntervalSeconds > 0 ? uploadIntervalSeconds : AppConstants.DefaultBehaviorUploadIntervalSeconds;
         _isEnabled = true;
         _recordCount = 0;
         _logBehaviorLoggingEnabled(_logger, sessionId, null);
+
+        StartUploadTimer();
     }
 
+    /// <inheritdoc/>
     public void Disable()
     {
         if (!_isEnabled)
@@ -81,8 +90,72 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         _isEnabled = false;
         _logBehaviorLoggingDisabled(_logger, null);
         FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+        StopUploadTimer();
     }
 
+    private void StartUploadTimer()
+    {
+        if (_uploadTimer != null)
+        {
+            return;
+        }
+
+        _uploadTimer = new Timer(
+            async _ => await UploadLogsAsync(CancellationToken.None).ConfigureAwait(false),
+            null,
+            TimeSpan.FromSeconds(_uploadIntervalSeconds),
+            TimeSpan.FromSeconds(_uploadIntervalSeconds));
+        _logUploadTimerStarted(_logger, null);
+    }
+
+    private void StopUploadTimer()
+    {
+        if (_uploadTimer == null)
+        {
+            return;
+        }
+
+        _uploadTimer.Dispose();
+        _uploadTimer = null;
+        _logUploadTimerStopped(_logger, null);
+    }
+
+    private async Task UploadLogsAsync(CancellationToken cancellationToken)
+    {
+        if (!_isEnabled)
+        {
+            return;
+        }
+
+        var cloudConnector = _cloudConnectorLazy.Value;
+        if (!cloudConnector.IsConnected)
+        {
+            return;
+        }
+
+        var files = Directory.GetFiles(_baseDirectory, $"behavior_{_sessionId}_*.bin.gz");
+        foreach (var file in files)
+        {
+            if (cancellationToken.IsCancellationRequested || !_isEnabled)
+            {
+                break;
+            }
+
+            try
+            {
+                _logUploadingBehaviorLog(_logger, Path.GetFileName(file), null);
+                await cloudConnector.SendBinaryAsync(file, "application/octet-stream", cancellationToken).ConfigureAwait(false);
+                File.Delete(file);
+                _logUploadedBehaviorLog(_logger, Path.GetFileName(file), null);
+            }
+            catch (Exception ex)
+            {
+                _logUploadBehaviorFailed(_logger, Path.GetFileName(file), ex);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public void Record(BehaviorRecord record)
     {
         if (!_isEnabled)
@@ -92,9 +165,16 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
 
         ArgumentNullException.ThrowIfNull(record);
 
-        record.SessionId = _sessionId;
-        record.StrategyName = _strategyName;
-        record.TimestampUtc = DateTime.UtcNow;
+        if (string.IsNullOrEmpty(record.SessionId))
+        {
+            record = record with { SessionId = _sessionId };
+        }
+
+        if (string.IsNullOrEmpty(record.StrategyName))
+        {
+            record = record with { StrategyName = _strategyName };
+        }
+
         _buffer.Enqueue(record);
         if (Interlocked.Increment(ref _recordCount) >= _flushThreshold)
         {
@@ -102,6 +182,7 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public async Task FlushAsync(CancellationToken cancellationToken)
     {
         if (_buffer.IsEmpty)
@@ -125,10 +206,8 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
 
             var filePath = Path.Combine(_baseDirectory, $"behavior_{_sessionId}_{DateTime.UtcNow:yyyy-MM-dd}.bin.gz");
             var data = MessagePackSerializer.Serialize(records, cancellationToken: cancellationToken);
-#pragma warning disable CA2007
-            await using var fs = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.None);
-            await using var gz = new GZipStream(fs, CompressionLevel.Optimal);
-#pragma warning restore CA2007
+            using var fs = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.None);
+            using var gz = new GZipStream(fs, CompressionLevel.Optimal);
             await gz.WriteAsync(data, cancellationToken).ConfigureAwait(false);
             _recordCount = 0;
             _logFlushedRecords(_logger, records.Count, filePath, null);
@@ -139,6 +218,7 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public async Task<object> GetLogsAsync(string sessionId, CancellationToken cancellationToken)
     {
         await FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -159,6 +239,7 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         return new { SessionId = sessionId, Logs = logFiles };
     }
 
+    /// <inheritdoc/>
     public async Task DeleteLogsAsync(string sessionId, CancellationToken cancellationToken)
     {
         await FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -171,6 +252,7 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
@@ -182,5 +264,6 @@ internal sealed class BehaviorRecorder : IBehaviorRecorder, IDisposable
         Disable();
         _flushTimer.Dispose();
         _flushLock.Dispose();
+        _uploadTimer?.Dispose();
     }
 }

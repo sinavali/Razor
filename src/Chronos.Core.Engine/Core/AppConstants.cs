@@ -5,11 +5,11 @@ namespace Chronos.Core.Engine.Core;
 /// </summary>
 internal static class AppConstants
 {
-    /// <summary>Primary Cloud endpoint.</summary>
-    public const string PrimaryEndpoint = "wss://cloud.chronos.io/engine";
+    /// <summary>Primary Cloud endpoint (can be overridden by environment variable).</summary>
+    public static string PrimaryEndpoint => Environment.GetEnvironmentVariable("CHRONOS_PRIMARY_ENDPOINT") ?? "wss://cloud.chronos.io/engine";
 
-    /// <summary>Fallback Cloud endpoint.</summary>
-    public const string FallbackEndpoint = "wss://cloud.chronos-fallback.io/engine";
+    /// <summary>Fallback Cloud endpoint (can be overridden by environment variable).</summary>
+    public static string FallbackEndpoint => Environment.GetEnvironmentVariable("CHRONOS_FALLBACK_ENDPOINT") ?? "wss://cloud.chronos-fallback.io/engine";
 
     /// <summary>Default grace period in hours.</summary>
     public const int DefaultGracePeriodHours = 3;
@@ -19,6 +19,9 @@ internal static class AppConstants
 
     /// <summary>Default chunk size for binary transfers in bytes.</summary>
     public const int DefaultChunkSize = 64 * 1024;
+
+    /// <summary>Default interval for uploading behaviour logs in seconds.</summary>
+    public const int DefaultBehaviorUploadIntervalSeconds = 60;
 
     /// <summary>Engine version.</summary>
     public const string EngineVersion = "1.0.0";
@@ -42,7 +45,6 @@ internal static class AppConstants
         104, // Hooks
         105, // Cronjobs
         106, // Schedules
-        107, // Mining
         108, // Self-Update
         109, // Log Streaming
         110, // Telemetry Export

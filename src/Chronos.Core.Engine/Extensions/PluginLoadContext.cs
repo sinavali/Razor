@@ -17,7 +17,7 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
 
     protected override Assembly? Load(AssemblyName assemblyName)
     {
-        if (string.Equals(assemblyName.Name, "Chronos.Core.Abstractions", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(assemblyName.Name, "Chronos.Core.Sdk", StringComparison.OrdinalIgnoreCase))
         {
             return null; // Fallback to default context
         }

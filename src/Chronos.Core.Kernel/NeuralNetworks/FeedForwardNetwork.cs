@@ -1,4 +1,4 @@
-using Chronos.Core.Abstractions.Slots;
+using Chronos.Core.Sdk.Slots.NeuralNetwork;
 
 namespace Chronos.Core.Kernel.NeuralNetworks;
 
@@ -62,7 +62,6 @@ public sealed class FeedForwardNetwork : INeuralNetworkModel
         _activation = activation;
 
         // Initialize weights and biases with small random values (Xavier-like)
-        var rng = new Chronos.Core.Abstractions.Shared.CustomizedRandom(42);
         _weights = new double[_layerSizes.Length - 1][];
         _biases = new double[_layerSizes.Length - 1][];
 
@@ -77,22 +76,28 @@ public sealed class FeedForwardNetwork : INeuralNetworkModel
         }
         _parameterCount = totalParams;
 
-        // Randomly initialise with small values
-        for (int i = 0; i < _parameterCount; i++)
-        {
-            // Use a separate RNG for parameters to keep it deterministic
-            var paramRng = new Chronos.Core.Abstractions.Shared.CustomizedRandom((ulong)(i + 1) * 0x9e3779b97f4a7c15UL);
-            double std = Math.Sqrt(2.0 / (_layerSizes[0] + _layerSizes[^1]));
-            double val = (paramRng.NextDouble() * 2 - 1) * std;
-        }
+        // IMP-01: Initialize parameters with Xavier initialization so the network works even without LoadParameters.
+        InitializeRandom();
+    }
 
-        double[] initParams = new double[_parameterCount];
-        var initRng = new Chronos.Core.Abstractions.Shared.CustomizedRandom(12345);
-        for (int i = 0; i < initParams.Length; i++)
+    private void InitializeRandom()
+    {
+        // Use a fixed seed for reproducibility.
+        var rng = new Chronos.Core.Sdk.Shared.CustomizedRandom(12345);
+        for (int layer = 0; layer < _layerSizes.Length - 1; layer++)
         {
-            initParams[i] = (initRng.NextDouble() * 2 - 1) * 0.5;
+            int inSize = _layerSizes[layer];
+            int outSize = _layerSizes[layer + 1];
+            double std = Math.Sqrt(2.0 / (inSize + outSize)); // Xavier standard deviation
+            for (int i = 0; i < outSize; i++)
+            {
+                for (int j = 0; j < inSize; j++)
+                {
+                    _weights[layer][i * inSize + j] = (rng.NextDouble() * 2 - 1) * std;
+                }
+                _biases[layer][i] = (rng.NextDouble() * 2 - 1) * 0.01;
+            }
         }
-        LoadParameters(initParams);
     }
 
     /// <inheritdoc/>

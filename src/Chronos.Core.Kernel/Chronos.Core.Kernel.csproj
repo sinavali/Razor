@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -11,12 +11,19 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Chronos.Core.Abstractions\Chronos.Core.Abstractions.csproj" />
+        <ProjectReference Include="..\Chronos.Core.Shared\Chronos.Core.Shared.csproj" />
+        <ProjectReference Include="..\Chronos.Core.Sdk\Chronos.Core.Sdk.csproj" />
     </ItemGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Chronos.Core.Engine" />
         <InternalsVisibleTo Include="Chronos.Core.Kernel.UnitTests" />
         <InternalsVisibleTo Include="Chronos.Core.Kernel.IntegrationTests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MessagePack" Version="3.1.7" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
     </ItemGroup>
 
     <PropertyGroup>

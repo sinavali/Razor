@@ -6,29 +6,32 @@
 
 namespace Chronos.Core.Engine;
 
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.InteropServices;
-using Chronos.Core.Engine.Communication;
-using Chronos.Core.Engine.Core;
-using Chronos.Core.Engine.Core.Exceptions;
-using Chronos.Core.Engine.Extensions;
-using Chronos.Core.Engine.Management.Commands;
-using Chronos.Core.Engine.Management.Scheduling;
-using Chronos.Core.Engine.Management.Tasks;
-using Chronos.Core.Engine.Services.BehaviorRecorder;
-using Chronos.Core.Engine.Services.Mining;
-using Chronos.Core.Engine.Services.Update;
+using Chronos.Core.Engine.Kernel;
+using Chronos.Core.Kernel.Hooks;
+using Chronos.Core.Kernel.Messaging;
+using Chronos.Core.Kernel.Telemetry;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
+using Communication;
+using Core;
+using Core.Exceptions;
+using Extensions;
+using Management.Commands;
+using Management.Scheduling;
+using Management.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
-
-// Resolve ambiguity between Microsoft.Extensions.Logging.ILogger and Serilog.ILogger.
+using Services.Update;
+using System.Diagnostics.CodeAnalysis;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 /// <summary>
 /// Main entry point for the Chronos Engine.
 /// </summary>
-[SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Console output for CLI; no localization required.")]
+[SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters",
+    Justification = "Console output for CLI; no localization required.")]
 internal sealed class Program
 {
     private static IServiceProvider? _serviceProvider;
@@ -37,13 +40,10 @@ internal sealed class Program
     // LoggerMessage delegates for shutdown.
     private static readonly Action<ILogger, Exception?> _logShutdownTasksError =
         LoggerMessage.Define(LogLevel.Error, 0, "Error stopping tasks during shutdown.");
-
     private static readonly Action<ILogger, Exception?> _logShutdownCloudError =
         LoggerMessage.Define(LogLevel.Error, 1, "Error disconnecting from cloud.");
-
     private static readonly Action<ILogger, Exception?> _logShutdownStateError =
         LoggerMessage.Define(LogLevel.Error, 2, "Error saving state during shutdown.");
-
     private static readonly Action<ILogger, Exception?> _logShutdownBehaviorError =
         LoggerMessage.Define(LogLevel.Error, 3, "Error flushing behavior records during shutdown.");
 
@@ -51,17 +51,20 @@ internal sealed class Program
     /// The main method.
     /// </summary>
     /// <param name="args">Command‑line arguments. Supports --auth=username:password:apikey.</param>
-    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method", Justification = "Main is async.")]
+    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method",
+        Justification = "Main is async.")]
     public static async Task Main(string[] args)
     {
         // Parse --help and --version first.
-        if (args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.Ordinal)))
+        if (args.Any(a =>
+                a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.Ordinal)))
         {
             PrintHelp();
             return;
         }
 
-        if (args.Any(a => a.Equals("--version", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.Ordinal)))
+        if (args.Any(a =>
+                a.Equals("--version", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.Ordinal)))
         {
             PrintVersion();
             return;
@@ -69,17 +72,19 @@ internal sealed class Program
 
         if (args.Any(a => a.Equals("--development", StringComparison.OrdinalIgnoreCase)))
         {
-            Chronos.Core.Engine.Core.RuntimeEnvironment.SetDevelopment(true);
+            RuntimeEnvironment.SetDevelopment(true);
         }
 
 #if DEBUG
-        AppConstants.IsDevelopment = true;
+        RuntimeEnvironment.SetDevelopment(true);
 #endif
 
         // Parse --auth=username,password,apikey
         string? authArg = args.FirstOrDefault(a => a.StartsWith("--auth=", StringComparison.OrdinalIgnoreCase));
         if (authArg != null)
         {
+            // SEC‑04: Warn about --auth usage.
+            Console.WriteLine("WARNING: Using --auth exposes credentials to the local system. Use only in secure environments.");
             string[] parts = authArg.Substring("--auth=".Length).Split(',');
             if (parts.Length == 3)
             {
@@ -100,6 +105,9 @@ internal sealed class Program
             Log.Information("Engine restarting after update.");
         }
 
+        // Detect --service flag
+        bool isService = args.Any(a => a.Equals("--service", StringComparison.OrdinalIgnoreCase));
+
         _shutdownCts = new CancellationTokenSource();
         Console.CancelKeyPress += OnCancelKeyPress;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -109,11 +117,23 @@ internal sealed class Program
         {
             _serviceProvider = BuildServiceProvider();
 
-            // After building, initialise command dispatcher to hook up event.
-            var dispatcher = _serviceProvider.GetRequiredService<ICommandDispatcher>() as CommandDispatcher;
-            dispatcher?.Initialize();
+            // If this is a restart after update, finalize the update
+            if (isRestart)
+            {
+                var selfUpdate = _serviceProvider.GetRequiredService<ISelfUpdateManager>();
+                await selfUpdate.FinalizeUpdateAsync(_shutdownCts.Token).ConfigureAwait(false);
+            }
 
-            await RunEngineAsync(_serviceProvider, _shutdownCts.Token).ConfigureAwait(false);
+            if (isService)
+            {
+                // Run as a hosted service (Windows Service / systemd)
+                await RunAsServiceAsync(_serviceProvider, _shutdownCts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                // Run as a console application
+                await RunConsoleAsync(_serviceProvider, _shutdownCts.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -141,10 +161,14 @@ internal sealed class Program
         services.AddSingleton<ISecurityManager, SecurityManager>();
         services.AddSingleton<IStateManager, StateManager>();
         services.AddSingleton<IEngineTelemetry, EngineTelemetry>();
+        services.AddSingleton<BinaryTransferManager>();
         services.AddSingleton<ILoggingService, LoggingService>();
+        services.AddSingleton<ConfigStore>();
 
         // Communication
         services.AddSingleton<ICloudConnector, CloudConnector>();
+        services.AddSingleton<Lazy<ICloudConnector>>(sp =>
+            new Lazy<ICloudConnector>(() => sp.GetRequiredService<ICloudConnector>()));
 
         // Management
         services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
@@ -156,10 +180,17 @@ internal sealed class Program
         // Extensions
         services.AddSingleton<IExtensionManager, ExtensionManager>();
 
+        // Kernel
+        services.AddSingleton<IMessageBus, MessageBus>();
+        services.AddSingleton<ICoreMetrics>(sp => new CoreMetrics("engine"));
+        services.AddSingleton<IKernelService, KernelService>();
+
         // Services
-        services.AddSingleton<IBehaviorRecorder, BehaviorRecorder>();
-        services.AddSingleton<IMiningIntegration, MiningIntegration>();
+        services.AddSingleton<IBehaviorRecorder, Services.BehaviorRecorder.BehaviorRecorder>();
         services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
+
+        // Hooks
+        services.AddSingleton<IHookRegistry, HookRegistry>();
 
         // Logging
         services.AddLogging(builder =>
@@ -168,11 +199,13 @@ internal sealed class Program
             builder.AddSerilog(dispose: true);
         });
 
+        // Hosted service
+        services.AddHostedService<EngineHostedService>();
+
         return services.BuildServiceProvider();
     }
 
-    [SuppressMessage("Performance", "CA1849:Call async methods when in an async method", Justification = "Execution is async.")]
-    private static async Task RunEngineAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    private static async Task RunConsoleAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         Console.WriteLine("=== Chronos Engine v1.0.0 LTS ===");
         Console.WriteLine($"Runtime: {Environment.Version}");
@@ -186,8 +219,29 @@ internal sealed class Program
         var stateManager = serviceProvider.GetRequiredService<IStateManager>();
         await stateManager.LoadStateAsync(cancellationToken).ConfigureAwait(false);
 
+        // Restore live state
+        var liveState = await stateManager.LoadLiveStateAsync(cancellationToken).ConfigureAwait(false);
+        if (liveState != null)
+        {
+            var taskManager = serviceProvider.GetRequiredService<ITaskManager>() as TaskManager;
+            if (taskManager != null)
+            {
+                string? restoredId = await taskManager.RestoreLiveTaskAsync(liveState, cancellationToken)
+                    .ConfigureAwait(false);
+                if (restoredId != null)
+                {
+                    Log.Information("Resumed live task {TaskId} from persisted state.", restoredId);
+                }
+            }
+        }
+
         var extensionManager = serviceProvider.GetRequiredService<IExtensionManager>();
         await extensionManager.DiscoverExtensionsAsync(cancellationToken).ConfigureAwait(false);
+
+        // Send manifest to Cloud
+        var manifest = await extensionManager.GetManifestAsync(cancellationToken).ConfigureAwait(false);
+        var cloudConnector = serviceProvider.GetRequiredService<ICloudConnector>();
+        await cloudConnector.SendExtensionManifestAsync(manifest, cancellationToken).ConfigureAwait(false);
 
         var securityManager = serviceProvider.GetRequiredService<ISecurityManager>();
 
@@ -207,8 +261,52 @@ internal sealed class Program
             Credentials.PromptForCredentials();
         }
 
-        var cloudConnector = serviceProvider.GetRequiredService<ICloudConnector>();
+        // Reuse the same cloud connector instance
         await cloudConnector.RunAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task RunAsServiceAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
+    {
+        // Rebuild the host with our services.
+        using var host2 = Host.CreateDefaultBuilder()
+            .UseWindowsService(options =>
+            {
+                options.ServiceName = "Chronos Engine";
+            })
+            .UseSystemd()
+            .ConfigureServices((context, services) =>
+            {
+                // Register all our services.
+                services.AddSingleton<ISecurityManager, SecurityManager>();
+                services.AddSingleton<IStateManager, StateManager>();
+                services.AddSingleton<IEngineTelemetry, EngineTelemetry>();
+                services.AddSingleton<BinaryTransferManager>();
+                services.AddSingleton<ILoggingService, LoggingService>();
+                services.AddSingleton<ICloudConnector, CloudConnector>();
+                services.AddSingleton<Lazy<ICloudConnector>>(sp =>
+                    new Lazy<ICloudConnector>(() => sp.GetRequiredService<ICloudConnector>()));
+                services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
+                services.AddSingleton<Lazy<ICommandDispatcher>>(sp =>
+                    new Lazy<ICommandDispatcher>(() => sp.GetRequiredService<ICommandDispatcher>()));
+                services.AddSingleton<ICronJobManager, CronJobManager>();
+                services.AddSingleton<ITaskManager, TaskManager>();
+                services.AddSingleton<IExtensionManager, ExtensionManager>();
+                services.AddSingleton<IMessageBus, MessageBus>();
+                services.AddSingleton<ICoreMetrics>(sp => new CoreMetrics("engine"));
+                services.AddSingleton<IKernelService, KernelService>();
+                services.AddSingleton<IBehaviorRecorder, Services.BehaviorRecorder.BehaviorRecorder>();
+                services.AddSingleton<ISelfUpdateManager, SelfUpdateManager>();
+                services.AddSingleton<IHookRegistry, HookRegistry>();
+                services.AddHostedService<EngineHostedService>();
+                services.AddLogging(builder =>
+                {
+                    builder.AddConsole();
+                    builder.AddSerilog(dispose: true);
+                });
+            })
+            .Build();
+
+        await host2.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task ShutdownEngineAsync()
@@ -279,11 +377,11 @@ internal sealed class Program
 
         try
         {
-            var behaviorRecorder = _serviceProvider?.GetRequiredService<IBehaviorRecorder>();
-            if (behaviorRecorder != null)
+            var behaviorRecorder = _serviceProvider?.GetService<IBehaviorRecorder>();
+            if (behaviorRecorder is Services.BehaviorRecorder.BehaviorRecorder concrete)
             {
-                behaviorRecorder.Disable();
-                await behaviorRecorder.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                concrete.Disable();
+                await concrete.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -317,22 +415,30 @@ internal sealed class Program
         _shutdownCts?.Cancel();
     }
 
-    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Console output for CLI help; no localization required.")]
+    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters",
+        Justification = "Console output for CLI help; no localization required.")]
     private static void PrintHelp()
     {
         Console.WriteLine("Chronos Engine v" + AppConstants.EngineVersion);
-        Console.WriteLine("Usage: Chronos.Engine [options]");
+        Console.WriteLine("Usage: Chronos.Core.Engine [options]");
         Console.WriteLine("Options:");
-        Console.WriteLine("  --auth=username:password:apikey   Set credentials via command line");
+        Console.WriteLine("  --auth=username,password,apikey   Set credentials via command line (required for service mode)");
         Console.WriteLine("  --help, -h                       Show this help message");
         Console.WriteLine("  --version, -v                    Show version information");
-        Console.WriteLine("  --service                        Run as a Windows Service (Windows only)");
-        Console.WriteLine("  --service-name=<name>            Service name (default: ChronosEngine)");
-        Console.WriteLine("  --service-display=<display>      Display name (default: Chronos Engine)");
-        Console.WriteLine("  --service-description=<desc>     Description (default: Chronos Trading Engine)");
+        Console.WriteLine("  --service                        Run as a Windows Service (Windows) or systemd (Linux)");
+        Console.WriteLine("  --development                    Run in development mode (disable some security checks)");
+        Console.WriteLine("  --command=restart                Internal use for self-update");
+        Console.WriteLine("\nService installation (Windows):");
+        Console.WriteLine("  sc create ChronosEngine binPath= \"C:\\Path\\Chronos.Core.Engine.exe --service --auth=user,pass,key\"");
+        Console.WriteLine("\nService installation (Linux):");
+        Console.WriteLine("  Create /etc/systemd/system/chronos.service with:");
+        Console.WriteLine("  [Service]");
+        Console.WriteLine("  ExecStart=/opt/chronos/Chronos.Core.Engine --service --auth=user,pass,key");
+        Console.WriteLine("  WorkingDirectory=/opt/chronos");
     }
 
-    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Console output for version; no localization required.")]
+    [SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters",
+        Justification = "Console output for version; no localization required.")]
     private static void PrintVersion()
     {
         Console.WriteLine($"Chronos Engine v{AppConstants.EngineVersion} LTS");

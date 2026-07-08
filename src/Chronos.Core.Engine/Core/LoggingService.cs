@@ -6,11 +6,11 @@
 
 namespace Chronos.Core.Engine.Core;
 
-using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using System.Globalization;
 
 /// <summary>Service that initialises and manages Serilog logging.</summary>
 internal interface ILoggingService
@@ -51,7 +51,7 @@ internal sealed class LoggingService : ILoggingService, IAsyncDisposable
             Directory.CreateDirectory(logDirectory);
         }
 
-        string logFileTemplate = Path.Combine(logDirectory, "chronos-{yyyy-MM-dd}-{deletionTimestamp}.log");
+        string logFileTemplate = Path.Combine(logDirectory, "chronos-{yyyy-MM-dd}.log");
 
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
@@ -60,7 +60,6 @@ internal sealed class LoggingService : ILoggingService, IAsyncDisposable
             .MinimumLevel.Override("Chronos.Core.Engine.Communication.CloudConnector", LogEventLevel.Warning)
             .MinimumLevel.Override("System.Net.Http", LogEventLevel.Warning)
             .Enrich.FromLogContext()
-            // Console sink removed – all console output goes through IConsoleUi.
             .WriteTo.File(
                 formatter: new CompactJsonFormatter(),
                 path: logFileTemplate,

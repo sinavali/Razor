@@ -1,6 +1,6 @@
-using Chronos.Core.Abstractions.Hooks;
-using Chronos.Core.Abstractions.Shared;
 using Chronos.Core.Kernel.Clock;
+using Chronos.Core.Sdk.Hooks;
+using Chronos.Core.Sdk.Shared;
 
 namespace Chronos.Core.Kernel.Hooks;
 

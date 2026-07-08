@@ -8,9 +8,9 @@
 
 namespace Chronos.Core.Engine.Core;
 
+using Chronos.Core.Engine.Core.Exceptions;
 using System.Security.Cryptography;
 using System.Text;
-using Chronos.Core.Engine.Core.Exceptions;
 
 /// <summary>
 /// Manages cloud credentials (username, password, instance API key).
@@ -18,7 +18,6 @@ using Chronos.Core.Engine.Core.Exceptions;
 /// </summary>
 internal static class Credentials
 {
-    private static readonly byte[] Salt = new byte[32];
     private static byte[]? _encryptedCredentials;
     private static string? _username;
     private static string? _password;
@@ -89,16 +88,21 @@ internal static class Credentials
             throw new InvalidOperationException("Instance API key not available for encryption.");
         }
 
-        using RandomNumberGenerator rng = RandomNumberGenerator.Create();
-        rng.GetBytes(Salt);
+        // Generate a random 32-byte salt
+        byte[] salt = new byte[32];
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(salt);
+        }
 
         string credentialsString = $"{_username}:{_password}:{_instanceApiKey}";
         byte[] credentialsBytes = Encoding.UTF8.GetBytes(credentialsString);
 
+        // Use 600,000 iterations as per NIST recommendation (PBKDF2-HMAC-SHA256)
         byte[] key = Rfc2898DeriveBytes.Pbkdf2(
             _instanceApiKey,
-            Salt,
-            100000,
+            salt,
+            600000,
             HashAlgorithmName.SHA256,
             32);
 
@@ -110,9 +114,11 @@ internal static class Credentials
         byte[] iv = aes.IV;
         byte[] encrypted = encryptor.TransformFinalBlock(credentialsBytes, 0, credentialsBytes.Length);
 
-        _encryptedCredentials = new byte[iv.Length + encrypted.Length];
-        Buffer.BlockCopy(iv, 0, _encryptedCredentials, 0, iv.Length);
-        Buffer.BlockCopy(encrypted, 0, _encryptedCredentials, iv.Length, encrypted.Length);
+        // Blob format: salt (32) + iv (16) + ciphertext
+        _encryptedCredentials = new byte[salt.Length + iv.Length + encrypted.Length];
+        Buffer.BlockCopy(salt, 0, _encryptedCredentials, 0, salt.Length);
+        Buffer.BlockCopy(iv, 0, _encryptedCredentials, salt.Length, iv.Length);
+        Buffer.BlockCopy(encrypted, 0, _encryptedCredentials, salt.Length + iv.Length, encrypted.Length);
         _isEncrypted = true;
     }
 
@@ -128,18 +134,24 @@ internal static class Credentials
             throw new InvalidOperationException("Instance API key not available for decryption.");
         }
 
+        // Read salt (first 32 bytes)
+        byte[] salt = new byte[32];
+        Buffer.BlockCopy(_encryptedCredentials, 0, salt, 0, salt.Length);
+
+        // Read IV (next 16 bytes)
+        byte[] iv = new byte[16];
+        Buffer.BlockCopy(_encryptedCredentials, salt.Length, iv, 0, iv.Length);
+
+        // Read ciphertext (remaining bytes)
+        byte[] encrypted = new byte[_encryptedCredentials.Length - salt.Length - iv.Length];
+        Buffer.BlockCopy(_encryptedCredentials, salt.Length + iv.Length, encrypted, 0, encrypted.Length);
+
         byte[] key = Rfc2898DeriveBytes.Pbkdf2(
             _instanceApiKey,
-            Salt,
-            100000,
+            salt,
+            600000,
             HashAlgorithmName.SHA256,
             32);
-
-        byte[] iv = new byte[16];
-        Buffer.BlockCopy(_encryptedCredentials, 0, iv, 0, iv.Length);
-
-        byte[] encrypted = new byte[_encryptedCredentials.Length - iv.Length];
-        Buffer.BlockCopy(_encryptedCredentials, iv.Length, encrypted, 0, encrypted.Length);
 
         using Aes aes = Aes.Create();
         aes.Key = key;
