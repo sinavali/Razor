@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Razor.Core.Kernel</RootNamespace>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <WarningsAsErrors>nullable,CS1591</WarningsAsErrors>
+        <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+        <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Razor.Core.Shared\Razor.Core.Shared.csproj" />
+        <ProjectReference Include="..\Razor.Core.Sdk\Razor.Core.Sdk.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Razor.Core.Engine" />
+        <InternalsVisibleTo Include="Razor.Core.Kernel.UnitTests" />
+        <InternalsVisibleTo Include="Razor.Core.Kernel.IntegrationTests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MessagePack" Version="3.1.7" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    </ItemGroup>
+
+    <PropertyGroup>
+        <Description>Core trading engine (backtesting, optimisation, brokers, telemetry).</Description>
+        <PackageTags>trading;algorithmic;Razor;engine;backtest;optimisation</PackageTags>
+        <PackageProjectUrl>https://Razor.io</PackageProjectUrl>
+        <RepositoryUrl>https://git.Razor.io/Razor/core.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageIcon>icon.png</PackageIcon>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="../../assets/icon.png" Pack="true" PackagePath="" />
+        <None Include="../../README.md" Pack="true" PackagePath="" />
+    </ItemGroup>
+
+</Project>

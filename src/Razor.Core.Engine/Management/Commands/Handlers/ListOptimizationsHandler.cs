@@ -1,0 +1,38 @@
+// -----------------------------------------------------------------------------
+// <copyright file="ListOptimizationsHandler.cs" company="Razor Platform">
+//   Copyright (c) Razor Platform. All rights reserved.
+// </copyright>
+// -----------------------------------------------------------------------------
+
+namespace Razor.Core.Engine.Management.Commands.Handlers;
+
+using Razor.Core.Engine.Communication;
+using Razor.Core.Engine.Management.Commands;
+using Razor.Core.Engine.Management.Tasks;
+using Microsoft.Extensions.Logging;
+
+internal sealed class ListOptimizationsHandler : CommandHandlerBase
+{
+    private readonly ITaskManager _taskManager;
+
+    public ListOptimizationsHandler(ICloudConnector cloudConnector, ICommandDispatcher dispatcher, ITaskManager taskManager, ILogger<ListOptimizationsHandler> logger)
+        : base(cloudConnector, dispatcher, logger)
+    {
+        _taskManager = taskManager;
+    }
+
+    public override int CommandId => CommandIds.ListOptimizations;
+
+    public override async Task HandleAsync(CloudCommand command, CancellationToken cancellationToken)
+    {
+        var tasks = _taskManager.AllTasks.Where(t => t.TaskType == "Optimization").Select(t => new
+        {
+            t.TaskId,
+            State = t.State.ToString(),
+            t.StartTime,
+            t.EndTime
+        }).ToArray();
+
+        await SendSuccessAsync(command.CorrelationId ?? string.Empty, new { Tasks = tasks }, cancellationToken).ConfigureAwait(false);
+    }
+}

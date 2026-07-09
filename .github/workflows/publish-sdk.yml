@@ -1,0 +1,54 @@
+name: Publish SDK to GitHub Packages
+
+on:
+  push:
+    tags:
+      - 'v*'              # Triggers on tags like v1.0.0, v0.0.4
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  publish-sdk:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read version from VERSION.txt
+        id: version
+        run: |
+          VERSION=$(cat VERSION.txt | tr -d '\r\n')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Display version
+        run: echo "Building SDK version ${{ steps.version.outputs.VERSION }}"
+
+      - name: Restore
+        run: dotnet restore src/Razor.Core.Sdk/Razor.Core.Sdk.csproj
+
+      - name: Build
+        run: dotnet build src/Razor.Core.Sdk/Razor.Core.Sdk.csproj --configuration Release --no-restore
+
+      - name: Pack
+        run: |
+          dotnet pack src/Razor.Core.Sdk/Razor.Core.Sdk.csproj \
+            --configuration Release \
+            --no-build \
+            --output ./nupkg \
+            /p:Version=${{ steps.version.outputs.VERSION }}
+
+      - name: Push to GitHub Packages
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key ${{ secrets.GITHUB_TOKEN }}
