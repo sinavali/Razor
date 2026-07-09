@@ -1,0 +1,35 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore all projects
+        run: dotnet restore razor.sln
+
+      - name: Build all projects
+        run: dotnet build razor.sln --configuration Release --no-restore
+
+      - name: Run SDK tests
+        run: dotnet test tests/Razor.Core.Sdk.UnitTests --configuration Release --no-build --verbosity normal
+
+      - name: Run integration tests
+        run: dotnet test tests/Razor.Core.Sdk.IntegrationTests --configuration Release --no-build --verbosity normal
+
+      - name: Run Cloud tests
+        run: dotnet test tests/Razor.Cloud.UnitTests --configuration Release --no-build --verbosity normal

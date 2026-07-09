@@ -1,62 +1,75 @@
-# Solution README.md — Chronos.Core
+<<<<<<< Updated upstream
+# Razor Core
 
-**Location:** `core/README.md` (Root of the Chronos.Core solution)  
+**Institutional‑grade algorithmic trading engine – v1.0.0 LTS**
+
+The `core` repository contains the heart of the Razor ecosystem: the public SDK for extension developers, the closed‑source engine that executes backtests, optimizations, and live trading, and the headless engine executable that connects to Razor Cloud.
+=======
+# Solution README.md — Razor.Core
+
+**Location:** `core/README.md` (Root of the Razor.Core solution)  
 **Status:** Authoritative  
 **Last Updated:** 2026-07-09  
 
 ---
 
-# Chronos.Core
+# Razor.Core
 
 **Institutional‑grade algorithmic trading engine – v1.0.0 LTS**
 
-Welcome to the Chronos.Core solution. This repository contains the heart of the Chronos ecosystem: the public SDK for extension developers, the shared utilities for high‑performance I/O, the closed‑source engine that executes backtests, optimisations, and live trading, and the headless engine executable that connects to Chronos Cloud.
+Welcome to the Razor.Core solution. This repository contains the heart of the Razor ecosystem: the public SDK for extension developers, the shared utilities for high‑performance I/O, the closed‑source engine that executes backtests, optimisations, and live trading, and the headless engine executable that connects to Razor Cloud.
+>>>>>>> Stashed changes
 
----
-
-## Table of Contents
-
-1. [Architecture Overview](#architecture-overview)
-2. [Projects](#projects)
-3. [Quick Start](#quick-start)
-   - [For Extension Developers](#for-extension-developers)
-   - [For Core Developers](#for-core-developers)
-4. [Repository Structure](#repository-structure)
-5. [Documentation](#documentation)
-6. [Versioning](#versioning)
-7. [Licensing](#licensing)
-8. [Support](#support)
-
----
-
-## Architecture Overview
+## Architecture
 
 ```
+<<<<<<< Updated upstream
+┌──────────────────────────────────────────────┐
+│                  Razor Cloud               │  (SaaS – management & monitoring)
+└──────────────────┬───────────────────────────┘
+│ encrypted WebSocket
+┌──────────────────▼───────────────────────────┐
+│              Razor Engine                   │  (headless binary)
+└──────────────────┬───────────────────────────┘
+│
+┌──────────────────▼───────────────────────────┐
+│          Razor.Core.Kernel                  │  (closed‑source core)
+│  backtesting • optimisation • live trading    │
+│  genetic algorithm • telemetry • hooks        │
+└──────────────────┬───────────────────────────┘
+│ references
+┌──────────────────▼───────────────────────────┐
+│       Razor.Core.Abstractions               │  (public NuGet SDK)
+│  hooks • slots • domain types • utilities     │
+└──────────────────────────────────────────────┘
+```
+
+=======
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           Chronos Cloud                            │
+│                           Razor Cloud                            │
 │                      (SaaS – management & monitoring)              │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ encrypted WebSocket
 ┌──────────────────────────────▼──────────────────────────────────────┐
-│                          Chronos Engine                            │
+│                          Razor Engine                            │
 │                   (headless executable – closed source)             │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────────┐
-│                        Chronos.Core.Kernel                         │
+│                        Razor.Core.Kernel                         │
 │                     (closed‑source core library)                    │
 │  backtesting • optimisation • live trading • genetic algorithm      │
 │  brokers • hooks • telemetry • message bus                         │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────────┐
-│                        Chronos.Core.Shared                         │
+│                        Razor.Core.Shared                         │
 │                   (shared utilities – closed source)                │
 │       memory‑mapped tick lists • binary file mapping               │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ references
 ┌──────────────────────────────▼──────────────────────────────────────┐
-│                         Chronos.Core.Sdk                           │
+│                         Razor.Core.Sdk                           │
 │                      (public NuGet SDK – open contracts)            │
 │             hooks • slots • domain types • utilities               │
 └─────────────────────────────────────────────────────────────────────┘
@@ -66,9 +79,9 @@ Welcome to the Chronos.Core solution. This repository contains the heart of the 
 
 | Principle | Description |
 |-----------|-------------|
-| **Determinism** | Given the same inputs, Chronos produces bit‑identical outputs on every run. |
+| **Determinism** | Given the same inputs, Razor produces bit‑identical outputs on every run. |
 | **Tick‑Only Core** | All operations use raw ticks; OHLC aggregated on‑demand. |
-| **Market Agnosticism** | Chronos has zero knowledge of any specific market type; all exchange logic resides in adapters. |
+| **Market Agnosticism** | Razor has zero knowledge of any specific market type; all exchange logic resides in adapters. |
 | **Live‑Backtest Parity** | Simulated and live brokers use the same `IMarketCalculator` for identical behaviour. |
 | **Cloud‑First** | The Engine is a thin client; all configuration, scheduling, and reporting reside in the Cloud. |
 | **Infinite Resiliency** | If Cloud connectivity is lost, the Engine retries forever and never exits. |
@@ -76,28 +89,40 @@ Welcome to the Chronos.Core solution. This repository contains the heart of the 
 
 ---
 
+>>>>>>> Stashed changes
 ## Projects
 
 | Project | Description | Visibility |
 |---------|-------------|------------|
-| `Chronos.Core.Sdk` | Public SDK for building extensions (adapters, strategies, indicators, hook plugins, NN models). Contains only contracts – no runtime logic. | NuGet package (proprietary, freely redistributable) |
-| `Chronos.Core.Shared` | Shared utilities for high‑performance I/O: memory‑mapped tick files (`MemoryMappedTickList`), binary file mapping (`BinaryDataMapper`), and borrowed data management (`BorrowedTickData`). | Private (closed‑source) |
-| `Chronos.Core.Kernel` | Core engine implementing all trading logic: backtesting, optimisation, live trading, brokers (simulated and live), genetic algorithm, hooks, telemetry, and message bus. | Private (closed‑source) |
-| `Chronos.Core.Engine` | Headless executable that hosts the Kernel, manages extensions, and communicates with Chronos Cloud via encrypted WebSocket. Includes CLI, service support, self‑update, and command dispatch (60+ commands). | Private (closed‑source) |
+<<<<<<< Updated upstream
+| `Razor.Core.Abstractions` | Public SDK for building extensions (adapters, strategies, indicators, hook plugins, NN models) | NuGet package |
+| `Razor.Core.Kernel` | Closed‑source engine implementing all trading logic | Private |
+| `Razor.Engine` | Headless executable that hosts the Kernel and communicates with Razor Cloud | Private |
+=======
+| `Razor.Core.Sdk` | Public SDK for building extensions (adapters, strategies, indicators, hook plugins, NN models). Contains only contracts – no runtime logic. | NuGet package (proprietary, freely redistributable) |
+| `Razor.Core.Shared` | Shared utilities for high‑performance I/O: memory‑mapped tick files (`MemoryMappedTickList`), binary file mapping (`BinaryDataMapper`), and borrowed data management (`BorrowedTickData`). | Private (closed‑source) |
+| `Razor.Core.Kernel` | Core engine implementing all trading logic: backtesting, optimisation, live trading, brokers (simulated and live), genetic algorithm, hooks, telemetry, and message bus. | Private (closed‑source) |
+| `Razor.Core.Engine` | Headless executable that hosts the Kernel, manages extensions, and communicates with Razor Cloud via encrypted WebSocket. Includes CLI, service support, self‑update, and command dispatch (60+ commands). | Private (closed‑source) |
+>>>>>>> Stashed changes
 
-### Dependency Graph
+## Quick Start – Extension Developers
 
+<<<<<<< Updated upstream
+1. Install the `Razor.Core.Abstractions` NuGet package.
+2. Implement one or more contracts (`IHookManifest`, `IStrategyCapability`, `IAdapterCapability`, `INeuralNetworkModel`, or `Indicator`).
+3. Add the SDK version attribute to your assembly:
+=======
 ```
-Chronos.Core.Sdk
+Razor.Core.Sdk
        ↑
-Chronos.Core.Shared
+Razor.Core.Shared
        ↑
-Chronos.Core.Kernel
+Razor.Core.Kernel
        ↑
-Chronos.Core.Engine
+Razor.Core.Engine
 ```
 
-Extensions (adapters, strategies, indicators, hook plugins, NN models) reference **only** `Chronos.Core.Sdk`.
+Extensions (adapters, strategies, indicators, hook plugins, NN models) reference **only** `Razor.Core.Sdk`.
 
 ---
 
@@ -105,11 +130,18 @@ Extensions (adapters, strategies, indicators, hook plugins, NN models) reference
 
 ### For Extension Developers
 
-1. Install the `Chronos.Core.Sdk` NuGet package in your .NET class library targeting `net10.0`.
+1. Install the `Razor.Core.Sdk` NuGet package in your .NET class library targeting `net10.0`.
 2. Add the SDK version attribute:
+>>>>>>> Stashed changes
    ```csharp
-   [assembly: SdkVersion("1.0.0")]
+   [assembly: SdkVersionAttribute("1.0.0")]
    ```
+<<<<<<< Updated upstream
+4. Build your DLL and place it in the appropriate engine directory (`Adapters/`, `Strategies/`, `Indicators/`, `Plugins/`, or `NeuralNetworks/`).
+5. Manage activation via Razor Cloud.
+
+## Quick Start – Core Developers
+=======
 3. Implement one or more contracts:
    - `IAdapterCapability` – for broker connectivity
    - `IStrategyCapability` – for trading logic
@@ -117,36 +149,47 @@ Extensions (adapters, strategies, indicators, hook plugins, NN models) reference
    - `Indicator` – for technical indicators
    - `IHookManifest` – for hook plugins
 4. Build your DLL and place it in the appropriate engine directory.
-5. Manage activation via Chronos Cloud.
+5. Manage activation via Razor Cloud.
 
-For detailed guidance, see the [Extension Developer Guide](core/docs/Chronos%20Extension%20Developer%20Guide.md).
+For detailed guidance, see the [Extension Developer Guide](core/docs/Razor%20Extension%20Developer%20Guide.md).
 
 ### For Core Developers
 
 #### Prerequisites
+>>>>>>> Stashed changes
 
+### Prerequisites
 - .NET 10 SDK (`10.0.300` or later, see `global.json`)
-- Git
 
-#### Clone and Build
-
+### Build
 ```bash
-git clone <repository-url>
 cd core
 dotnet restore
 dotnet build --configuration Release
 ```
 
-#### Run Tests
-
+### Test
 ```bash
 dotnet test --configuration Release
 ```
 
+<<<<<<< Updated upstream
+## Documentation
+
+- [Razor Principles](./docs/Razor%20Principles.md)
+- [Configuration Reference](./docs/Razor%20Configuration%20Reference.md)
+- [Plugin Developer Guide](./docs/Razor%20Plugin%20Developer%20Guide.md)
+
+## Licensing
+
+- `Razor.Core.Abstractions` – Proprietary, freely redistributable.
+- `Razor.Core.Kernel` – Closed‑source, all rights reserved.
+- `Razor.Engine` – Closed‑source, distributed as part of the Razor Engine binary.
+=======
 #### Run the Engine
 
 ```bash
-cd src/Chronos.Core.Engine
+cd src/Razor.Core.Engine
 dotnet run -- --auth=username,password,apikey
 ```
 
@@ -160,14 +203,14 @@ dotnet run
 
 **Windows:**
 ```bash
-sc create ChronosEngine binPath = "C:\Path\Chronos.Core.Engine.exe --service --auth=user,pass,key" start=auto
+sc create RazorEngine binPath = "C:\Path\Razor.Core.Engine.exe --service --auth=user,pass,key" start=auto
 ```
 
 **Linux (systemd):**
 ```ini
 [Service]
-ExecStart=/opt/chronos/Chronos.Core.Engine --service --auth=user,pass,key
-WorkingDirectory=/opt/chronos
+ExecStart=/opt/Razor/Razor.Core.Engine --service --auth=user,pass,key
+WorkingDirectory=/opt/Razor
 Restart=on-failure
 ```
 
@@ -178,12 +221,12 @@ Restart=on-failure
 ```
 core/
 ├── src/
-│   ├── Chronos.Core.Sdk/          ← Public contracts (NuGet package)
+│   ├── Razor.Core.Sdk/          ← Public contracts (NuGet package)
 │   │   ├── Hooks/                 ← Hook registration interfaces and contexts
 │   │   ├── Shared/                ← Domain types, enums, exceptions, helpers
 │   │   └── Slots/                 ← Capability interfaces (Adapter, Strategy, NN)
-│   ├── Chronos.Core.Shared/       ← Shared utilities (memory‑mapped I/O)
-│   ├── Chronos.Core.Kernel/       ← Core engine implementation
+│   ├── Razor.Core.Shared/       ← Shared utilities (memory‑mapped I/O)
+│   ├── Razor.Core.Kernel/       ← Core engine implementation
 │   │   ├── Backtesting/           ← Backtest runner, input, result
 │   │   ├── Brokers/               ← SimulatedBroker, LiveBroker
 │   │   ├── Clock/                 ← TickClock, SystemClock
@@ -197,7 +240,7 @@ core/
 │   │   ├── Optimization/          ← GeneticOptimizer, Chromosome, Runner
 │   │   ├── Reporting/             ← ReportGenerator (stub; Cloud renders reports)
 │   │   └── Telemetry/             ← CoreMetrics (OpenTelemetry)
-│   └── Chronos.Core.Engine/       ← Headless executable
+│   └── Razor.Core.Engine/       ← Headless executable
 │       ├── Communication/         ← CloudConnector, BinaryTransferManager
 │       ├── Core/                  ← Security, State, Credentials, Logging
 │       ├── Extensions/            ← ExtensionManager, PluginLoadContext
@@ -206,16 +249,16 @@ core/
 │       ├── Services/              ← BehaviorRecorder, SelfUpdateManager
 │       └── Program.cs             ← Entry point
 ├── tests/
-│   ├── Chronos.Core.Sdk.UnitTests/       ← 200+ unit tests
-│   └── Chronos.Core.Sdk.IntegrationTests/ ← Integration tests
+│   ├── Razor.Core.Sdk.UnitTests/       ← 200+ unit tests
+│   └── Razor.Core.Sdk.IntegrationTests/ ← Integration tests
 ├── docs/                           ← Core documentation
-│   ├── Chronos Principles.md
-│   ├── Chronos Configuration Reference.md
-│   ├── Chronos Extension Developer Guide.md
-│   ├── Chronos Installation & Deployment Guide.md
-│   ├── Chronos Engine – Finalised Technical Blueprint.md
-│   └── Chronos Internal Technical Architecture Document.md
-├── Chronos.Core.sln               ← Solution file
+│   ├── Razor Principles.md
+│   ├── Razor Configuration Reference.md
+│   ├── Razor Extension Developer Guide.md
+│   ├── Razor Installation & Deployment Guide.md
+│   ├── Razor Engine – Finalised Technical Blueprint.md
+│   └── Razor Internal Technical Architecture Document.md
+├── Razor.Core.sln               ← Solution file
 ├── Directory.Build.props          ← Common build properties
 ├── global.json                    ← SDK version
 ├── nuget.config                   ← Package sources
@@ -229,16 +272,16 @@ core/
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [Chronos Principles](core/docs/Chronos%20Principles.md) | All teams | Immutable architectural rules governing every Chronos project. |
-| [Configuration Reference](core/docs/Chronos%20Configuration%20Reference.md) | Extension developers & power users | Complete catalog of configuration objects, enums, and validation rules. |
-| [Extension Developer Guide](core/docs/Chronos%20Extension%20Developer%20Guide.md) | Extension developers | Comprehensive guide for building adapters, strategies, indicators, hook plugins, and NN models. |
-| [Installation & Deployment Guide](core/docs/Chronos%20Installation%20%26%20Deployment%20Guide.md) | End‑users & IT staff | Step‑by‑step installation, configuration, and troubleshooting. |
-| [Engine Technical Blueprint](core/docs/Chronos%20Engine%20–%20Finalised%20Technical%20Blueprint.md) | Core developers | Complete engine specification: CLI, communication protocol, commands, security. |
-| [Internal Architecture Document](core/docs/Chronos%20Internal%20Technical%20Architecture%20Document.md) | Core developers | Data flow, broker architecture, hook system, GA engine, threading, telemetry. |
-| [Product Model](../docs/Chronos%20Product%20Model.md) | All teams | Product overview, components, licensing, and workflows. |
-| [Glossary](../docs/Chronos%20Glossary.md) | All users | Definitions of all domain‑specific terms. |
-| [Future Features](../docs/Chronos%20Future%20Features.md) | Internal & partners | Long‑term roadmap of planned features. |
-| [Project Overview](../docs/Chronos%20Proposal.md) | External | High‑level introduction to Chronos. |
+| [Razor Principles](core/docs/Razor%20Principles.md) | All teams | Immutable architectural rules governing every Razor project. |
+| [Configuration Reference](core/docs/Razor%20Configuration%20Reference.md) | Extension developers & power users | Complete catalog of configuration objects, enums, and validation rules. |
+| [Extension Developer Guide](core/docs/Razor%20Extension%20Developer%20Guide.md) | Extension developers | Comprehensive guide for building adapters, strategies, indicators, hook plugins, and NN models. |
+| [Installation & Deployment Guide](core/docs/Razor%20Installation%20%26%20Deployment%20Guide.md) | End‑users & IT staff | Step‑by‑step installation, configuration, and troubleshooting. |
+| [Engine Technical Blueprint](core/docs/Razor%20Engine%20–%20Finalised%20Technical%20Blueprint.md) | Core developers | Complete engine specification: CLI, communication protocol, commands, security. |
+| [Internal Architecture Document](core/docs/Razor%20Internal%20Technical%20Architecture%20Document.md) | Core developers | Data flow, broker architecture, hook system, GA engine, threading, telemetry. |
+| [Product Model](../docs/Razor%20Product%20Model.md) | All teams | Product overview, components, licensing, and workflows. |
+| [Glossary](../docs/Razor%20Glossary.md) | All users | Definitions of all domain‑specific terms. |
+| [Future Features](../docs/Razor%20Future%20Features.md) | Internal & partners | Long‑term roadmap of planned features. |
+| [Project Overview](../docs/Razor%20Proposal.md) | External | High‑level introduction to Razor. |
 
 ---
 
@@ -268,13 +311,13 @@ core/
 | **1.5.0** | Planned | Enhanced reporting, performance improvements, additional hook points. |
 | **2.0.0 LTS** | Planned | Multi‑operation engine, advanced marketplace, ONNX and RL model support. |
 
-Chronos follows [Semantic Versioning](https://semver.org). Each major version is an LTS release.
+Razor follows [Semantic Versioning](https://semver.org). Each major version is an LTS release.
 
 ---
 
 ## Command ID Registry
 
-All 60+ commands are fully implemented in `Chronos.Core.Engine.Management.Commands.Handlers`.
+All 60+ commands are fully implemented in `Razor.Core.Engine.Management.Commands.Handlers`.
 
 | Category | ID Range | Description |
 |----------|----------|-------------|
@@ -296,27 +339,28 @@ All 60+ commands are fully implemented in `Chronos.Core.Engine.Management.Comman
 
 | Project | License |
 |---------|---------|
-| `Chronos.Core.Sdk` | Proprietary, freely redistributable for extension development. |
-| `Chronos.Core.Shared` | Closed‑source, all rights reserved. |
-| `Chronos.Core.Kernel` | Closed‑source, all rights reserved. |
-| `Chronos.Core.Engine` | Closed‑source, distributed as part of the Chronos Engine binary. |
+| `Razor.Core.Sdk` | Proprietary, freely redistributable for extension development. |
+| `Razor.Core.Shared` | Closed‑source, all rights reserved. |
+| `Razor.Core.Kernel` | Closed‑source, all rights reserved. |
+| `Razor.Core.Engine` | Closed‑source, distributed as part of the Razor Engine binary. |
 
 ---
 
 ## Contributing
 
-This repository is closed‑source. Contribution is restricted to Chronos core team members.
+This repository is closed‑source. Contribution is restricted to Razor core team members.
 
-For extension development, please refer to the [Extension Developer Guide](core/docs/Chronos%20Extension%20Developer%20Guide.md).
+For extension development, please refer to the [Extension Developer Guide](core/docs/Razor%20Extension%20Developer%20Guide.md).
 
 ---
 
 ## Support
 
 - **Documentation:** See the `docs/` directory.
-- **Issues:** Contact Chronos support through the Cloud dashboard.
-- **Community:** Visit the Chronos developer forum (coming soon).
+- **Issues:** Contact Razor support through the Cloud dashboard.
+- **Community:** Visit the Razor developer forum (coming soon).
 
 ---
 
-*This README is the authoritative entry point for the Chronos.Core solution. All code, documentation, and design decisions must align with the [Chronos Principles](core/docs/Chronos%20Principles.md).*
+*This README is the authoritative entry point for the Razor.Core solution. All code, documentation, and design decisions must align with the [Razor Principles](core/docs/Razor%20Principles.md).*
+>>>>>>> Stashed changes

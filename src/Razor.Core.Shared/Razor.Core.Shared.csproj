@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    
+    <PropertyGroup>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Razor.Core.Shared</RootNamespace>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Razor.Core.Kernel" />
+        <InternalsVisibleTo Include="Razor.Core.Engine" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Razor.Core.Sdk\Razor.Core.Sdk.csproj" />
+    </ItemGroup>
+
+</Project>
