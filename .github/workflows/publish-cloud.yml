@@ -1,0 +1,56 @@
+name: Deploy Cloud
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/Razor.Cloud/**'
+      - 'src/Razor.Core.Sdk/**'   # If SDK changes, rebuild Cloud
+  workflow_dispatch:
+
+jobs:
+  deploy-cloud:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(cat VERSION.txt | tr -d '\r\n')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Restore
+        run: dotnet restore src/Razor.Cloud/Razor.Cloud.csproj
+
+      - name: Build
+        run: dotnet build src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --output ./publish
+
+      # Choose your deployment target:
+      
+      # Option A: Azure Web App
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: 'razor-cloud'
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ./publish
+
+      # Option B: DigitalOcean App Platform
+      # - name: Deploy to DigitalOcean
+      #   run: doctl apps create --spec .do/app.yaml
+
+      # Option C: AWS Elastic Beanstalk
+      # - name: Deploy to AWS
+      #   run: aws s3 sync ./publish s3://razor-cloud-deploy/
