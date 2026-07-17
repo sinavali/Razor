@@ -36,6 +36,11 @@ jobs:
         run: |
           echo "::notice::Cloud deployment is intentionally DISABLED. src/Razor.Cloud does not yet exist."
           echo "::notice::This job runs only on manual workflow_dispatch. Nothing is built or deployed."
+          if [ -d "src/Razor.Cloud" ]; then
+            echo "::error::src/Razor.Cloud now exists; enable the real deploy steps in publish-cloud.yml."
+            exit 1
+          fi
+          echo "::notice::Verification passed: no src/Razor.Cloud project present, deploy correctly disabled."
         shell: bash
 
       # TODO: enable when src/Razor.Cloud is added
