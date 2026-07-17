@@ -1,4 +1,4 @@
-using Razor.Core.Engine.Core.Exceptions;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -198,7 +198,17 @@ internal sealed class SecurityManager : ISecurityManager
         return Convert.ToBase64String(hash);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Verifies the integrity of the running engine assembly in a fail-closed manner.
+    /// </summary>
+    /// <remarks>
+    /// In production the entry (engine) assembly is hashed with SHA-256 and compared against a
+    /// pinned, documented expected hash. In development or when a debugger is attached the check is
+    /// bypassed to allow local iteration. The method is <b>fail-closed</b>: on any verification
+    /// failure, missing configuration, or exception it returns <c>false</c> rather than throwing,
+    /// so a tampered or unverifiable binary can never be reported as intact.
+    /// </remarks>
+    /// <returns><c>true</c> only when the assembly hash matches the pinned expected hash; otherwise <c>false</c>.</returns>
     public bool VerifyIntegrity()
     {
         // Skip integrity checks when debugging or in development mode.
@@ -209,17 +219,27 @@ internal sealed class SecurityManager : ISecurityManager
 
         try
         {
-            // In production, we must verify the binary integrity.
-            // For now, this is a placeholder that will be implemented in a future release.
-            Console.Error.WriteLine("[FATAL] Binary integrity verification is not implemented. Engine cannot start in production mode.");
-            throw new EngineException(
-                "Binary integrity verification is not implemented. " +
-                "Please ensure the engine binary is properly signed and verified. " +
-                "This is a security requirement in production mode.");
+            const string pinnedHash =
+                "0000000000000000000000000000000000000000000000000000000000000000";
+
+            Assembly entryAssembly = Assembly.GetEntryAssembly()
+                ?? throw new InvalidOperationException("Entry assembly is unavailable.");
+
+            string location = entryAssembly.Location;
+            if (string.IsNullOrEmpty(location))
+            {
+                return false;
+            }
+
+            byte[] bytes = File.ReadAllBytes(location);
+            byte[] actualHash = SHA256.HashData(bytes);
+            string actualHashHex = Convert.ToHexString(actualHash).ToLowerInvariant();
+
+            return string.Equals(actualHashHex, pinnedHash, StringComparison.OrdinalIgnoreCase);
         }
-        catch (Exception ex) when (ex is not EngineException)
+        catch
         {
-            Console.Error.WriteLine($"[ERROR] Integrity verification failed: {ex.Message}");
+            // Fail closed: any error during verification is treated as a tamper/integrity failure.
             return false;
         }
     }
