@@ -1,73 +1,35 @@
-<<<<<<< Updated upstream
-# Razor Core
-
-**Institutional‑grade algorithmic trading engine – v1.0.0 LTS**
-
-The `core` repository contains the heart of the Razor ecosystem: the public SDK for extension developers, the closed‑source engine that executes backtests, optimizations, and live trading, and the headless engine executable that connects to Razor Cloud.
-=======
-# Solution README.md — Razor.Core
-
-**Location:** `core/README.md` (Root of the Razor.Core solution)  
-**Status:** Authoritative  
-**Last Updated:** 2026-07-09  
-
----
-
 # Razor.Core
 
 **Institutional‑grade algorithmic trading engine – v1.0.0 LTS**
 
 Welcome to the Razor.Core solution. This repository contains the heart of the Razor ecosystem: the public SDK for extension developers, the shared utilities for high‑performance I/O, the closed‑source engine that executes backtests, optimisations, and live trading, and the headless engine executable that connects to Razor Cloud.
->>>>>>> Stashed changes
 
 ## Architecture
 
 ```
-<<<<<<< Updated upstream
-┌──────────────────────────────────────────────┐
-│                  Razor Cloud               │  (SaaS – management & monitoring)
-└──────────────────┬───────────────────────────┘
-│ encrypted WebSocket
-┌──────────────────▼───────────────────────────┐
-│              Razor Engine                   │  (headless binary)
-└──────────────────┬───────────────────────────┘
-│
-┌──────────────────▼───────────────────────────┐
-│          Razor.Core.Kernel                  │  (closed‑source core)
-│  backtesting • optimisation • live trading    │
-│  genetic algorithm • telemetry • hooks        │
-└──────────────────┬───────────────────────────┘
-│ references
-┌──────────────────▼───────────────────────────┐
-│       Razor.Core.Abstractions               │  (public NuGet SDK)
-│  hooks • slots • domain types • utilities     │
-└──────────────────────────────────────────────┘
-```
-
-=======
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           Razor Cloud                            │
 │                      (SaaS – management & monitoring)              │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │ encrypted WebSocket
+                                │ encrypted WebSocket
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │                          Razor Engine                            │
 │                   (headless executable – closed source)             │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │
+                                │
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │                        Razor.Core.Kernel                         │
 │                     (closed‑source core library)                    │
 │  backtesting • optimisation • live trading • genetic algorithm      │
 │  brokers • hooks • telemetry • message bus                         │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │
+                                │
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │                        Razor.Core.Shared                         │
 │                   (shared utilities – closed source)                │
 │       memory‑mapped tick lists • binary file mapping               │
 └──────────────────────────────┬──────────────────────────────────────┘
-                               │ references
+                                │ references
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │                         Razor.Core.Sdk                           │
 │                      (public NuGet SDK – open contracts)            │
@@ -89,29 +51,15 @@ Welcome to the Razor.Core solution. This repository contains the heart of the Ra
 
 ---
 
->>>>>>> Stashed changes
 ## Projects
 
 | Project | Description | Visibility |
 |---------|-------------|------------|
-<<<<<<< Updated upstream
-| `Razor.Core.Abstractions` | Public SDK for building extensions (adapters, strategies, indicators, hook plugins, NN models) | NuGet package |
-| `Razor.Core.Kernel` | Closed‑source engine implementing all trading logic | Private |
-| `Razor.Engine` | Headless executable that hosts the Kernel and communicates with Razor Cloud | Private |
-=======
 | `Razor.Core.Sdk` | Public SDK for building extensions (adapters, strategies, indicators, hook plugins, NN models). Contains only contracts – no runtime logic. | NuGet package (proprietary, freely redistributable) |
 | `Razor.Core.Shared` | Shared utilities for high‑performance I/O: memory‑mapped tick files (`MemoryMappedTickList`), binary file mapping (`BinaryDataMapper`), and borrowed data management (`BorrowedTickData`). | Private (closed‑source) |
 | `Razor.Core.Kernel` | Core engine implementing all trading logic: backtesting, optimisation, live trading, brokers (simulated and live), genetic algorithm, hooks, telemetry, and message bus. | Private (closed‑source) |
 | `Razor.Core.Engine` | Headless executable that hosts the Kernel, manages extensions, and communicates with Razor Cloud via encrypted WebSocket. Includes CLI, service support, self‑update, and command dispatch (60+ commands). | Private (closed‑source) |
->>>>>>> Stashed changes
 
-## Quick Start – Extension Developers
-
-<<<<<<< Updated upstream
-1. Install the `Razor.Core.Abstractions` NuGet package.
-2. Implement one or more contracts (`IHookManifest`, `IStrategyCapability`, `IAdapterCapability`, `INeuralNetworkModel`, or `Indicator`).
-3. Add the SDK version attribute to your assembly:
-=======
 ```
 Razor.Core.Sdk
        ↑
@@ -132,16 +80,9 @@ Extensions (adapters, strategies, indicators, hook plugins, NN models) reference
 
 1. Install the `Razor.Core.Sdk` NuGet package in your .NET class library targeting `net10.0`.
 2. Add the SDK version attribute:
->>>>>>> Stashed changes
    ```csharp
    [assembly: SdkVersionAttribute("1.0.0")]
    ```
-<<<<<<< Updated upstream
-4. Build your DLL and place it in the appropriate engine directory (`Adapters/`, `Strategies/`, `Indicators/`, `Plugins/`, or `NeuralNetworks/`).
-5. Manage activation via Razor Cloud.
-
-## Quick Start – Core Developers
-=======
 3. Implement one or more contracts:
    - `IAdapterCapability` – for broker connectivity
    - `IStrategyCapability` – for trading logic
@@ -156,9 +97,6 @@ For detailed guidance, see the [Extension Developer Guide](core/docs/Razor%20Ext
 ### For Core Developers
 
 #### Prerequisites
->>>>>>> Stashed changes
-
-### Prerequisites
 - .NET 10 SDK (`10.0.300` or later, see `global.json`)
 
 ### Build
@@ -173,19 +111,6 @@ dotnet build --configuration Release
 dotnet test --configuration Release
 ```
 
-<<<<<<< Updated upstream
-## Documentation
-
-- [Razor Principles](./docs/Razor%20Principles.md)
-- [Configuration Reference](./docs/Razor%20Configuration%20Reference.md)
-- [Plugin Developer Guide](./docs/Razor%20Plugin%20Developer%20Guide.md)
-
-## Licensing
-
-- `Razor.Core.Abstractions` – Proprietary, freely redistributable.
-- `Razor.Core.Kernel` – Closed‑source, all rights reserved.
-- `Razor.Engine` – Closed‑source, distributed as part of the Razor Engine binary.
-=======
 #### Run the Engine
 
 ```bash
@@ -363,4 +288,3 @@ For extension development, please refer to the [Extension Developer Guide](core/
 ---
 
 *This README is the authoritative entry point for the Razor.Core solution. All code, documentation, and design decisions must align with the [Razor Principles](core/docs/Razor%20Principles.md).*
->>>>>>> Stashed changes
