@@ -17,18 +17,18 @@ internal interface ICommandHandler
 /// <summary>
 /// Dispatches commands to registered handlers.
 /// </summary>
-internal abstract class ICommandDispatcher
+internal interface ICommandDispatcher
 {
     /// <summary>Dispatches a command.</summary>
-    public abstract Task DispatchAsync(CloudCommand command, CancellationToken cancellationToken);
+    Task DispatchAsync(CloudCommand command, CancellationToken cancellationToken);
 
     /// <summary>Registers a handler.</summary>
-    public abstract void RegisterHandler(int commandId, ICommandHandler handler);
+    void RegisterHandler(int commandId, ICommandHandler handler);
 
     /// <summary>Sends a command response.</summary>
-    public abstract Task SendResponseAsync(int commandId, string correlationId, object? result, string? error = null,
+    Task SendResponseAsync(int commandId, string correlationId, object? result, string? error = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Stops all user tasks (live, backtest, optimization).</summary>
-    public abstract Task StopUserTasksAsync(CancellationToken cancellationToken);
+    Task StopUserTasksAsync(CancellationToken cancellationToken);
 }

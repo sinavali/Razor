@@ -168,13 +168,13 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         await this.DispatchAsync(command, CancellationToken.None).ConfigureAwait(false);
     }
 
-    public override void RegisterHandler(int commandId, ICommandHandler handler)
+    public void RegisterHandler(int commandId, ICommandHandler handler)
     {
         _handlers[commandId] = handler;
         _logRegisterHandler(_logger, commandId, null);
     }
 
-    public override async Task DispatchAsync(CloudCommand command, CancellationToken cancellationToken)
+    public async Task DispatchAsync(CloudCommand command, CancellationToken cancellationToken)
     {
         if (!_handlers.TryGetValue(command.CommandId, out var handler))
         {
@@ -196,7 +196,7 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         }
     }
 
-    public override async Task SendResponseAsync(int commandId, string correlationId, object? result, string? error = null,
+    public async Task SendResponseAsync(int commandId, string correlationId, object? result, string? error = null,
         CancellationToken cancellationToken = default)
     {
         if (!_cloudConnector.IsConnected)
@@ -229,7 +229,7 @@ internal sealed class CommandDispatcher : ICommandDispatcher
         }
     }
 
-    public override async Task StopUserTasksAsync(CancellationToken cancellationToken)
+    public async Task StopUserTasksAsync(CancellationToken cancellationToken)
     {
         await _taskManager.StopAllUserTasksAsync(cancellationToken).ConfigureAwait(false);
     }
