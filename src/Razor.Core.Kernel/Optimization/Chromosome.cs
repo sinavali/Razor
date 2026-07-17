@@ -1,5 +1,7 @@
 #pragma warning disable IDE0290 // Reason: Primary constructor not used here for clarity.
 
+using System.Text.Json.Serialization;
+
 namespace Razor.Core.Kernel.Optimization;
 
 /// <summary>
@@ -13,6 +15,7 @@ public sealed class Chromosome
     public const double NotEvaluated = double.NegativeInfinity;
 
     /// <summary>Genes array (normalised property values + optional neural weights).</summary>
+    [JsonInclude]
     public double[] Genes { get; }
 
     /// <summary>Fitness value (higher = better). Set by the evaluation function.</summary>
@@ -31,6 +34,17 @@ public sealed class Chromosome
     public Chromosome(int geneCount)
     {
         Genes = new double[geneCount];
+    }
+
+    /// <summary>Constructs a Chromosome from its serialised fields (used by JSON deserialisation).</summary>
+    [JsonConstructor]
+    public Chromosome(double[] genes, double fitness, int generation, int individualIndex, int seed)
+    {
+        Genes = genes ?? [];
+        Fitness = fitness;
+        Generation = generation;
+        IndividualIndex = individualIndex;
+        Seed = seed;
     }
 
     /// <summary>Deep clones the current chromosome.</summary>
