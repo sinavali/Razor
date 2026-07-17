@@ -11,7 +11,11 @@ on:
 jobs:
   deploy-cloud:
     runs-on: ubuntu-latest
-    
+    # Cloud deployment is disabled until src/Razor.Cloud exists. Gate the job so
+    # it does not silently report success on every main push; it only runs for
+    # manual workflow_dispatch. See issue #3 (audit) for the Razor.Cloud roadmap.
+    if: github.event_name == 'workflow_dispatch'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,6 +30,12 @@ jobs:
         run: |
           VERSION=$(cat VERSION.txt | tr -d '\r\n')
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Cloud deploy disabled
+        run: |
+          echo "::notice::Cloud deployment is intentionally DISABLED. src/Razor.Cloud does not yet exist."
+          echo "::notice::This job runs only on manual workflow_dispatch. Nothing is built or deployed."
         shell: bash
 
       # TODO: enable when src/Razor.Cloud is added
