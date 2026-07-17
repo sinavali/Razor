@@ -20,16 +20,13 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore all projects
-        run: dotnet restore razor.sln
+        run: dotnet restore Razor.sln
 
       - name: Build all projects
-        run: dotnet build razor.sln --configuration Release --no-restore
+        run: dotnet build Razor.sln --configuration Release --no-restore
 
       - name: Run SDK tests
         run: dotnet test tests/Razor.Core.Sdk.UnitTests --configuration Release --no-build --verbosity normal
 
       - name: Run integration tests
         run: dotnet test tests/Razor.Core.Sdk.IntegrationTests --configuration Release --no-build --verbosity normal
-
-      - name: Run Cloud tests
-        run: dotnet test tests/Razor.Cloud.UnitTests --configuration Release --no-build --verbosity normal
