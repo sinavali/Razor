@@ -123,6 +123,8 @@ dotnet test --configuration Release
 
 #### Run the Engine
 
+The commands below assume you are already in the `core/` directory (see the [Build](#build) step).
+
 ```bash
 cd src/Razor.Core.Engine
 dotnet run -- --auth=username,password,apikey
