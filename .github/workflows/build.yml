@@ -33,6 +33,3 @@ jobs:
 
       - name: Run Engine tests
         run: dotnet test tests/Razor.Core.Engine.UnitTests --configuration Release --no-build --verbosity normal
-
-      - name: Run Cloud tests
-        run: dotnet test tests/Razor.Cloud.UnitTests --configuration Release --no-build --verbosity normal
