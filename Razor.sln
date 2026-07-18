@@ -15,6 +15,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Razor.Core.Sdk.UnitTests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Razor.Core.Sdk.IntegrationTests", "tests\Razor.Core.Sdk.IntegrationTests\Razor.Core.Sdk.IntegrationTests.csproj", "{355B5780-93CF-4453-A2F1-032A219BCFCC}"
 EndProject
+
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Razor.Core.Engine.UnitTests", "tests\Razor.Core.Engine.UnitTests\Razor.Core.Engine.UnitTests.csproj", "{F68EB5B8-469F-4696-BA91-A4B02A8B105A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Razor.Core.Engine", "src\Razor.Core.Engine\Razor.Core.Engine.csproj", "{64911A42-42E4-411A-B59B-B6F61C94929D}"
