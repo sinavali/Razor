@@ -10,6 +10,7 @@ using Razor.Core.Engine.Core;
 using Razor.Core.Engine.Core.Exceptions;
 using Razor.Core.Engine.Extensions;
 using Razor.Core.Engine.Kernel;
+using Razor.Core.Kernel.Optimization;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using LiveState = Razor.Core.Engine.Core.LiveState;
@@ -389,12 +390,21 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             _tasks[taskId] = task;
             _ = Task.Run(() => ExecuteTaskAsync(task, cancellationToken), cancellationToken);
 
-            // Persist initial state
+            // Persist initial state with a real (empty) serializable population snapshot.
             var state = new OptimizationState
             {
                 TaskId = taskId,
                 Config = config ?? new object(),
-                Population = new object(),
+                Population = new GeneticOptimizerState
+                {
+                    Population = [],
+                    CurrentGeneration = 0,
+                    Evaluated = false,
+                    BestOverallFitness = Chromosome.NotEvaluated,
+                    StagnationCount = 0,
+                    HyperMutation = false,
+                    NeuralNetworkState = null
+                },
                 CurrentGeneration = 0,
                 BestFitness = 0.0,
                 StartTime = task.StartTime
