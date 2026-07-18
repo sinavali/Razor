@@ -11,6 +11,7 @@ internal interface ICommandHandler
     int CommandId { get; }
 
     /// <summary>Handles the command.</summary>
+    /// <returns>A task representing the asynchronous handling operation.</returns>
     Task HandleAsync(CloudCommand command, CancellationToken cancellationToken);
 }
 
