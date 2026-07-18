@@ -11,7 +11,11 @@ on:
 jobs:
   deploy-cloud:
     runs-on: ubuntu-latest
-    
+    # Cloud deployment is disabled until src/Razor.Cloud exists. Gate the job so
+    # it does not silently report success on every main push; it only runs for
+    # manual workflow_dispatch. See issue #3 (audit) for the Razor.Cloud roadmap.
+    if: github.event_name == 'workflow_dispatch'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,24 +32,36 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         shell: bash
 
-      - name: Restore
-        run: dotnet restore src/Razor.Cloud/Razor.Cloud.csproj
+      - name: Cloud deploy disabled
+        run: |
+          echo "::notice::Cloud deployment is intentionally DISABLED. src/Razor.Cloud does not yet exist."
+          echo "::notice::This job runs only on manual workflow_dispatch. Nothing is built or deployed."
+          if [ -d "src/Razor.Cloud" ]; then
+            echo "::error::src/Razor.Cloud now exists; enable the real deploy steps in publish-cloud.yml."
+            exit 1
+          fi
+          echo "::notice::Verification passed: no src/Razor.Cloud project present, deploy correctly disabled."
+        shell: bash
 
-      - name: Build
-        run: dotnet build src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --no-restore
-
-      - name: Publish
-        run: dotnet publish src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --output ./publish
+      # TODO: enable when src/Razor.Cloud is added
+      # - name: Restore
+      #   run: dotnet restore src/Razor.Cloud/Razor.Cloud.csproj
+      #
+      # - name: Build
+      #   run: dotnet build src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --no-restore
+      #
+      # - name: Publish
+      #   run: dotnet publish src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --output ./publish
 
       # Choose your deployment target:
       
       # Option A: Azure Web App
-      - name: Deploy to Azure
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: 'razor-cloud'
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./publish
+      # - name: Deploy to Azure
+      #   uses: azure/webapps-deploy@v2
+      #   with:
+      #     app-name: 'razor-cloud'
+      #     publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+      #     package: ./publish
 
       # Option B: DigitalOcean App Platform
       # - name: Deploy to DigitalOcean
