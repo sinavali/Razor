@@ -18,6 +18,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="Razor.Core.Engine" />
         <InternalsVisibleTo Include="Razor.Core.Kernel.UnitTests" />
+        <InternalsVisibleTo Include="Razor.Determinism.Tests" />
         <InternalsVisibleTo Include="Razor.Core.Kernel.IntegrationTests" />
     </ItemGroup>
 

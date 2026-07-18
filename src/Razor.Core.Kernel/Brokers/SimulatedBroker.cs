@@ -237,7 +237,10 @@ public sealed class SimulatedBroker : IBroker
                 return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" });
             }
 
-            _marginUsed += requiredMargin;
+            // DAT: normalize margin to account currency (matches tick-update path which
+            // stores totalUsedMargin converted) so MarginUsed/FreeMargin stay consistent.
+            double executionConversionRate = GetConversionRate(symbol);
+            _marginUsed += requiredMargin * executionConversionRate;
             var ticket = _ticketCounter++;
             _pendingOrders.Add(new Order
             {
@@ -479,7 +482,8 @@ public sealed class SimulatedBroker : IBroker
         };
 
         _positions.Add(position);
-        _marginUsed += requiredMargin;
+        double execConversionRate = GetConversionRate(symbol);
+        _marginUsed += requiredMargin * execConversionRate;
         UpdateDrawdowns();
 
         _messageBus?.Publish(new OrderExecutedEvent
@@ -531,7 +535,8 @@ public sealed class SimulatedBroker : IBroker
                 if (_symbolSpecs.TryGetValue(o.Symbol, out var spec))
                 {
                     double pendingMargin = _calculator.CalculateRequiredMargin(spec, o.Price, o.Volume, _leverage);
-                    _marginUsed = Math.Max(0, _marginUsed - pendingMargin);
+                    double cancelConversionRate = GetConversionRate(o.Symbol);
+                    _marginUsed = Math.Max(0, _marginUsed - pendingMargin * cancelConversionRate);
                 }
                 ConvertPendingToPosition(o, o.Price);
                 _pendingOrders.RemoveAt(i);
@@ -640,7 +645,10 @@ public sealed class SimulatedBroker : IBroker
         double closedSwap = p.Swap * (closeVolume / p.Volume);
         double realizedProfit = (closedRawPnl - closeComm) * conversionRate + closedSwap;
 
-        _balance += realizedProfit;
+        // DAT: the opening commission booked on the position was never charged to
+        // the balance when the trade was opened; charge it now at close so the
+        // account balance reflects the full cost of the round-trip trade.
+        _balance += realizedProfit - p.Commission;
         MutablePosition historyRecord;
 
         if (isPartial)

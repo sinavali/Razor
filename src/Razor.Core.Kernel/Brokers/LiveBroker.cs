@@ -321,6 +321,8 @@ public sealed class LiveBroker : IBroker, IAsyncDisposable
             UpdateDrawdowns();
 
             double totalMargin = CalculateActiveMarginUsed();
+            // DAT: persist computed margin so MarginUsed/FreeMargin stay fresh between syncs.
+            _marginUsed = totalMargin;
             if (totalMargin > 0 && _stopOutLevel > 0 && (_equity / totalMargin) <= _stopOutLevel)
             {
                 ApplyStopOut();
