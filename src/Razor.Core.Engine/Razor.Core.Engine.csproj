@@ -35,4 +35,8 @@
         <ProjectReference Include="..\Razor.Core.Kernel\Razor.Core.Kernel.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+        <InternalsVisibleTo Include="Razor.Core.Engine.UnitTests" />
+    </ItemGroup>
+
 </Project>
