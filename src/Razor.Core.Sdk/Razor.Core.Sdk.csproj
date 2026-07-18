@@ -12,8 +12,8 @@
     <PropertyGroup>
         <Description>Public SDK for developing Razor extensions. Contains only contracts, hooks, slots, and domain types.</Description>
         <PackageTags>trading;algorithmic;Razor;sdk</PackageTags>
-        <PackageProjectUrl>https://Razor.io</PackageProjectUrl>
-        <RepositoryUrl>https://git.Razor.io/Razor/core.git</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/sinavali/Razor</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sinavali/Razor</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageIcon>icon.png</PackageIcon>

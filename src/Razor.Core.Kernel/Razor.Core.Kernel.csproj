@@ -29,8 +29,8 @@
     <PropertyGroup>
         <Description>Core trading engine (backtesting, optimisation, brokers, telemetry).</Description>
         <PackageTags>trading;algorithmic;Razor;engine;backtest;optimisation</PackageTags>
-        <PackageProjectUrl>https://Razor.io</PackageProjectUrl>
-        <RepositoryUrl>https://git.Razor.io/Razor/core.git</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/sinavali/Razor</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sinavali/Razor</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageIcon>icon.png</PackageIcon>

@@ -39,7 +39,7 @@ The trader then opens the **Razor Cloud** dashboard in a web browser. From this 
 
 All heavy computation – backtesting millions of tick records, evaluating populations of strategies, training neural networks – happens on the trader's hardware. The Cloud provides the interface, the scheduling, the data storage, and the remote‑control capability. This architecture keeps trading logic and sensitive credentials within the trader's own environment while providing the convenience of a fully managed cloud service.
 
-Developers build strategies, adapters, indicators, hook plugins, and neural network models using a clean public SDK (`Razor.Sdk`). The same engine binary serves both development and production; the only difference is the license permission set, making the transition from testing to live seamless.
+Developers build strategies, adapters, indicators, hook plugins, and neural network models using a clean public SDK (`Razor.Core.Sdk`). The same engine binary serves both development and production; the only difference is the license permission set, making the transition from testing to live seamless.
 
 ---
 
@@ -95,7 +95,7 @@ Real‑time monitoring extends this philosophy to live trading. The Cloud dashbo
 
 Razor is not just a standalone engine; it is an ecosystem designed for extensibility and community growth:
 
-- **Public SDK (`Razor.Sdk`)** – A NuGet package containing only contracts (interfaces, base classes, enums, and helpers). Developers can build extensions without touching engine internals.
+- **Public SDK (`Razor.Core.Sdk`)** – A NuGet package containing only contracts (interfaces, base classes, enums, and helpers). Developers can build extensions without touching engine internals.
 
 - **Extension Marketplace** – A separate service for discovering, licensing, and distributing extensions (adapters, strategies, indicators, hook plugins, and neural network models). Developers can monetise their work, and users can easily find and install extensions.
 
