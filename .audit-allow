@@ -1,0 +1,8 @@
+# .audit-allow
+# Intentional exceptions for the continuous-audit gate (audit.yml).
+# One glob/pattern per line. Lines starting with '#' are comments.
+# Patterns are matched against changed file paths in PR diffs.
+# Reference: audit program tracked in issue #3.
+
+# Currently no intentional placeholders or tracked stubs are exempted.
+# Add patterns here only after documenting the justification in the linked issue.
