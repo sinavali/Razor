@@ -94,7 +94,7 @@ public class KernelServiceLivePauseResumeTests
     private static void SetActiveTasks(KernelService kernel, object taskState)
     {
         var field = typeof(KernelService).GetField("_activeTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var dict = (ConcurrentDictionary<string, object>)field!.GetValue(kernel)!;
+        var dict = (ConcurrentDictionary<string, TaskState>)field!.GetValue(kernel)!;
         dict["task-1"] = taskState;
     }
 
