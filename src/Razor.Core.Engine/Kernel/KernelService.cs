@@ -63,10 +63,7 @@ internal sealed class KernelService : IKernelService, IDisposable
         LoggerMessage.Define<string>(LogLevel.Information, 8, "Optimization {TaskId} cancelled.");
     private static readonly Action<ILogger, string, Exception?> _logOptimizationFailed =
         LoggerMessage.Define<string>(LogLevel.Error, 9, "Optimization {TaskId} failed.");
-    private static readonly Action<ILogger, Exception?> _logPauseLiveNotImplemented =
-        LoggerMessage.Define(LogLevel.Warning, 10, "PauseLive not implemented; ignoring.");
-    private static readonly Action<ILogger, Exception?> _logResumeLiveNotImplemented =
-        LoggerMessage.Define(LogLevel.Warning, 11, "ResumeLive not implemented; ignoring.");
+
     private static readonly Action<ILogger, string, string, Exception?> _logBacktestDataFetchFailed =
         LoggerMessage.Define<string, string>(LogLevel.Error, 12, "Failed to fetch historical data for symbol {Symbol} in backtest {TaskId}.");
     private static readonly Action<ILogger, string, Exception?> _logLiveTickHandlerError =
@@ -543,16 +540,41 @@ internal sealed class KernelService : IKernelService, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Pausing unsubscribes the tick handler from the adapter so no new ticks are processed,
+    /// and replaces the cancellation token source so any in-flight work can observe cancellation.
+    /// Existing positions and orders remain open.
+    /// </remarks>
     public Task PauseLiveAsync(string taskId, CancellationToken cancellationToken)
     {
-        _logPauseLiveNotImplemented(_logger, null);
+        if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker broker)
+        {
+            if (state.Adapter != null && state.TickHandler != null)
+            {
+                state.Adapter.OnTickReceived -= state.TickHandler;
+            }
+            state.DisposeCts();
+            _activeTasks[taskId] = state with { Cts = new CancellationTokenSource() };
+            _logger.LogInformation("Paused live task {TaskId}", taskId);
+        }
         return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Resuming resubscribes the tick handler to the adapter so ticks are processed again.
+    /// The cancellation token source is left intact from the pause operation.
+    /// </remarks>
     public Task ResumeLiveAsync(string taskId, CancellationToken cancellationToken)
     {
-        _logResumeLiveNotImplemented(_logger, null);
+        if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker broker)
+        {
+            if (state.Adapter != null && state.TickHandler != null)
+            {
+                state.Adapter.OnTickReceived += state.TickHandler;
+            }
+            _logger.LogInformation("Resumed live task {TaskId}", taskId);
+        }
         return Task.CompletedTask;
     }
 

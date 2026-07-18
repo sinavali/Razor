@@ -236,7 +236,8 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 Genes = liveConfig.Genes,
                 AccountCurrency = liveConfig.AccountCurrency,
                 LastTickTime = null,
-                StartTime = task.StartTime
+                StartTime = task.StartTime,
+                AccountCurrency = liveConfig.AccountCurrency
             };
             await _stateManager.SaveLiveStateAsync(state, cancellationToken).ConfigureAwait(false);
             return taskId;

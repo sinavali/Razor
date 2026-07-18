@@ -21,7 +21,7 @@ Terms are organised alphabetically.
 A type of hook that observes an event but cannot modify or reject data. The callback receives event data and a hook context. Registered via `IActionRegistration<T>`.
 
 **Adapter**
-An extension DLL that connects Razor to a specific broker or exchange. An adapter implements `IAdapterCapability` (in `Razor.Sdk.Slots.Adapter`), supplying historical data, live price streaming, and order execution. Examples: MetaTrader 5 adapter, Binance adapter.
+An extension DLL that connects Razor to a specific broker or exchange. An adapter implements `IAdapterCapability` (in `Razor.Core.Sdk.Slots.Adapter`), supplying historical data, live price streaming, and order execution. Examples: MetaTrader 5 adapter, Binance adapter.
 
 **AdapterNameAttribute**
 An attribute used to declare a human‑readable name for an adapter implementation. The engine uses this attribute to discover adapters by name.
@@ -70,7 +70,7 @@ A data type that has an identical memory layout in managed and unmanaged code. `
 A disposable wrapper that groups memory‑mapped tick streams and their file paths. On disposal, it notifies the adapter that the files may be safely deleted.
 
 **Broker**
-In Razor, an abstraction of a trading account. `IBroker` (in `Razor.Sdk.Shared`) is implemented by `SimulatedBroker` (for backtesting) and `LiveBroker` (for real trading).
+In Razor, an abstraction of a trading account. `IBroker` (in `Razor.Core.Sdk.Shared`) is implemented by `SimulatedBroker` (for backtesting) and `LiveBroker` (for real trading).
 
 **Bundle**
 A single extension DLL that contains multiple components — e.g., an adapter, a strategy, several indicators, and hook registrations — all in one assembly.
@@ -83,7 +83,7 @@ A single extension DLL that contains multiple components — e.g., an adapter, a
 A risk‑adjusted return metric: annualised return divided by maximum drawdown.
 
 **Capability Interface**
-An interface in the `Razor.Sdk.Slots` namespace that a slot extension must implement. The three capability interfaces are `IAdapterCapability`, `IStrategyCapability`, and `INeuralNetworkModel`.
+An interface in the `Razor.Core.Sdk.Slots` namespace that a slot extension must implement. The three capability interfaces are `IAdapterCapability`, `IStrategyCapability`, and `INeuralNetworkModel`.
 
 **Chromosome**
 A candidate solution in the genetic algorithm. A flat array of doubles representing strategy genes and neural network parameters.
@@ -97,7 +97,7 @@ The closed‑source, headless executable that runs on the user's server. It exec
 **Razor Kernel**
 The closed‑source core library containing all trading logic, brokers, GA, hook invoker, and telemetry.
 
-**Razor.Sdk**
+**Razor.Core.Sdk**
 The public NuGet SDK that extension developers reference. Contains only hooks, slots, domain types, and utilities — no runtime logic.
 
 **CI (Continuous Integration)**
@@ -113,14 +113,14 @@ A margin mode where all open positions share the same margin pool.
 A GA operation where two parent chromosomes exchange genes to create offspring.
 
 **CustomizedRandom**
-A portable deterministic pseudo‑random number generator (xorshift128+). Guarantees identical sequences across .NET versions and operating systems. Located in `Razor.Sdk.Shared`.
+A portable deterministic pseudo‑random number generator (xorshift128+). Guarantees identical sequences across .NET versions and operating systems. Located in `Razor.Core.Sdk.Shared`.
 
 ---
 
 ### D
 
 **Data Action Policy**
-Enum (`DataActionPolicy` in `Razor.Sdk.Shared`) that defines whether binary tick files are kept, deleted, or cached after use. Values: `KeepUntilExit`, `DeleteAfterTask`, `PersistentCache`.
+Enum (`DataActionPolicy` in `Razor.Core.Sdk.Shared`) that defines whether binary tick files are kept, deleted, or cached after use. Values: `KeepUntilExit`, `DeleteAfterTask`, `PersistentCache`.
 
 **Determinism**
 The guarantee that identical inputs produce bit‑identical outputs every run, on any supported platform.
@@ -139,13 +139,13 @@ A GA strategy where the best chromosomes are copied unchanged to the next genera
 Current account balance plus floating (unrealised) profit/loss.
 
 **Execution Report**
-A record (`ExecutionReport` in `Razor.Sdk.Shared`) from an adapter indicating a change in order state (filled, cancelled, etc.).
+A record (`ExecutionReport` in `Razor.Core.Sdk.Shared`) from an adapter indicating a change in order state (filled, cancelled, etc.).
 
 **Execution Specification**
-Immutable configuration record for a backtest or optimisation run: date range, latency, warm‑up, etc. Located in `Razor.Kernel.Configuration`.
+Immutable configuration record for a backtest or optimisation run: date range, latency, warm‑up, etc. Located in `Razor.Core.Kernel.Configuration`.
 
 **Extension**
-A .NET DLL that implements one or more contracts from `Razor.Sdk`. May be a slot (Adapter, Strategy, NN Model), an Indicator, a Hook Plugin, or any combination thereof. Loaded at runtime by the engine.
+A .NET DLL that implements one or more contracts from `Razor.Core.Sdk`. May be a slot (Adapter, Strategy, NN Model), an Indicator, a Hook Plugin, or any combination thereof. Loaded at runtime by the engine.
 
 **Extension Manifest**
 The list of all discovered extensions (adapters, strategies, indicators, hook plugins, NN models) that the engine sends to Razor Cloud after scanning its directories. The Cloud uses this to present activation options to the user.
@@ -161,7 +161,7 @@ An attribute used to mark an interface or class with a specific capability versi
 A type of hook that transforms or rejects data as it flows through the pipeline. The callback returns a `FilterResult<T>` indicating whether to allow (possibly modified) or reject the data. Registered via `IFilterRegistration<T>`.
 
 **FilterResult**
-A struct (`FilterResult<T>` in `Razor.Sdk.Hooks`) representing the result of a filter hook. Created via the static factory class `FilterResult`.
+A struct (`FilterResult<T>` in `Razor.Core.Sdk.Hooks`) representing the result of a filter hook. Created via the static factory class `FilterResult`.
 
 **Fitness**
 A scalar score (higher = better) that rates a backtest result. Fitness evaluation is performed by hook plugins via the `optimization.chromosome.evaluated` action hook, not by a built‑in `IFitnessModel`.
@@ -174,7 +174,7 @@ A scalar score (higher = better) that rates a backtest result. Fitness evaluatio
 A single optimisable value within a strategy, marked with `[Gene]` attribute. Can be continuous, discrete, categorical, structural, or parametric.
 
 **GeneInjector**
-Static helper class in `Razor.Sdk.Shared` that extracts gene schemas, injects gene values into strategy properties and neural network models, and builds chromosome arrays.
+Static helper class in `Razor.Core.Sdk.Shared` that extracts gene schemas, injects gene values into strategy properties and neural network models, and builds chromosome arrays.
 
 **Genetic Algorithm (GA)**
 A population‑based optimisation method inspired by evolution. Used to find optimal strategy parameters.
@@ -196,7 +196,7 @@ Describes the Razor Engine, which has no graphical user interface; it runs as a 
 A periodic verification of engine connectivity, tick freshness, and resource usage. Reported to Razor Cloud.
 
 **Hook**
-A named point in the engine's pipeline where extensions can register callbacks. Hooks are either filters (can modify/reject data) or actions (observe only). All hook registration interfaces are in `Razor.Sdk.Hooks`.
+A named point in the engine's pipeline where extensions can register callbacks. Hooks are either filters (can modify/reject data) or actions (observe only). All hook registration interfaces are in `Razor.Core.Sdk.Hooks`.
 
 **Hook Context**
 An interface (`IHookContext` and its specialised descendants) passed to every hook callback, providing context data such as the hook name, UTC time, cancellation token, and pipeline‑specific state.
@@ -218,19 +218,19 @@ An elevated mutation rate activated when the GA's best fitness stagnates for sev
 Abstraction for time. `TickClock` provides market time; `SystemClock` provides wall‑clock time.
 
 **IMarketCalculator**
-Adapter‑provided interface for exchange‑specific math (margin, PnL, commission, funding, order triggering). Located in `Razor.Sdk.Shared`.
+Adapter‑provided interface for exchange‑specific math (margin, PnL, commission, funding, order triggering). Located in `Razor.Core.Sdk.Shared`.
 
 **IMessageBus**
-In‑process publish/subscribe messaging system for domain events. Located in `Razor.Kernel.Messaging` (internal, not in the public SDK).
+In‑process publish/subscribe messaging system for domain events. Located in `Razor.Core.Kernel.Messaging` (internal, not in the public SDK).
 
 **Indicator**
-A technical analysis tool that computes values from a tick stream (e.g., SMA, RSI). Derives from the `Indicator` base class in `Razor.Sdk.Shared`.
+A technical analysis tool that computes values from a tick stream (e.g., SMA, RSI). Derives from the `Indicator` base class in `Razor.Core.Sdk.Shared`.
 
 **IWindowAwareIndicator**
-Interface in `Razor.Sdk.Shared` that indicators implement to receive the `TickWindow` dependency.
+Interface in `Razor.Core.Sdk.Shared` that indicators implement to receive the `TickWindow` dependency.
 
 **IRegistryAwareIndicator**
-Interface in `Razor.Sdk.Shared` that indicators implement to receive the `IIndicatorRegistry` for cross‑indicator references.
+Interface in `Razor.Core.Sdk.Shared` that indicators implement to receive the `IIndicatorRegistry` for cross‑indicator references.
 
 **Isolated Margin**
 A margin mode where each position has its own separate margin allocation.
@@ -246,7 +246,7 @@ A simulated execution delay in the simulated broker, expressed in 100‑ns tick 
 The ratio of borrowed funds to margin. e.g., 100:1 leverage means a $1,000 margin controls a $100,000 position.
 
 **Live Specification**
-Immutable configuration for live trading: magic number and order guard timeout. Continuous optimisation fields have been removed (Cloud‑orchestrated). Located in `Razor.Kernel.Configuration`.
+Immutable configuration for live trading: magic number and order guard timeout. Continuous optimisation fields have been removed (Cloud‑orchestrated). Located in `Razor.Core.Kernel.Configuration`.
 
 **LTS (Long‑Term Support)**
 Each major Razor version (1.x, 2.x, …) is an LTS release with guaranteed stability and backward compatibility within its major.
@@ -272,7 +272,7 @@ Performance statistics: Net Profit, Return%, Win Rate, Sharpe Ratio, Sortino Rat
 ### N
 
 **Neural Network Model**
-A slot capability implementing `INeuralNetworkModel` (in `Razor.Sdk.Slots.NeuralNetwork`). Supports feed‑forward, ONNX, LSTM, RL, and other architectures through a unified parameter‑vector interface compatible with the GA.
+A slot capability implementing `INeuralNetworkModel` (in `Razor.Core.Sdk.Slots.NeuralNetwork`). Supports feed‑forward, ONNX, LSTM, RL, and other architectures through a unified parameter‑vector interface compatible with the GA.
 
 ---
 
@@ -288,13 +288,13 @@ Open, High, Low, Close, Volume. Bar data; Razor computes OHLC on‑demand from t
 A vendor‑neutral observability framework. Razor emits metrics via `System.Diagnostics.Metrics`.
 
 **Optimisation Specification**
-Immutable GA configuration: master seed, generations, population size, mutation/crossover rates, elitism, tournament size. Located in `Razor.Kernel.Configuration`.
+Immutable GA configuration: master seed, generations, population size, mutation/crossover rates, elitism, tournament size. Located in `Razor.Core.Kernel.Configuration`.
 
 **Order**
-A pending buy/sell request that has not yet triggered. Represented by the `Order` record in `Razor.Sdk.Shared`.
+A pending buy/sell request that has not yet triggered. Represented by the `Order` record in `Razor.Core.Sdk.Shared`.
 
 **Order Type**
-Enum (`OrderType` in `Razor.Sdk.Shared`): `Buy`, `Sell`, `BuyLimit`, `SellLimit`, `BuyStop`, `SellStop`.
+Enum (`OrderType` in `Razor.Core.Sdk.Shared`): `Buy`, `Sell`, `BuyLimit`, `SellLimit`, `BuyStop`, `SellStop`.
 
 ---
 
@@ -304,7 +304,7 @@ Enum (`OrderType` in `Razor.Sdk.Shared`): `Buy`, `Sell`, `BuyLimit`, `SellLimit`
 A limit or stop order that will trigger when the market reaches a specified price.
 
 **Pending Order Trigger Mode**
-Enum (`PendingOrderTriggerMode` in `Razor.Sdk.Shared`): `UseBidForBuy`, `UseAskForBuy`, `UseMidPrice`.
+Enum (`PendingOrderTriggerMode` in `Razor.Core.Sdk.Shared`): `UseBidForBuy`, `UseAskForBuy`, `UseMidPrice`.
 
 **PnL (Profit and Loss)**
 The monetary gain or loss of a position.
@@ -313,10 +313,10 @@ The monetary gain or loss of a position.
 The set of all chromosomes in a GA generation.
 
 **Position**
-An open or closed trade, represented by an immutable `Position` record in `Razor.Sdk.Shared`.
+An open or closed trade, represented by an immutable `Position` record in `Razor.Core.Sdk.Shared`.
 
 **Price Type**
-Enum (`PriceType` in `Razor.Sdk.Shared`) for OHLC aggregation: `Bid`, `Ask`, or `Mid`.
+Enum (`PriceType` in `Razor.Core.Sdk.Shared`) for OHLC aggregation: `Bid`, `Ask`, or `Mid`.
 
 **Principle**
 An immutable design rule in `RazorPrinciples.md`. Non‑negotiable; violations block merges.
@@ -348,7 +348,7 @@ A class that invokes the `report.before_generate` and `report.after_generate` ho
 Software as a Service. Razor Cloud is a SaaS product; the engine is on‑premise.
 
 **SDK (Software Development Kit)**
-The `Razor.Sdk` NuGet package that extension developers use.
+The `Razor.Core.Sdk` NuGet package that extension developers use.
 
 **SdkVersionAttribute**
 An assembly‑level attribute (`[assembly: SdkVersion("1.0.0")]`) that every extension must declare to specify the targeted SDK version.
@@ -384,16 +384,16 @@ A price level at which a losing position is automatically closed.
 The margin level ratio (e.g., 0.5 = 50%) at which the broker force‑closes the worst position.
 
 **Strategy**
-An extension DLL implementing `IStrategyCapability` (in `Razor.Sdk.Slots.Strategy`), containing the trading logic.
+An extension DLL implementing `IStrategyCapability` (in `Razor.Core.Sdk.Slots.Strategy`), containing the trading logic.
 
 **Strategy Specification**
-Immutable configuration: initial balance, leverage, symbols/timeframes. Located in `Razor.Sdk.Shared`.
+Immutable configuration: initial balance, leverage, symbols/timeframes. Located in `Razor.Core.Sdk.Shared`.
 
 **Swap**
 Overnight interest charged or earned for holding a position. Also called rollover or funding.
 
 **Symbol Properties**
-Exchange‑specific metadata for a trading symbol (tick size, contract size, margin rates, etc.). Located in `Razor.Sdk.Shared`.
+Exchange‑specific metadata for a trading symbol (tick size, contract size, margin rates, etc.). Located in `Razor.Core.Sdk.Shared`.
 
 **SystemClock**
 An `IClock` implementation providing wall‑clock time for non‑trading purposes (order guards, telemetry, logging).
@@ -412,16 +412,16 @@ A single price update: timestamp, bid, ask, volume. The fundamental data unit in
 An `IClock` implementation driven by tick timestamps. Used for all trading calculations.
 
 **Tick Window**
-A sliding ring buffer of recent ticks per symbol. Provides on‑demand OHLC aggregation. Located in `Razor.Sdk.Shared`.
+A sliding ring buffer of recent ticks per symbol. Provides on‑demand OHLC aggregation. Located in `Razor.Core.Sdk.Shared`.
 
 **Tick‑Only Core**
 The principle that Razor never processes bars natively; all operations use raw ticks.
 
 **TickSynthesizer**
-A static helper class in `Razor.Sdk.Shared` that converts bar data into synthetic tick arrays and computes stream metrics.
+A static helper class in `Razor.Core.Sdk.Shared` that converts bar data into synthetic tick arrays and computes stream metrics.
 
 **TimeFrame**
-An enum in `Razor.Sdk.Shared` representing aggregation periods: `Tick`, `M1`, `M5`, `H1`, `D1`, etc.
+An enum in `Razor.Core.Sdk.Shared` representing aggregation periods: `Tick`, `M1`, `M5`, `H1`, `D1`, etc.
 
 **Tournament Selection**
 A GA selection method where a random group of chromosomes is chosen and the best is selected.
