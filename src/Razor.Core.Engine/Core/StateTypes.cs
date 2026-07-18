@@ -4,6 +4,8 @@
 // </copyright>
 // -----------------------------------------------------------------------------
 
+using Razor.Core.Kernel.Optimization;
+
 namespace Razor.Core.Engine.Core;
 
 /// <summary>
@@ -68,8 +70,8 @@ internal sealed record OptimizationState
     /// <summary>Gets the configuration object used to start the task.</summary>
     public object Config { get; init; } = new object();
 
-    /// <summary>Gets the current population snapshot (placeholder).</summary>
-    public object Population { get; init; } = new object();
+    /// <summary>Gets the current population snapshot, or null if not yet initialised.</summary>
+    public GeneticOptimizerState? Population { get; init; }
 
     /// <summary>Gets the current generation number.</summary>
     public int CurrentGeneration { get; init; }

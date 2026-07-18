@@ -394,7 +394,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
             {
                 TaskId = taskId,
                 Config = config ?? new object(),
-                Population = new object(),
+                Population = null,
                 CurrentGeneration = 0,
                 BestFitness = 0.0,
                 StartTime = task.StartTime
