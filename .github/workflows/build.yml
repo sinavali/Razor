@@ -30,4 +30,3 @@ jobs:
 
       - name: Run integration tests
         run: dotnet test tests/Razor.Core.Sdk.IntegrationTests --configuration Release --no-build --verbosity normal
-
