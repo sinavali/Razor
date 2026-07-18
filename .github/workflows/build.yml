@@ -30,3 +30,7 @@ jobs:
 
       - name: Run integration tests
         run: dotnet test tests/Razor.Core.Sdk.IntegrationTests --configuration Release --no-build --verbosity normal
+
+      # - name: Run Cloud tests
+      #   run: dotnet test tests/Razor.Cloud.UnitTests --configuration Release --no-build --verbosity normal
+      # TODO: enable when tests/Razor.Cloud.UnitTests project is added
