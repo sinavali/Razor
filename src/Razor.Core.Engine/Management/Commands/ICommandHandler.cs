@@ -11,24 +11,28 @@ internal interface ICommandHandler
     int CommandId { get; }
 
     /// <summary>Handles the command.</summary>
+    /// <returns>A task representing the asynchronous handling operation.</returns>
     Task HandleAsync(CloudCommand command, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// Dispatches commands to registered handlers.
 /// </summary>
-internal abstract class ICommandDispatcher
+internal interface ICommandDispatcher
 {
     /// <summary>Dispatches a command.</summary>
-    public abstract Task DispatchAsync(CloudCommand command, CancellationToken cancellationToken);
+    /// <returns>A task representing the asynchronous dispatch operation.</returns>
+    Task DispatchAsync(CloudCommand command, CancellationToken cancellationToken);
 
     /// <summary>Registers a handler.</summary>
-    public abstract void RegisterHandler(int commandId, ICommandHandler handler);
+    void RegisterHandler(int commandId, ICommandHandler handler);
 
     /// <summary>Sends a command response.</summary>
-    public abstract Task SendResponseAsync(int commandId, string correlationId, object? result, string? error = null,
+    /// <returns>A task representing the asynchronous send operation.</returns>
+    Task SendResponseAsync(int commandId, string correlationId, object? result, string? error = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Stops all user tasks (live, backtest, optimization).</summary>
-    public abstract Task StopUserTasksAsync(CancellationToken cancellationToken);
+    /// <returns>A task representing the asynchronous stop operation.</returns>
+    Task StopUserTasksAsync(CancellationToken cancellationToken);
 }

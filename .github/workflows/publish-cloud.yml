@@ -4,14 +4,17 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/Razor.Cloud/**'
       - 'src/Razor.Core.Sdk/**'   # If SDK changes, rebuild Cloud
   workflow_dispatch:
 
 jobs:
   deploy-cloud:
     runs-on: ubuntu-latest
-    
+    # Cloud deployment is disabled until src/Razor.Cloud exists. Gate the job so
+    # it does not silently report success on every main push; it only runs for
+    # manual workflow_dispatch. See issue #3 (audit) for the Razor.Cloud roadmap.
+    if: github.event_name == 'workflow_dispatch'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,24 +31,21 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         shell: bash
 
-      - name: Restore
-        run: dotnet restore src/Razor.Cloud/Razor.Cloud.csproj
+      - name: Build and publish Razor.Cloud
+        run: |
+          echo "Razor.Cloud project does not exist yet. Skipping build and publish."
 
-      - name: Build
-        run: dotnet build src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --no-restore
-
-      - name: Publish
-        run: dotnet publish src/Razor.Cloud/Razor.Cloud.csproj --configuration Release --output ./publish
+      # Deploy step is intentionally omitted until Razor.Cloud project exists.
+      # Uncomment and configure when src/Razor.Cloud is added.
+      #
+      # - name: Deploy to Azure
+      #   uses: azure/webapps-deploy@v2
+      #   with:
+      #     app-name: 'razor-cloud'
+      #     publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+      #     package: ./publish
 
       # Choose your deployment target:
-      
-      # Option A: Azure Web App
-      - name: Deploy to Azure
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: 'razor-cloud'
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./publish
 
       # Option B: DigitalOcean App Platform
       # - name: Deploy to DigitalOcean

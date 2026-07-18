@@ -11,12 +11,12 @@
         <!-- Read version from VERSION.txt -->
         <Version Condition="Exists('$(MSBuildThisFileDirectory)VERSION.txt')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION.txt').Trim())</Version>
 
-        <Authors>BleedingOnTheEdge</Authors>
-        <Company>BleedingOnTheEdge</Company>
-        <Copyright>© 2026 BleedingOnTheEdge</Copyright>
+        <Authors>sinavali</Authors>
+        <Company>sinavali</Company>
+        <Copyright>© 2026 sinavali</Copyright>
         <Product>Razor</Product>
-        <PackageProjectUrl>https://razor.BleedingOnTheEdge.com</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/BleedingOnTheEdge/razor</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/sinavali/Razor</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sinavali/Razor</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
     </PropertyGroup>
