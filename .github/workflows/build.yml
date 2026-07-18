@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,4 +30,3 @@ jobs:
 
       - name: Run integration tests
         run: dotnet test tests/Razor.Core.Sdk.IntegrationTests --configuration Release --no-build --verbosity normal
-
