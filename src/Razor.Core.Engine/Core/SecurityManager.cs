@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Razor.Core.Engine.Core.Exceptions;
 using System.Security.Cryptography;
 using System.Text;
@@ -51,12 +52,15 @@ internal sealed class SecurityManager : ISecurityManager
     private byte[]? _sharedSecret;
     private byte[]? _sessionKey;
     private ulong _sequenceNumber;
+    private ulong _lastAcceptedSequence;
     private readonly object _lock = new();
+    private readonly ILogger<SecurityManager>? _logger;
 
     /// <summary>Initializes a new security manager.</summary>
-    public SecurityManager()
+    public SecurityManager(ILogger<SecurityManager>? logger)
     {
         _ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -146,6 +150,14 @@ internal sealed class SecurityManager : ISecurityManager
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Decryption enforces strictly-increasing monotonic validation of the 8-byte
+    /// sequence number prepended to the plain text. A message whose sequence number
+    /// is less than or equal to the last accepted sequence number is treated as a
+    /// replay or out-of-order delivery and is rejected with a logged
+    /// <see cref="SecurityException"/>. No decrypted output is emitted for rejected
+    /// messages.
+    /// </remarks>
     public string DecryptMessage(string cipherText)
     {
         lock (_lock)
@@ -176,7 +188,21 @@ internal sealed class SecurityManager : ISecurityManager
 
             // Strip sequence number (first 8 bytes)
             ulong sequence = BitConverter.ToUInt64(plain, 0);
-            // Validate sequence (optional)
+
+            // Enforce strictly-increasing monotonic validation to reject replays
+            // and out-of-order messages (Product Model 6.1 replay protection).
+            if (sequence <= _lastAcceptedSequence)
+            {
+                _logger?.LogWarning(
+                    "Rejected replayed or out-of-order message: sequence {Sequence} is not greater than last accepted {LastAccepted}.",
+                    sequence,
+                    _lastAcceptedSequence);
+                throw new SecurityException(
+                    $"Rejected message with sequence {sequence}: strictly-increasing sequence validation failed (last accepted {_lastAcceptedSequence}).");
+            }
+
+            _lastAcceptedSequence = sequence;
+
             byte[] payload = new byte[plain.Length - 8];
             Buffer.BlockCopy(plain, 8, payload, 0, payload.Length);
             return Encoding.UTF8.GetString(payload);
