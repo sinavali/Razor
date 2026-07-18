@@ -50,7 +50,13 @@ jobs:
 
       - name: Run determinism golden tests
         # The Razor.Determinism.Tests project is delivered by the sibling bead
-        # in this convoy and will exist on the convoy feature branch. If it is
-        # missing at runtime this step FAILS (dotnet test errors on a missing
-        # project), so it cannot silently pass.
-        run: dotnet test tests/Razor.Determinism.Tests --configuration Release --no-build
+        # in this convoy and will exist on the convoy feature branch. We guard
+        # the path explicitly so a missing project fails with a CLEAR message
+        # rather than a cryptic dotnet error, but still cannot silently pass.
+        run: |
+          PROJECT="tests/Razor.Determinism.Tests/Razor.Determinism.Tests.csproj"
+          if [ ! -f "$PROJECT" ]; then
+            echo "::error::Determinism golden test project not found at $PROJECT. The Razor.Determinism.Tests project must be present on the convoy feature branch before this gate can pass."
+            exit 1
+          fi
+          dotnet test "$PROJECT" --configuration Release --no-build
