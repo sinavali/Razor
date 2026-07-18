@@ -1,0 +1,191 @@
+# =============================================================================
+# audit.yml — Continuous-Audit Regression Gate
+# -----------------------------------------------------------------------------
+# This workflow mechanically enforces the continuous-audit program (issue #3).
+# It is the REQUIRED `audit` status check for branch protection on `dev`.
+#
+# Design notes:
+#   * Triggers ONLY on pull_request targeting `dev` (+ manual workflow_dispatch).
+#     It intentionally does NOT run on `main` or any `prod` branch, per the
+#     hard constraint that all automation targets `dev` only (no deploys).
+#   * Uses `fetch-depth: 0` so `git diff --name-only origin/dev...HEAD`
+#     can identify the PR's changed files.
+#   * Step 1 scans only the CHANGED files for regression markers (TODO,
+#     FIXME, NotImplementedException, merge-conflict markers, placeholder).
+#     A `.audit-allow` file at the repo root lists intentional, documented
+#     exceptions (one glob/pattern per line).
+#   * Step 2 verifies doc/version/sln consistency: VERSION.txt matches the
+#     Version declared in Directory.Build.props, and Razor.sln references
+#     every project under src/ and tests/ with no orphaned or phantom refs.
+#   * No deploys, no secrets beyond GITHUB_TOKEN, `contents: read` only.
+# =============================================================================
+
+name: Audit
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch dev branch
+        run: git fetch origin dev
+
+      - name: Scan changed files for regression markers
+        run: |
+          set -euo pipefail
+
+          CHANGED=$(git diff --name-only origin/dev...HEAD || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No changed files detected."
+            exit 0
+          fi
+
+          ALLOWLIST=".audit-allow"
+          VIOLATIONS=0
+
+          echo "Changed files:"
+          echo "$CHANGED"
+          echo ""
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+
+            case "$file" in
+              *.cs|*.csproj|*.sln|*.props|*.targets|*.xml|*.json|*.yml|*.yaml|*.md|*.txt|*.sh|*.ps1|*.bat)
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            if [ ! -f "$file" ]; then
+              continue
+            fi
+
+            if file --mime-type "$file" | grep -q 'text/'; then
+              :
+            else
+              continue
+            fi
+
+            MATCHES=$(grep -n -E '\bTODO\b|\bFIXME\b|NotImplementedException|\bplaceholder\b|^<<<<<<< |^=======$|^>>>>>>> ' "$file" 2>/dev/null || true)
+            if [ -z "$MATCHES" ]; then
+              continue
+            fi
+
+            ALLOWED=false
+            if [ -f "$ALLOWLIST" ]; then
+              while IFS= read -r pattern; do
+                [[ -z "$pattern" || "$pattern" =~ ^[[:space:]]*# ]] && continue
+                if python3 -c "import fnmatch,sys; print('match' if fnmatch.fnmatch(sys.argv[1], sys.argv[2]) else 'no-match')" "$file" "$pattern" | grep -q 'match'; then
+                  ALLOWED=true
+                  break
+                fi
+              done < "$ALLOWLIST"
+            fi
+
+            if [ "$ALLOWED" = true ]; then
+              echo "ALLOWED marker in $file:"
+              echo "$MATCHES"
+              echo ""
+              continue
+            fi
+
+            echo "::error::Regression marker found in $file (not in $ALLOWLIST):"
+            echo "$MATCHES"
+            VIOLATIONS=$((VIOLATIONS + 1))
+          done <<< "$CHANGED"
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "::error::Found $VIOLATIONS file(s) with unallowed regression markers."
+            exit 1
+          fi
+
+          echo "No unallowed regression markers found in changed files."
+
+      - name: Check doc/version/sln consistency
+        run: |
+          set -euo pipefail
+
+          ERRORS=0
+
+          VERSION_TXT=$(cat VERSION.txt | tr -d '\r\n')
+          if [ -z "$VERSION_TXT" ]; then
+            echo "::error::VERSION.txt is empty."
+            ERRORS=$((ERRORS + 1))
+          else
+            echo "VERSION.txt value: $VERSION_TXT"
+            if [ "$VERSION_TXT" != "1.0.0" ]; then
+              echo "::error::VERSION.txt does not equal 1.0.0 (current: '$VERSION_TXT')."
+              ERRORS=$((ERRORS + 1))
+            fi
+          fi
+
+          if [ -f "Directory.Build.props" ]; then
+            PROPS_HAS_VERSION=$(grep -c '<Version' Directory.Build.props || true)
+            if [ "$PROPS_HAS_VERSION" -eq 0 ]; then
+              echo "::error::Directory.Build.props does not declare a <Version> element."
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "Directory.Build.props declares <Version>."
+            fi
+          else
+            echo "::error::Directory.Build.props is missing."
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          if [ ! -f "Razor.sln" ]; then
+            echo "::error::Razor.sln is missing."
+            ERRORS=$((ERRORS + 1))
+            exit $ERRORS
+          fi
+
+          mapfile -t PROJECTS < <(find src tests -name '*.csproj' | sort)
+          mapfile -t SLN_PATHS < <(sed -n 's/^Project("[^"]*") = "[^"]*", "\\([^"]*\\.csproj\\)",.*/\\1/p' Razor.sln | sed 's|\\|/|g' | sort)
+
+          echo "Projects under src/ and tests/:"
+          printf '  %s\n' "${PROJECTS[@]}"
+          echo "Projects referenced in Razor.sln:"
+          printf '  %s\n' "${SLN_PATHS[@]}"
+
+          for p in "${PROJECTS[@]}"; do
+            FOUND=false
+            for s in "${SLN_PATHS[@]}"; do
+              if [ "$p" == "$s" ]; then
+                FOUND=true
+                break
+              fi
+            done
+            if [ "$FOUND" = false ]; then
+              echo "::error::Orphaned project (not in Razor.sln): $p"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          for s in "${SLN_PATHS[@]}"; do
+            if [ ! -f "$s" ]; then
+              echo "::error::Phantom reference in Razor.sln (file missing): $s"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::Found $ERRORS doc/version/sln consistency issue(s)."
+            exit 1
+          fi
+
+          echo "Doc/version/sln consistency check passed."
