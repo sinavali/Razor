@@ -1,8 +1,14 @@
-# .audit-allow
-# Intentional exceptions for the continuous-audit gate (audit.yml).
-# One glob/pattern per line. Lines starting with '#' are comments.
-# Patterns are matched against changed file paths in PR diffs.
-# Reference: audit program tracked in issue #3.
-
-# Currently no intentional placeholders or tracked stubs are exempted.
-# Add patterns here only after documenting the justification in the linked issue.
+# .audit-allow — Continuous-Audit Regression-Marker Allow-List
+# ---------------------------------------------------------------------------
+# This file lists intentional, documented exceptions to the audit gate.
+# When a regression marker (TODO, FIXME, NotImplementedException,
+# placeholder, or merge-conflict marker) is found in a changed file, the
+# audit step checks this allow-list. If the file matches a pattern below,
+# the marker is permitted; otherwise the step fails.
+#
+# Add one glob/pattern per line. Patterns use Python fnmatch semantics
+# (e.g. **/SecurityManager.cs matches any path ending in that filename).
+#
+# Known intentional placeholders being tracked for elimination:
+# (none currently — stubs are being eliminated; add patterns here once
+#  tracked intentional stubs are documented in their tracking issues.)
