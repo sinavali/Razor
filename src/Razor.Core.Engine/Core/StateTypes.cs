@@ -25,6 +25,9 @@ internal sealed record LiveState
     /// <summary>Gets the name of the active strategy.</summary>
     public string StrategyName { get; init; } = string.Empty;
 
+    /// <summary>Gets the base account currency (e.g. USD).</summary>
+    public string AccountCurrency { get; init; } = "USD";
+
     /// <summary>Gets the magic number for order tagging.</summary>
     public int MagicNumber { get; init; }
 

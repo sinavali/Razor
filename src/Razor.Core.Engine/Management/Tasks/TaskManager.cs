@@ -109,9 +109,9 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 OrderGuardTimeoutSeconds = state.OrderGuardTimeoutSeconds,
                 StopOutLevel = state.StopOutLevel,
                 MaxOpenPositions = state.MaxOpenPositions,
-                Genes = state.Genes,
                 NeuralNetworkName = state.NeuralNetworkName ?? string.Empty,
-                AccountCurrency = "USD" // TODO: persist and retrieve AccountCurrency from LiveState
+                Genes = state.Genes,
+                AccountCurrency = state.AccountCurrency
             };
 
             // Start a new live session via kernel service
@@ -234,6 +234,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 MaxOpenPositions = liveConfig.MaxOpenPositions,
                 NeuralNetworkName = liveConfig.NeuralNetworkName ?? string.Empty,
                 Genes = liveConfig.Genes,
+                AccountCurrency = liveConfig.AccountCurrency,
                 LastTickTime = null,
                 StartTime = task.StartTime
             };
