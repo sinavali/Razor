@@ -53,9 +53,9 @@ jobs:
           path: ./coverage
 
       - name: Upload coverage to Codecov
-        if: ${{ env.CODECOV_TOKEN != '' }}
+        if: ${{ secrets.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v4
         with:
-          token: ${{ env.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/**/coverage.cobertura.xml
           fail_ci_if_error: false
