@@ -1,0 +1,61 @@
+# =============================================================================
+# Razor CI — PRIMARY REQUIRED STATUS CHECK (build-and-test)
+# -----------------------------------------------------------------------------
+# This workflow is the REQUIRED "build-and-test" check for branch protection on
+# the `dev` branch. It MUST pass before any PR targeting `dev` can be merged.
+#
+# Design notes:
+#   * Triggers ONLY on pull_request targeting `dev` (+ manual workflow_dispatch).
+#     It intentionally does NOT run on `main` or any `prod` branch, per the
+#     hard constraint that all automation targets `dev` only (no deploys).
+#   * Uses the EXACT-CASE `Razor.sln` (CI is case-sensitive on Linux).
+#   * Runs the full solution test suite with a SINGLE `dotnet test Razor.sln`
+#     command so newly-added test projects are picked up automatically with no
+#     per-project step drift.
+#   * Uploads coverage as a build artifact and (optionally) to Codecov when a
+#     CODECOV_TOKEN secret is present. Secrets are never hardcoded.
+# =============================================================================
+name: CI
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Razor.sln
+
+      - name: Build
+        run: dotnet build Razor.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Razor.sln --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: ./coverage
+
+      - name: Upload coverage to Codecov
+        if: ${{ env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ env.CODECOV_TOKEN }}
+          files: ./coverage/**/coverage.cobertura.xml
+          fail_ci_if_error: false
