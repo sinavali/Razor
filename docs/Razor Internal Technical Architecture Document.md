@@ -14,7 +14,7 @@ This document describes the complete internal architecture of the Razor engine. 
 It is the primary technical reference for:
 
 - Modifying the core engine
-- Building the Razor.Engine executable and Cloud backend
+- Building the Razor.Core.Engine executable and Cloud backend
 - Understanding data flows, threading, and determinism
 - Integrating new subsystems
 
@@ -169,7 +169,7 @@ Two implementations of `IClock` enforce the separation of market time and wall�
 - **Operation:** `GetTimestamp()` returns `Environment.TickCount64` (monotonic, unaffected by system time adjustments). `GetUtcNow()` returns `DateTime.UtcNow` (only used for logging/events).
 - **Used by:** `LiveBroker` (order guard timeouts, telemetry), `CoreMetrics` (recording latencies), and scheduling logic.
 
-**Enforcement:** Any call to `DateTime.UtcNow` inside `Razor.Kernel` trading paths is a build‑breaking violation per static analysis CI.
+**Enforcement:** Any call to `DateTime.UtcNow` inside `Razor.Core.Kernel` trading paths is a build‑breaking violation per static analysis CI.
 
 ---
 
@@ -426,7 +426,7 @@ A single DLL can implement any combination. The engine scans all directories.
 
 ### 11.1 In‑Process Message Bus
 
-`Razor.Kernel.Messaging.MessageBus` implements `IMessageBus`:
+`Razor.Core.Kernel.Messaging.MessageBus` implements `IMessageBus`:
 
 - **Typed subscriptions:** Handlers are stored per message type.
 - **Deduplication:** If `message.EventId` is non‑null and has been published within the last 60 seconds, the message is suppressed.

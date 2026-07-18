@@ -9,7 +9,7 @@ The product consists of four components:
 - **Razor Engine** – the execution node deployed on client servers.
 - **Razor Cloud** – the central management, command, and reporting dashboard.
 - **Razor Marketplace** – a separate service for discovering and distributing extensions (adapters, strategies, indicators, hook plugins, NN models, etc.).
-- **Razor.Sdk** – a public SDK exposing only the contracts needed for extension development (hooks, slots, domain types, and utilities).
+- **Razor.Core.Sdk** – a public SDK exposing only the contracts needed for extension development (hooks, slots, domain types, and utilities).
 
 This model ensures clients retain full custody of their funds and trading infrastructure while receiving an enterprise‑grade toolset for strategy development, optimisation, and live execution—all managed through a rich web interface.
 
@@ -65,15 +65,15 @@ The Marketplace is a separate service, distinct from Razor Cloud, that handles t
 
 **Monetisation** – Razor Co. charges a transaction fee on each sale occurring on the Marketplace.
 
-### 2.4 Razor.Sdk (Public SDK)
+### 2.4 Razor.Core.Sdk (Public SDK)
 
-To enable extension development without exposing engine internals, Razor Co. publishes a **public NuGet package** (`Razor.Sdk`). This package contains only the interfaces, abstract base classes, data models, and utilities required to compile an adapter, strategy, indicator, hook plugin, or neural network model. It includes no runtime implementations, no broker logic, no GA engine, and no pipeline code.
+To enable extension development without exposing engine internals, Razor Co. publishes a **public NuGet package** (`Razor.Core.Sdk`). This package contains only the interfaces, abstract base classes, data models, and utilities required to compile an adapter, strategy, indicator, hook plugin, or neural network model. It includes no runtime implementations, no broker logic, no GA engine, and no pipeline code.
 
 The SDK is organized into three namespaces:
 
-- **`Razor.Sdk.Hooks`** – Hook registration interfaces (`IHookManifest`, `IHookRegistry`, `IFilterRegistration<T>`, `IActionRegistration<T>`), filter result types, and hook context interfaces for backtest, live, optimisation, and report pipelines.
-- **`Razor.Sdk.Slots`** – Capability interfaces for the three slot types: `IAdapterCapability`, `IStrategyCapability`, and `INeuralNetworkModel`.
-- **`Razor.Sdk.Shared`** – Domain types (`Tick`, `Position`, `Order`, `TimeFrame`, `SymbolProperties`, etc.), enums, exceptions, helpers, and base classes (`Indicator`, `StrategyBase`).
+- **`Razor.Core.Sdk.Hooks`** – Hook registration interfaces (`IHookManifest`, `IHookRegistry`, `IFilterRegistration<T>`, `IActionRegistration<T>`), filter result types, and hook context interfaces for backtest, live, optimisation, and report pipelines.
+- **`Razor.Core.Sdk.Slots`** – Capability interfaces for the three slot types: `IAdapterCapability`, `IStrategyCapability`, and `INeuralNetworkModel`.
+- **`Razor.Core.Sdk.Shared`** – Domain types (`Tick`, `Position`, `Order`, `TimeFrame`, `SymbolProperties`, etc.), enums, exceptions, helpers, and base classes (`Indicator`, `StrategyBase`).
 
 The package is proprietary but freely redistributable. It may be open‑sourced at a later stage.
 
@@ -123,7 +123,7 @@ The client must:
 ### 3.3 Extension Development Environment
 Extension developers:
 
-- Install the `Razor.Sdk` NuGet package in their .NET project.
+- Install the `Razor.Core.Sdk` NuGet package in their .NET project.
 - Compile their extension DLL against the SDK contracts.
 - Test locally by running the Razor Engine in their development environment. The same engine binary is used; a free development license from Razor Cloud limits capabilities (e.g., only a mock adapter for live testing, limited historical data range).
 - Deploy extensions by uploading them to Razor Cloud (which then pushes to the engine) or, during local testing, by placing the DLL in the appropriate engine directory.
@@ -170,7 +170,7 @@ Each engine instance is registered in Razor Cloud and assigned a unique API key.
 ### 5.1 Developer Workflow
 1. Register for a free developer account on Razor Cloud.
 2. Download the Razor Engine binary.
-3. Install the `Razor.Sdk` NuGet package.
+3. Install the `Razor.Core.Sdk` NuGet package.
 4. Develop a strategy, adapter, indicator, hook plugin, or NN model locally.
 5. Run the engine with the development license key; it connects to Razor Cloud.
 6. Use the Cloud web interface to upload the extension, configure a backtest, and view results.
@@ -281,7 +281,7 @@ The hook system is the primary extensibility mechanism for customising engine be
 
 | Version | Highlights |
 |---------|------------|
-| **v1.0.0 LTS** | Stable engine with hooks‑and‑slots extension system; adapter and strategy pluggability; Cloud MVP with remote commands, monitoring, and reporting; encrypted transport; engine obfuscation; public Razor.Sdk. |
+| **v1.0.0 LTS** | Stable engine with hooks‑and‑slots extension system; adapter and strategy pluggability; Cloud MVP with remote commands, monitoring, and reporting; encrypted transport; engine obfuscation; public Razor.Core.Sdk. |
 | **v1.5.0** | Enhanced reporting dashboards; performance improvements; live trading refinements; additional hook points for fine‑grained control. |
 | **v2.0.0 LTS** | Multi‑operation engine (concurrent live + optimisation); advanced marketplace with code signing; ONNX and RL model support via `INeuralNetworkModel`; extension profiles and hot‑reload. |
 | **v2.5.0** | Enterprise features: audit logs, compliance reports; performance optimisations for large datasets. |
@@ -295,7 +295,7 @@ The hook system is the primary extensibility mechanism for customising engine be
 - **Razor Engine** – the execution node binary.
 - **Razor Cloud** – the management and monitoring dashboard.
 - **Razor Marketplace** – the extension discovery and distribution service.
-- **Razor.Sdk** – the public SDK NuGet package.
+- **Razor.Core.Sdk** – the public SDK NuGet package.
 
 ---
 
