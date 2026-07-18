@@ -123,29 +123,28 @@ jobs:
 
           ERRORS=0
 
-          VERSION_TXT=$(cat VERSION.txt | tr -d '\r\n')
+          VERSION_TXT=$(cat VERSION.txt || true)
+          VERSION_TXT=$(echo "$VERSION_TXT" | tr -d '\r\n')
           if [ -z "$VERSION_TXT" ]; then
             echo "::error::VERSION.txt is empty."
             ERRORS=$((ERRORS + 1))
           else
             echo "VERSION.txt value: $VERSION_TXT"
-            if [ "$VERSION_TXT" != "1.0.0" ]; then
-              echo "::error::VERSION.txt does not equal 1.0.0 (current: '$VERSION_TXT')."
-              ERRORS=$((ERRORS + 1))
-            fi
-          fi
 
-          if [ -f "Directory.Build.props" ]; then
-            PROPS_HAS_VERSION=$(grep -c '<Version' Directory.Build.props || true)
-            if [ "$PROPS_HAS_VERSION" -eq 0 ]; then
-              echo "::error::Directory.Build.props does not declare a <Version> element."
+            PROPS_READS_FILE=$(python3 -c "
+import re, sys
+with open('Directory.Build.props', 'r') as f:
+    content = f.read()
+m = re.search(r'<Version[^>]*>(.*?)</Version>', content, re.DOTALL)
+print('yes' if m and \"VERSION.txt\" in m.group(1) else 'no')
+" 2>/dev/null || echo "no")
+
+            if [ "$PROPS_READS_FILE" = "no" ]; then
+              echo "::error::Directory.Build.props <Version> does not read from VERSION.txt."
               ERRORS=$((ERRORS + 1))
             else
-              echo "Directory.Build.props declares <Version>."
+              echo "Directory.Build.props <Version> reads from VERSION.txt."
             fi
-          else
-            echo "::error::Directory.Build.props is missing."
-            ERRORS=$((ERRORS + 1))
           fi
 
           if [ ! -f "Razor.sln" ]; then
@@ -154,7 +153,7 @@ jobs:
             exit $ERRORS
           fi
 
-          mapfile -t PROJECTS < <(find src tests -name '*.csproj' | sort)
+          mapfile -t PROJECTS < <(find src tests -name '*.csproj' -type f 2>/dev/null | sort)
           mapfile -t SLN_PATHS < <(sed -n 's/^Project("[^"]*") = "[^"]*", "\\([^"]*\\.csproj\\)",.*/\\1/p' Razor.sln | sed 's|\\|/|g' | sort)
 
           echo "Projects under src/ and tests/:"
