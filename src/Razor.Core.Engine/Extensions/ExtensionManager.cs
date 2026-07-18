@@ -57,6 +57,9 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
     // Behavior recording hook – registered internally by the engine.
     private InternalBehaviorHook? _behaviorHook;
 
+    // Audit trail logging hook – registered automatically by the engine on startup.
+    private readonly Hooks.AuditTrailLoggingHookPlugin _auditTrailHook;
+
     public IAdapterCapability? ActiveAdapter => _activeAdapter;
     public IStrategyCapability? ActiveStrategy => _activeStrategy;
     public INeuralNetworkModel? ActiveNeuralNetwork => _activeNeuralNetwork;
@@ -75,6 +78,11 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
         _hookRegistry = hookRegistry ?? throw new ArgumentNullException(nameof(hookRegistry));
         _behaviorRecorder = behaviorRecorder ?? throw new ArgumentNullException(nameof(behaviorRecorder));
         _basePath = AppDomain.CurrentDomain.BaseDirectory;
+
+        // Register the immutable audit trail logging hook automatically (compliance requirement).
+        _auditTrailHook = new Hooks.AuditTrailLoggingHookPlugin(
+            logger: _loggerFactory.CreateLogger<Hooks.AuditTrailLoggingHookPlugin>());
+        _auditTrailHook.RegisterHooks(_hookRegistry);
     }
 
     /// <inheritdoc/>
@@ -99,6 +107,9 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
     {
         // IMP-03: Clear all existing hook registrations before reloading.
         _hookRegistry.ClearAll();
+
+        // Re-register the engine-internal audit trail hook so compliance logging survives reloads.
+        _auditTrailHook.RegisterHooks(_hookRegistry);
 
         _catalog?.Dispose();
         _catalog = null;
@@ -349,6 +360,7 @@ internal sealed class ExtensionManager : IExtensionManager, IDisposable
         }
 
         _disposed = true;
+        _auditTrailHook.Dispose();
         _catalog?.Dispose();
         (_activeAdapter as IDisposable)?.Dispose();
         (_activeStrategy as IDisposable)?.Dispose();

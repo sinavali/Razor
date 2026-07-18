@@ -712,6 +712,17 @@ public class UlcerIndexMetric : IHookManifest
 }
 ```
 
+### 6.11 Built‑in Audit Trail Logging
+
+The engine automatically registers a built‑in **Audit Trail Logging** hook plugin (`Razor.Core.Engine.Hooks.AuditTrailLoggingHookPlugin`) on startup. It observes the live `OnOrderExecuted` and `OnOrderRejected` action hooks and writes an immutable, append‑only record of every broker order event to a SQLite database for regulatory compliance.
+
+- **Storage:** a SQLite database whose path is configurable; it defaults to `./audit_trail.db` next to the engine binary.
+- **Immutability:** the `AuditTrail` table exposes only an `INSERT` path. Records can never be updated or deleted after they are written.
+- **Records** contain: `TimestampUtc`, `TaskId`, `OrderId`, `Symbol`, `Side`, `Quantity`, `Price`, `Status` (`executed`/`rejected`), and `RejectionReason` (populated only for rejected orders).
+- **Resilience:** failures while writing an audit record are caught and logged; they never throw into the live trading path.
+
+This plugin requires no developer action. It is always active and survives extension reloads (the engine re‑registers it after clearing hook state). See `docs/Razor Future Features.md` → *Risk & Compliance → Audit Trail Logging* for the original roadmap entry.
+
 ---
 
 ## 7. Developing a Neural Network Model
