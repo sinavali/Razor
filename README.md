@@ -271,6 +271,23 @@ All 60+ commands are fully implemented in `Razor.Core.Engine.Management.Commands
 
 ---
 
+## Related Documentation
+
+The `docs/` directory contains the full design and operations reference:
+
+- [Razor Principles](docs/Razor%20Principles.md) — core design principles every decision must align with.
+- [Razor Product Model](docs/Razor%20Product%20Model.md) — high‑level product and packaging model.
+- [Razor Proposal](docs/Razor%20Proposal.md) — original project proposal and scope.
+- [Razor Internal Technical Architecture Document](docs/Razor%20Internal%20Technical%20Architecture%20Document.md) — internal architecture detail.
+- [Razor Engine – Finalised Technical Blueprint](docs/Razor%20Engine%20%E2%80%93%20Finalised%20Technical%20Blueprint.md) — engine blueprint.
+- [Razor Configuration Reference](docs/Razor%20Configuration%20Reference.md) — configuration keys and defaults.
+- [Razor Installation & Deployment Guide](docs/Razor%20Installation%20%26%20Deployment%20Guide.md) — install and deploy steps.
+- [Razor Extension Developer Guide](docs/Razor%20Extension%20Developer%20Guide.md) — build extensions against `Razor.Core.Sdk`.
+- [Razor Glossary](docs/Razor%20Glossary.md) — terminology reference.
+- [Razor Future Features](docs/Razor%20Future%20Features.md) — roadmap and planned work.
+
+---
+
 ## Licensing
 
 | Project | License |
