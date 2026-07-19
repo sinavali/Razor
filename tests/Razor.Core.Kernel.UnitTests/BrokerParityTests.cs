@@ -168,8 +168,10 @@ public sealed class BrokerParityTests
         var adapter = new MockAdapter(calc, symbol, position, balance: 100_000, equity: 100_000);
 
         using var metrics = new CoreMetrics("broker-parity-test");
+#pragma warning disable CA2007
         await using var broker = new LiveBroker(adapter, magicNumber: 1, leverage: 100, new TickClock(), new SystemClock(), metrics,
             currencyConverter: new FixedConverter(), accountCurrency: "USD");
+#pragma warning restore CA2007
 
         await broker.InitializeLiveStateAsync(CancellationToken.None);
 
