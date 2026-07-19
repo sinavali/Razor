@@ -1,0 +1,56 @@
+# ============================================================================
+# determinism.yml — Principle 12 (Determinism) Golden Gate
+# ----------------------------------------------------------------------------
+# This is the REQUIRED `golden` status check for branch protection on `dev`.
+#
+# Principle 12 (Determinism): identical inputs must always produce identical
+# outputs. A backtest with a fixed seed and fixed configuration must run twice
+# and produce a byte-for-byte identical trade history. Nondeterminism is a
+# correctness defect (it hides flaky behavior, breaks reproducibility, and
+# defeats audit). This workflow enforces that gate.
+#
+# Trigger tradeoff: This runs on `pull_request` targeting `dev` AND on a nightly
+# `schedule` cron. It does NOT run on every push. We deliberately avoid
+# per-push execution to keep the CI queue light (a full backtest is expensive),
+# while still catching nondeterminism (a) before any merge into `dev` via PR,
+# and (b) nightly so drift that slips past a force-push/merge is caught.
+# ============================================================================
+
+name: Determinism Golden Gate
+
+on:
+  pull_request:
+    branches: [dev]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    name: golden
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Razor.sln
+
+      - name: Build
+        run: dotnet build Razor.sln --configuration Release --no-restore
+
+      - name: Run determinism golden tests
+        # The Razor.Determinism.Tests project is delivered by the sibling bead
+        # in this convoy and will exist on the convoy feature branch. If it is
+        # missing at runtime this step FAILS (dotnet test errors on a missing
+        # project), so it cannot silently pass.
+        run: dotnet test tests/Razor.Determinism.Tests --configuration Release --no-build

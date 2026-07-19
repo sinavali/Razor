@@ -1,4 +1,5 @@
 using Razor.Core.Sdk.Shared;
+using Razor.Core.Shared;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -136,7 +137,7 @@ public sealed class BinaryDataMapper_IntegrationTests : IDisposable
         BinaryDataMapper.WriteTicksToBinary(_tempFile, Array.Empty<Tick>());
         using var mm = new MemoryMappedTickList(_tempFile);
         Assert.Empty(mm);
-        Assert.Throws<ArgumentOutOfRangeException>(() => mm[0]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => { var _ = mm[0]; });
     }
 
     [Fact]

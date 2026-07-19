@@ -58,9 +58,8 @@ internal sealed class SecurityManager : ISecurityManager
     private readonly object _lock = new();
     private readonly ILogger<SecurityManager>? _logger;
 
-    private static readonly Action<ILogger, ulong, ulong, Exception?> _logReplayRejected =
-        LoggerMessage.Define<ulong, ulong>(LogLevel.Warning, 0,
-            "Rejected replayed or out-of-order message: sequence {Sequence} is not greater than last accepted {LastAccepted}.");
+    private static readonly Action<ILogger, ulong, ulong, Exception?> _logRejectedMessage =
+        LoggerMessage.Define<ulong, ulong>(LogLevel.Warning, 0, "Rejected replayed or out-of-order message: sequence {Sequence} is not greater than last accepted {LastAccepted}.");
 
     /// <summary>Initializes a new security manager.</summary>
     public SecurityManager(ILogger<SecurityManager>? logger)
@@ -199,7 +198,10 @@ internal sealed class SecurityManager : ISecurityManager
             // and out-of-order messages (Product Model 6.1 replay protection).
             if (sequence <= _lastAcceptedSequence)
             {
-                _logReplayRejected(_logger ?? NullLogger<SecurityManager>.Instance, sequence, _lastAcceptedSequence, null);
+                if (_logger != null)
+                {
+                    _logRejectedMessage(_logger, sequence, _lastAcceptedSequence, null);
+                }
                 throw new SecurityException(
                     $"Rejected message with sequence {sequence}: strictly-increasing sequence validation failed (last accepted {_lastAcceptedSequence}).");
             }

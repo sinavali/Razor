@@ -3,9 +3,15 @@ namespace Razor.Core.Engine.UnitTests;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Razor.Core.Engine.Extensions;
 using Razor.Core.Engine.Kernel;
+using Razor.Core.Kernel.Messaging;
+using Razor.Core.Kernel.Telemetry;
+using Razor.Core.Sdk.Hooks;
 using Razor.Core.Sdk.Shared;
 using Razor.Core.Sdk.Slots.Adapter;
+using Razor.Core.Sdk.Slots.NeuralNetwork;
+using Razor.Core.Sdk.Slots.Strategy;
 
 public class KernelServiceLivePauseResumeTests
 {
@@ -19,7 +25,7 @@ public class KernelServiceLivePauseResumeTests
     [Fact]
     public async Task PauseLiveAsync_UnsubscribesTickHandler()
     {
-        var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
+        using var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
         var adapter = new StubAdapter();
         var tickHandler = (Action<string, Tick>)((symbol, tick) => { });
 
@@ -27,17 +33,18 @@ public class KernelServiceLivePauseResumeTests
         var taskState = CreateTaskState(adapter, tickHandler);
         SetActiveTasks(kernel, taskState);
 
-        Assert.Single(adapter.OnTickReceived.GetInvocationList());
+        Assert.NotNull(adapter.TickHandlers);
+        Assert.Single(adapter.TickHandlers.GetInvocationList());
 
         await kernel.PauseLiveAsync("task-1", CancellationToken.None);
 
-        Assert.Null(adapter.OnTickReceived);
+        Assert.Null(adapter.TickHandlers);
     }
 
     [Fact]
     public async Task ResumeLiveAsync_ResubscribesTickHandler()
     {
-        var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
+        using var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
         var adapter = new StubAdapter();
         var tickHandler = (Action<string, Tick>)((symbol, tick) => { });
 
@@ -46,18 +53,18 @@ public class KernelServiceLivePauseResumeTests
         SetActiveTasks(kernel, taskState);
 
         adapter.OnTickReceived -= tickHandler;
-        Assert.Null(adapter.OnTickReceived);
+        Assert.Null(adapter.TickHandlers);
 
         await kernel.ResumeLiveAsync("task-1", CancellationToken.None);
 
-        Assert.NotNull(adapter.OnTickReceived);
-        Assert.Same(tickHandler, adapter.OnTickReceived);
+        Assert.NotNull(adapter.TickHandlers);
+        Assert.Same(tickHandler, adapter.TickHandlers);
     }
 
     [Fact]
     public async Task PauseThenResume_HandlerIsRestored()
     {
-        var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
+        using var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
         var adapter = new StubAdapter();
         var tickHandler = (Action<string, Tick>)((symbol, tick) => { });
 
@@ -66,10 +73,11 @@ public class KernelServiceLivePauseResumeTests
         SetActiveTasks(kernel, taskState);
 
         await kernel.PauseLiveAsync("task-1", CancellationToken.None);
-        Assert.Null(adapter.OnTickReceived);
+        Assert.Null(adapter.TickHandlers);
 
         await kernel.ResumeLiveAsync("task-1", CancellationToken.None);
-        Assert.Same(tickHandler, adapter.OnTickReceived);
+        Assert.NotNull(adapter.TickHandlers);
+        Assert.Same(tickHandler, adapter.TickHandlers);
     }
 
     private static object CreateTaskState(IAdapterCapability adapter, Action<string, Tick> tickHandler)
@@ -94,8 +102,47 @@ public class KernelServiceLivePauseResumeTests
     private static void SetActiveTasks(KernelService kernel, object taskState)
     {
         var field = typeof(KernelService).GetField("_activeTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var dict = (ConcurrentDictionary<string, TaskState>)field!.GetValue(kernel)!;
+        var dict = (ConcurrentDictionary<string, object>)field!.GetValue(kernel)!;
         dict["task-1"] = taskState;
+    }
+
+    private sealed class StubAdapter : IAdapterCapability
+    {
+        public string Name => "StubAdapter";
+        public IMarketCalculator Calculator => null!;
+        public bool IsConnected { get; set; }
+        public bool SupportsHistoricalData { get; set; }
+        public bool SupportsLiveData { get; set; }
+        public bool SupportsExecution { get; set; }
+        public Task<bool> ConnectAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task DisconnectAsync() => Task.CompletedTask;
+        public Task<HistoricalDataResponse> FetchHistoryToBinaryFileAsync(HistoricalDataRequest request, CancellationToken cancellationToken) => Task.FromResult<HistoricalDataResponse>(new HistoricalDataResponse());
+        public Task DeleteHistoryFileAsync(string filePath) => Task.CompletedTask;
+        public Task NotifyFileSafeToDeleteAsync(string filePath) => Task.CompletedTask;
+        public Task SubscribeAsync(string symbol) => Task.CompletedTask;
+        public Task UnsubscribeAsync(string symbol) => Task.CompletedTask;
+        private Action<string, Tick>? _onTickReceived;
+        public event Action<string, Tick>? OnTickReceived
+        {
+            add { _onTickReceived += value; }
+            remove { _onTickReceived -= value; }
+        }
+        public Action<string, Tick>? TickHandlers => _onTickReceived;
+        public Task<AdapterOrderResponse> ExecuteOrderAsync(AdapterOrderRequest request) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null, double? price = null) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<AdapterOrderResponse> ClosePositionAsync(long ticket, double? volume = null) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<AdapterOrderResponse> CancelAsync(long ticket) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<(double Balance, double Equity)> GetAccountInfoAsync(CancellationToken cancellationToken = default) => Task.FromResult((0.0, 0.0));
+        public Task<IReadOnlyList<Position>> GetActivePositionsAsync() => Task.FromResult<IReadOnlyList<Position>>(Array.Empty<Position>());
+        public Task<IReadOnlyList<Order>> GetPendingOrdersAsync() => Task.FromResult<IReadOnlyList<Order>>(Array.Empty<Order>());
+        public Task<SymbolProperties?> GetSymbolPropertiesAsync(string symbol, CancellationToken cancellationToken = default) => Task.FromResult<SymbolProperties?>(null);
+        private Action<ExecutionReport>? _onExecutionUpdate;
+        public event Action<ExecutionReport>? OnExecutionUpdate
+        {
+            add { _onExecutionUpdate += value; }
+            remove { _onExecutionUpdate -= value; }
+        }
+        public TimeFrame[]? GetSupportedTimeframes(string symbol) => null;
     }
 
     private sealed class StubExtensionManager : IExtensionManager
@@ -108,7 +155,7 @@ public class KernelServiceLivePauseResumeTests
         public Task ReloadExtensionsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task ActivateExtensionsAsync(string adapterName, string strategyName, string? nnModelName, string[] hookPluginNames, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task DeployExtensionAsync(string name, byte[] binaryData, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task RemoveExtensionAsync(string name) => Task.CompletedTask;
+        public Task RemoveExtensionAsync(string name, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<object> GetManifestAsync(CancellationToken cancellationToken) => Task.FromResult<object>(new object());
         public IStrategyCapability? CreateTransientStrategy(string strategyName) => null;
         public void EnableBehaviorLoggingOnStrategy(string sessionId, int snapshotIntervalSeconds = 10) { }
@@ -118,27 +165,46 @@ public class KernelServiceLivePauseResumeTests
 
     private sealed class StubHookRegistry : IHookRegistry
     {
-        public event Action<string, object>? OnHookTriggered;
-        public IReadOnlyList<IHookPlugin> Plugins => Array.Empty<IHookPlugin>();
-        public void Register(IHookPlugin plugin) { }
-        public void Unregister(string pluginName) { }
+        public IBacktestHooks Backtest => null!;
+        public ILiveHooks Live => null!;
+        public IOptimizationHooks Optimization => null!;
+        public IReportHooks Report => null!;
+        public void ClearAll() { }
         public Task TriggerAsync(string hookName, object context, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class StubMessageBus : IMessageBus
     {
+        public void Publish<T>(T message) where T : IMessage { }
+        public IDisposable Subscribe<T>(Action<T> handler) where T : IMessage => new Unsubscriber(() => { });
         public Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SubscribeAsync(string topic, Action<string> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UnsubscribeAsync(string topic, Action<string> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private sealed class Unsubscriber : IDisposable
+        {
+            private readonly Action _onDispose;
+            public Unsubscriber(Action onDispose) => _onDispose = onDispose;
+            public void Dispose() => _onDispose();
+        }
     }
 
     private sealed class StubCoreMetrics : ICoreMetrics
     {
+        public bool IsConnected { get; set; }
+        public string AdapterName { get; set; } = string.Empty;
+        public void SetConnectionState(bool connected, string adapterName) { }
         public void RecordBacktestDuration(string taskId, double seconds) { }
         public void RecordLiveTick(string taskId, string symbol) { }
         public void RecordOrderPlaced(string taskId) { }
         public void RecordOrderFilled(string taskId) { }
         public void IncrementActiveTasks() { }
         public void DecrementActiveTasks() { }
+        public void RecordLiveTickLatency(long ticks) { }
+        public void RecordGaFitnessImprovement(double improvement) { }
+        public void RecordBacktestTicksPerSecond(double ticksPerSec) { }
+        public void RecordLiveOrderLatency(long milliseconds) { }
+        public void RecordLiveOrderRejection() { }
+        public void RecordOptimizationDuration(double seconds) { }
     }
 }

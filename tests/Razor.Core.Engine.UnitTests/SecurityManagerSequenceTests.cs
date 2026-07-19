@@ -1,5 +1,5 @@
 using Razor.Core.Engine.Core;
-using Razor.Core.Engine.Core.Exceptions;
+using System.Security;
 
 namespace Razor.Core.Engine.UnitTests;
 

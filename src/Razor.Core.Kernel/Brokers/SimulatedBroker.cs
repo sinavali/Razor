@@ -232,12 +232,16 @@ public sealed class SimulatedBroker : IBroker
             }
 
             double requiredMargin = _calculator.CalculateRequiredMargin(spec, price, volume, _leverage);
-            if (FreeMargin < requiredMargin - 1e-8)
+            double conversionRate = GetConversionRate(symbol);
+            double marginInAccountCurrency = requiredMargin * conversionRate;
+            if (FreeMargin < marginInAccountCurrency - 1e-8)
             {
                 return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" });
             }
 
-            _marginUsed += requiredMargin;
+            // DAT: normalize margin to account currency (matches tick-update path which
+            // stores totalUsedMargin converted) so MarginUsed/FreeMargin stay consistent.
+            _marginUsed += marginInAccountCurrency;
             var ticket = _ticketCounter++;
             _pendingOrders.Add(new Order
             {
@@ -325,7 +329,8 @@ public sealed class SimulatedBroker : IBroker
             if (order != null && _symbolSpecs.TryGetValue(order.Symbol, out var spec))
             {
                 double margin = _calculator.CalculateRequiredMargin(spec, order.Price, order.Volume, _leverage);
-                _marginUsed = Math.Max(0, _marginUsed - margin);
+                double conversionRate = GetConversionRate(order.Symbol);
+                _marginUsed = Math.Max(0, _marginUsed - margin * conversionRate);
             }
 
             int removed = _pendingOrders.RemoveAll(o => o.Ticket == ticket);
@@ -380,7 +385,8 @@ public sealed class SimulatedBroker : IBroker
                     if (_symbolSpecs.TryGetValue(o.Symbol, out var spec))
                     {
                         double margin = _calculator.CalculateRequiredMargin(spec, o.Price, o.Volume, _leverage);
-                        _marginUsed = Math.Max(0, _marginUsed - margin);
+                        double conversionRate = GetConversionRate(o.Symbol);
+                        _marginUsed = Math.Max(0, _marginUsed - margin * conversionRate);
                     }
                     _pendingOrders.RemoveAt(i);
                 }
@@ -454,7 +460,9 @@ public sealed class SimulatedBroker : IBroker
         execPrice = _calculator.NormalizePrice(spec, execPrice);
 
         double requiredMargin = _calculator.CalculateRequiredMargin(spec, execPrice, volume, _leverage);
-        if (FreeMargin < requiredMargin - 1e-8)
+        double conversionRate = GetConversionRate(symbol);
+        double marginInAccountCurrency = requiredMargin * conversionRate;
+        if (FreeMargin < marginInAccountCurrency - 1e-8)
         {
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
         }
@@ -479,7 +487,7 @@ public sealed class SimulatedBroker : IBroker
         };
 
         _positions.Add(position);
-        _marginUsed += requiredMargin;
+        _marginUsed += marginInAccountCurrency;
         UpdateDrawdowns();
 
         _messageBus?.Publish(new OrderExecutedEvent
@@ -531,7 +539,8 @@ public sealed class SimulatedBroker : IBroker
                 if (_symbolSpecs.TryGetValue(o.Symbol, out var spec))
                 {
                     double pendingMargin = _calculator.CalculateRequiredMargin(spec, o.Price, o.Volume, _leverage);
-                    _marginUsed = Math.Max(0, _marginUsed - pendingMargin);
+                    double cancelConversionRate = GetConversionRate(o.Symbol);
+                    _marginUsed = Math.Max(0, _marginUsed - pendingMargin * cancelConversionRate);
                 }
                 ConvertPendingToPosition(o, o.Price);
                 _pendingOrders.RemoveAt(i);
@@ -640,6 +649,10 @@ public sealed class SimulatedBroker : IBroker
         double closedSwap = p.Swap * (closeVolume / p.Volume);
         double realizedProfit = (closedRawPnl - closeComm) * conversionRate + closedSwap;
 
+        // realizedProfit already debits the close-leg commission in account
+        // currency; the open-leg commission (p.Commission) is the same per-leg
+        // cost and must not be debited again here, otherwise the round-trip
+        // commission is double-counted.
         _balance += realizedProfit;
         MutablePosition historyRecord;
 
@@ -710,7 +723,9 @@ public sealed class SimulatedBroker : IBroker
         var spec = _symbolSpecs[o.Symbol];
         OrderType execDir = (o.Type == OrderType.BuyLimit || o.Type == OrderType.BuyStop) ? OrderType.Buy : OrderType.Sell;
         double reqMargin = _calculator.CalculateRequiredMargin(spec, price, o.Volume, _leverage);
-        if (FreeMargin < reqMargin - 1e-8)
+        double conversionRate = GetConversionRate(o.Symbol);
+        double marginInAccountCurrency = reqMargin * conversionRate;
+        if (FreeMargin < marginInAccountCurrency - 1e-8)
         {
             return;
         }
@@ -719,9 +734,6 @@ public sealed class SimulatedBroker : IBroker
         double execPx = execDir == OrderType.Buy ? price + slippage : price - slippage;
         execPx = _calculator.NormalizePrice(spec, execPx);
         double comm = _calculator.CalculateCommission(spec, execPx, o.Volume);
-        double conversionRate = GetConversionRate(o.Symbol);
-        double marginInAccountCurrency = reqMargin * conversionRate;
-
         var newPos = new MutablePosition
         {
             Ticket = _ticketCounter++,
@@ -882,7 +894,14 @@ public sealed class SimulatedBroker : IBroker
 
     private bool InvokeOrderValidationFilter(AdapterOrderRequest request, out AdapterOrderRequest filtered, out string? reason)
     {
-        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks!.OnOrderValidation).Entries;
+        if (_hooks == null)
+        {
+            filtered = request;
+            reason = null;
+            return true;
+        }
+
+        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks.OnOrderValidation).Entries;
         var ctx = new BacktestContext(_clock, new Tick(), 0, 0, _equity, _balance, 0, this, null!, new List<Position>(),
             "backtest.order.validation");
         var result = HookInvoker.InvokeFilterChain(entries, request, ctx);
@@ -893,7 +912,14 @@ public sealed class SimulatedBroker : IBroker
 
     private bool InvokeOrderBeforeExecuteFilter(AdapterOrderRequest request, out AdapterOrderRequest filtered, out string? reason)
     {
-        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks!.OnOrderBeforeExecute).Entries;
+        if (_hooks == null)
+        {
+            filtered = request;
+            reason = null;
+            return true;
+        }
+
+        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks.OnOrderBeforeExecute).Entries;
         var ctx = new BacktestContext(_clock, new Tick(), 0, 0, _equity, _balance, 0, this, null!, new List<Position>(),
             "backtest.order.before_execute");
         var result = HookInvoker.InvokeFilterChain(entries, request, ctx);
@@ -904,7 +930,12 @@ public sealed class SimulatedBroker : IBroker
 
     private void InvokeOrderAfterExecuteHook(AdapterOrderRequest request, AdapterOrderResponse response)
     {
-        var entries = ((ActionRegistration<(AdapterOrderRequest, AdapterOrderResponse)>)_hooks!.OnOrderAfterExecute).Entries;
+        if (_hooks == null)
+        {
+            return;
+        }
+
+        var entries = ((ActionRegistration<(AdapterOrderRequest, AdapterOrderResponse)>)_hooks.OnOrderAfterExecute).Entries;
         var ctx = new BacktestContext(_clock, new Tick(), 0, 0, _equity, _balance, 0, this, null!, new List<Position>(),
             "backtest.order.after_execute");
         HookInvoker.InvokeActionChain(entries, (request, response), ctx);

@@ -8,7 +8,7 @@ public class StateManagerGeneticOptimizerStateTests
     [Fact]
     public async Task SaveAndLoadOptimizationState_RoundTripsGeneticOptimizerState()
     {
-        var stateManager = new StateManager();
+        using var stateManager = new StateManager();
         var optimizationId = $"opt_{Guid.NewGuid():N}";
         var population = new GeneticOptimizerState
         {
@@ -47,7 +47,7 @@ public class StateManagerGeneticOptimizerStateTests
     [Fact]
     public async Task SaveOptimizationState_WithNullPopulation_PersistsNull()
     {
-        var stateManager = new StateManager();
+        using var stateManager = new StateManager();
         var optimizationId = $"opt_{Guid.NewGuid():N}";
         var state = new OptimizationState
         {

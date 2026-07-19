@@ -1,5 +1,6 @@
 using Razor.Core.Sdk.Shared;
 using Razor.Core.Sdk.Slots;
+using Razor.Core.Sdk.Slots.NeuralNetwork;
 
 namespace Razor.Core.Sdk.IntegrationTests.Shared;
 
