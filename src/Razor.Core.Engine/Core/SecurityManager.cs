@@ -263,7 +263,7 @@ internal sealed class SecurityManager : ISecurityManager
 
             byte[] bytes = File.ReadAllBytes(location);
             byte[] actualHash = SHA256.HashData(bytes);
-            string actualHashHex = Convert.ToHexString(actualHash).ToUpperInvariant();
+            string actualHashHex = Convert.ToHexString(actualHash).ToLowerInvariant();
 
             return string.Equals(actualHashHex, pinnedHash, StringComparison.OrdinalIgnoreCase);
         }
