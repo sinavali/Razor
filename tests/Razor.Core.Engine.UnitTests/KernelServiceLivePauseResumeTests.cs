@@ -104,6 +104,34 @@ public class KernelServiceLivePauseResumeTests
         dict["task-1"] = taskState;
     }
 
+    private sealed class StubAdapter : IAdapterCapability
+    {
+        public string Name => "StubAdapter";
+        public IMarketCalculator Calculator => null!;
+        public bool IsConnected { get; set; }
+        public bool SupportsHistoricalData { get; set; }
+        public bool SupportsLiveData { get; set; }
+        public bool SupportsExecution { get; set; }
+        public Task<bool> ConnectAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task DisconnectAsync() => Task.CompletedTask;
+        public Task<HistoricalDataResponse> FetchHistoryToBinaryFileAsync(HistoricalDataRequest request, CancellationToken cancellationToken) => Task.FromResult<HistoricalDataResponse>(new HistoricalDataResponse());
+        public Task DeleteHistoryFileAsync(string filePath) => Task.CompletedTask;
+        public Task NotifyFileSafeToDeleteAsync(string filePath) => Task.CompletedTask;
+        public Task SubscribeAsync(string symbol) => Task.CompletedTask;
+        public Task UnsubscribeAsync(string symbol) => Task.CompletedTask;
+        public event Action<string, Tick>? OnTickReceived;
+        public Task<AdapterOrderResponse> ExecuteOrderAsync(AdapterOrderRequest request) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null, double? price = null) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<AdapterOrderResponse> ClosePositionAsync(long ticket, double? volume = null) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<AdapterOrderResponse> CancelAsync(long ticket) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
+        public Task<(double Balance, double Equity)> GetAccountInfoAsync(CancellationToken cancellationToken = default) => Task.FromResult((0.0, 0.0));
+        public Task<IReadOnlyList<Position>> GetActivePositionsAsync() => Task.FromResult<IReadOnlyList<Position>>(Array.Empty<Position>());
+        public Task<IReadOnlyList<Order>> GetPendingOrdersAsync() => Task.FromResult<IReadOnlyList<Order>>(Array.Empty<Order>());
+        public Task<SymbolProperties?> GetSymbolPropertiesAsync(string symbol, CancellationToken cancellationToken = default) => Task.FromResult<SymbolProperties?>(null);
+        public event Action<ExecutionReport>? OnExecutionUpdate;
+        public TimeFrame[]? GetSupportedTimeframes(string symbol) => null;
+    }
+
     private sealed class StubExtensionManager : IExtensionManager
     {
         public IAdapterCapability? ActiveAdapter => null;
