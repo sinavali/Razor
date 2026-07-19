@@ -18,6 +18,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <ProjectReference Include="../../src/Razor.Core.Sdk/Razor.Core.Sdk.csproj" />
+        <ProjectReference Include="../../src/Razor.Core.Shared/Razor.Core.Shared.csproj" />
     </ItemGroup>
 
     <ItemGroup>

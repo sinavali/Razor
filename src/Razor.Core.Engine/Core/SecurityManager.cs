@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Razor.Core.Engine.Core.Exceptions;
 using System.Security.Cryptography;
 using System.Text;
+using System.Reflection;
 
 namespace Razor.Core.Engine.Core;
 
@@ -55,6 +56,9 @@ internal sealed class SecurityManager : ISecurityManager
     private ulong _lastAcceptedSequence;
     private readonly object _lock = new();
     private readonly ILogger<SecurityManager>? _logger;
+
+    private static readonly Action<ILogger, ulong, ulong, Exception?> _logRejectedMessage =
+        LoggerMessage.Define<ulong, ulong>(LogLevel.Warning, 0, "Rejected replayed or out-of-order message: sequence {Sequence} is not greater than last accepted {LastAccepted}.");
 
     /// <summary>Initializes a new security manager.</summary>
     public SecurityManager(ILogger<SecurityManager>? logger)
@@ -193,10 +197,7 @@ internal sealed class SecurityManager : ISecurityManager
             // and out-of-order messages (Product Model 6.1 replay protection).
             if (sequence <= _lastAcceptedSequence)
             {
-                _logger?.LogWarning(
-                    "Rejected replayed or out-of-order message: sequence {Sequence} is not greater than last accepted {LastAccepted}.",
-                    sequence,
-                    _lastAcceptedSequence);
+                _logRejectedMessage(_logger, sequence, _lastAcceptedSequence, null);
                 throw new SecurityException(
                     $"Rejected message with sequence {sequence}: strictly-increasing sequence validation failed (last accepted {_lastAcceptedSequence}).");
             }
@@ -259,7 +260,7 @@ internal sealed class SecurityManager : ISecurityManager
 
             byte[] bytes = File.ReadAllBytes(location);
             byte[] actualHash = SHA256.HashData(bytes);
-            string actualHashHex = Convert.ToHexString(actualHash).ToLowerInvariant();
+            string actualHashHex = Convert.ToHexString(actualHash).ToUpperInvariant();
 
             return string.Equals(actualHashHex, pinnedHash, StringComparison.OrdinalIgnoreCase);
         }

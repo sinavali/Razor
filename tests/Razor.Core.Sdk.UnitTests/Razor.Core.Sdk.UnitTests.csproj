@@ -25,6 +25,7 @@
 
     <ItemGroup>
         <ProjectReference Include="../../src/Razor.Core.Sdk/Razor.Core.Sdk.csproj" />
+        <ProjectReference Include="../../src/Razor.Core.Shared/Razor.Core.Shared.csproj" />
     </ItemGroup>
 
 </Project>

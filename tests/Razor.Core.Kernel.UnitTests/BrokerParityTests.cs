@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------------
 
 using System.Globalization;
+using System.Threading;
 using Razor.Core.Kernel.Brokers;
 using Razor.Core.Kernel.Clock;
 using Razor.Core.Kernel.Telemetry;
@@ -29,7 +30,7 @@ public sealed class BrokerParityTests
         {
             AssetClass = AssetClass.Forex,
             MarginMode = MarginMode.Isolated,
-            PendingTrigger = PendingOrderTriggerMode.Exchange,
+            PendingTrigger = PendingOrderTriggerMode.UseMidPrice,
             MarginCurrency = marginCurrency,
             ContractSize = 100_000,
             TickSize = 0.0001,
@@ -77,7 +78,7 @@ public sealed class BrokerParityTests
     // ── Bug (a): SimulatedBroker open‑commission must be charged at close ──────
 
     [Fact]
-    public void SimulatedBroker_ChargesOpenCommissionAtClose()
+    public async Task SimulatedBroker_ChargesOpenCommissionAtClose()
     {
         var calc = new FixedCalculator();
         var symbol = CreateSymbol();
@@ -90,20 +91,18 @@ public sealed class BrokerParityTests
         const double openPrice = 1.1000;
         const double volume = 0.1;
         var tick = new Tick(0, openPrice, openPrice, 1, true);
-        broker.OnTickAsync("EURUSD", tick).GetAwaiter().GetResult();
+        await broker.OnTickAsync("EURUSD", tick);
 
-        var open = broker.ExecuteMarketOrderAsync("EURUSD", OrderType.Buy, volume, 0, 0, "").GetAwaiter().GetResult();
+        var open = await broker.ExecuteMarketOrderAsync("EURUSD", OrderType.Buy, volume, 0, 0, "");
         Assert.True(open.Success);
 
         double openCommission = calc.CalculateCommission(symbol, openPrice, volume);
         double balanceAfterOpen = broker.Balance;
 
-        // Close at the same price: PnL = 0, so only commission should be charged.
         var closeTick = new Tick(10, openPrice, openPrice, 1, true);
-        broker.OnTickAsync("EURUSD", closeTick).GetAwaiter().GetResult();
-        broker.CloseAllAsync("EURUSD").GetAwaiter().GetResult();
+        await broker.OnTickAsync("EURUSD", closeTick);
+        await broker.CloseAllAsync("EURUSD");
 
-        // Balance must drop by the full round‑trip commission (open + close), not just close.
         double expectedBalance = balanceAfterOpen - openCommission - openCommission;
         Assert.Equal(expectedBalance, broker.Balance, 6);
     }
@@ -111,44 +110,40 @@ public sealed class BrokerParityTests
     // ── Bug (b): SimulatedBroker _marginUsed currency normalization ────────────
 
     [Fact]
-    public void SimulatedBroker_NormalizesMarginUsedToAccountCurrency()
+    public async Task SimulatedBroker_NormalizesMarginUsedToAccountCurrency()
     {
         var calc = new FixedCalculator();
         var symbol = CreateSymbol();
         var specs = new Dictionary<string, SymbolProperties> { ["EURUSD"] = symbol };
         var clock = new TickClock();
 
-        // Account currency differs from the symbol quote currency -> conversion applies.
         var broker = new SimulatedBroker(calc, specs, initialBalance: 100_000, leverage: 100, clock,
             currencyConverter: new FixedConverter(), accountCurrency: "USD");
 
         const double openPrice = 1.1000;
         const double volume = 0.1;
         var tick = new Tick(0, openPrice, openPrice, 1, true);
-        broker.OnTickAsync("EURUSD", tick).GetAwaiter().GetResult();
+        await broker.OnTickAsync("EURUSD", tick);
 
-        var open = broker.ExecuteMarketOrderAsync("EURUSD", OrderType.Buy, volume, 0, 0, "").GetAwaiter().GetResult();
+        var open = await broker.ExecuteMarketOrderAsync("EURUSD", OrderType.Buy, volume, 0, 0, "");
         Assert.True(open.Success);
 
         double requiredMargin = calc.CalculateRequiredMargin(symbol, openPrice, volume, 100);
         double expectedMargin = requiredMargin * ConversionRate;
 
-        // Margin must be stored in account currency immediately after execution.
         Assert.Equal(expectedMargin, broker.MarginUsed, 6);
 
-        // And must remain consistent after a tick update (UpdatePositions path).
         var tick2 = new Tick(20, openPrice + 0.0010, openPrice + 0.0010, 1, true);
-        broker.OnTickAsync("EURUSD", tick2).GetAwaiter().GetResult();
+        await broker.OnTickAsync("EURUSD", tick2);
         Assert.Equal(expectedMargin, broker.MarginUsed, 6);
 
-        // Free margin = equity − marginUsed (both account currency).
         Assert.Equal(broker.Equity - expectedMargin, broker.FreeMargin, 6);
     }
 
     // ── Bug (c): LiveBroker persists _marginUsed mid‑tick ─────────────────────
 
     [Fact]
-    public void LiveBroker_PersistsMarginUsedMidTick()
+    public async Task LiveBroker_PersistsMarginUsedMidTick()
     {
         var calc = new FixedCalculator();
         var symbol = CreateSymbol();
@@ -172,23 +167,19 @@ public sealed class BrokerParityTests
 
         var adapter = new MockAdapter(calc, symbol, position, balance: 100_000, equity: 100_000);
 
-        using var metrics = new CoreMetrics("broker-parity-test");
-        var broker = new LiveBroker(adapter, magicNumber: 1, leverage: 100, new TickClock(), new SystemClock(), metrics,
+        await using var metrics = new CoreMetrics("broker-parity-test");
+        await using var broker = new LiveBroker(adapter, magicNumber: 1, leverage: 100, new TickClock(), new SystemClock(), metrics,
             currencyConverter: new FixedConverter(), accountCurrency: "USD");
 
-        broker.InitializeLiveStateAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await broker.InitializeLiveStateAsync(CancellationToken.None);
 
         double expectedMargin = calc.CalculateRequiredMargin(symbol, position.OpenPrice, position.Volume, 100) * ConversionRate;
         Assert.Equal(expectedMargin, broker.MarginUsed, 6);
 
-        // Simulate stale mid‑tick state (e.g. between syncs) by resetting margin to 0
-        // through the internal field via reflection.
         var marginField = typeof(LiveBroker).GetField("_marginUsed", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         marginField.SetValue(broker, 0.0);
         Assert.Equal(0.0, broker.MarginUsed, 6);
 
-        // Drive a tick through the background processor. ProcessTickAsync recomputes
-        // totalMargin and (after the fix) assigns it to _marginUsed.
         broker.OnTickReceived("EURUSD", new Tick(30, 1.1010, 1.1010, 1, true));
 
         bool refreshed = SpinWait.SpinUntil(() => Math.Abs(broker.MarginUsed - expectedMargin) < 1e-6, TimeSpan.FromSeconds(2));
@@ -228,7 +219,7 @@ public sealed class BrokerParityTests
         public Task NotifyFileSafeToDeleteAsync(string p) => Task.CompletedTask;
         public Task SubscribeAsync(string s) => Task.CompletedTask;
         public Task UnsubscribeAsync(string s) => Task.CompletedTask;
-        public event Action<string, Tick>? OnTickReceived;
+        public event Action<string, Tick>? OnTickReceived = delegate { };
         public Task<AdapterOrderResponse> ExecuteOrderAsync(AdapterOrderRequest r)
             => Task.FromResult(new AdapterOrderResponse { Success = true });
         public Task<AdapterOrderResponse> ModifyOrderAsync(long t, double? sl = null, double? tp = null, double? pr = null)
@@ -243,7 +234,7 @@ public sealed class BrokerParityTests
         public Task<IReadOnlyList<Order>> GetPendingOrdersAsync() => Task.FromResult<IReadOnlyList<Order>>(Array.Empty<Order>());
         public Task<SymbolProperties?> GetSymbolPropertiesAsync(string s, CancellationToken ct = default)
             => Task.FromResult<SymbolProperties?>(_spec);
-        public event Action<ExecutionReport>? OnExecutionUpdate;
+        public event Action<ExecutionReport>? OnExecutionUpdate = delegate { };
         public TimeFrame[]? GetSupportedTimeframes(string s) => null;
     }
 }

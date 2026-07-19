@@ -1,5 +1,6 @@
 using Razor.Core.Sdk.Shared;
 using Razor.Core.Sdk.Slots;
+using Razor.Core.Sdk.Slots.NeuralNetwork;
 using System.Collections.Immutable;
 
 namespace Razor.Core.Sdk.UnitTests.Shared;

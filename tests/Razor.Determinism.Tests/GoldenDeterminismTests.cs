@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Razor.Core.Kernel.Backtesting;
 using Razor.Core.Kernel.Clock;
+using Razor.Core.Kernel.Configuration;
 using Razor.Core.Sdk.Shared;
 using Razor.Core.Sdk.Slots.Strategy;
 
@@ -26,14 +27,14 @@ public sealed class GoldenDeterminismTests
     private const int GeneInitializationSeed = 42;
 
     [Fact]
-    public void Golden_Backtest_IsDeterministic_AcrossRuns()
+    public async Task Golden_Backtest_IsDeterministic_AcrossRuns()
     {
         var inputA = BuildInput();
         var inputB = BuildInput();
 
         var runner = new BacktestRunner();
-        var resultA = runner.RunAsync(inputA, CancellationToken.None).GetAwaiter().GetResult();
-        var resultB = runner.RunAsync(inputB, CancellationToken.None).GetAwaiter().GetResult();
+        var resultA = await runner.RunAsync(inputA, CancellationToken.None);
+        var resultB = await runner.RunAsync(inputB, CancellationToken.None);
 
         var hashA = HashHistory(resultA.History);
         var hashB = HashHistory(resultB.History);
