@@ -8,7 +8,7 @@ public class StateManagerGeneticOptimizerStateTests
     [Fact]
     public async Task SaveAndLoadOptimizationState_RoundTripsGeneticOptimizerState()
     {
-        await using var stateManager = new StateManager();
+        using var stateManager = new StateManager();
         var optimizationId = $"opt_{Guid.NewGuid():N}";
         var population = new GeneticOptimizerState
         {
@@ -30,9 +30,9 @@ public class StateManagerGeneticOptimizerStateTests
             StartTime = DateTime.UtcNow
         };
 
-        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None);
+        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None).ConfigureAwait(false);
 
-        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None);
+        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None).ConfigureAwait(false);
 
         Assert.NotNull(loaded);
         Assert.NotNull(loaded!.Population);
@@ -47,7 +47,7 @@ public class StateManagerGeneticOptimizerStateTests
     [Fact]
     public async Task SaveOptimizationState_WithNullPopulation_PersistsNull()
     {
-        await using var stateManager = new StateManager();
+        using var stateManager = new StateManager();
         var optimizationId = $"opt_{Guid.NewGuid():N}";
         var state = new OptimizationState
         {
@@ -59,9 +59,9 @@ public class StateManagerGeneticOptimizerStateTests
             StartTime = DateTime.UtcNow
         };
 
-        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None);
+        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None).ConfigureAwait(false);
 
-        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None);
+        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None).ConfigureAwait(false);
 
         Assert.NotNull(loaded);
         Assert.Null(loaded!.Population);

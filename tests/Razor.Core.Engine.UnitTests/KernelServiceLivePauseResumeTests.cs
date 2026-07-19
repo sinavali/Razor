@@ -33,11 +33,11 @@ public class KernelServiceLivePauseResumeTests
         var taskState = CreateTaskState(adapter, tickHandler);
         SetActiveTasks(kernel, taskState);
 
-        Assert.Single(adapter.OnTickReceived.GetInvocationList());
+        Assert.Single(adapter.TickHandlers.GetInvocationList());
 
         await kernel.PauseLiveAsync("task-1", CancellationToken.None);
 
-        Assert.Null(adapter.OnTickReceived);
+        Assert.Null(adapter.TickHandlers);
     }
 
     [Fact]
@@ -52,12 +52,12 @@ public class KernelServiceLivePauseResumeTests
         SetActiveTasks(kernel, taskState);
 
         adapter.OnTickReceived -= tickHandler;
-        Assert.Null(adapter.OnTickReceived);
+        Assert.Null(adapter.TickHandlers);
 
         await kernel.ResumeLiveAsync("task-1", CancellationToken.None);
 
-        Assert.NotNull(adapter.OnTickReceived);
-        Assert.Same(tickHandler, adapter.OnTickReceived);
+        Assert.NotNull(adapter.TickHandlers);
+        Assert.Same(tickHandler, adapter.TickHandlers);
     }
 
     [Fact]
@@ -72,10 +72,10 @@ public class KernelServiceLivePauseResumeTests
         SetActiveTasks(kernel, taskState);
 
         await kernel.PauseLiveAsync("task-1", CancellationToken.None);
-        Assert.Null(adapter.OnTickReceived);
+        Assert.Null(adapter.TickHandlers);
 
         await kernel.ResumeLiveAsync("task-1", CancellationToken.None);
-        Assert.Same(tickHandler, adapter.OnTickReceived);
+        Assert.Same(tickHandler, adapter.TickHandlers);
     }
 
     private static object CreateTaskState(IAdapterCapability adapter, Action<string, Tick> tickHandler)
@@ -119,7 +119,13 @@ public class KernelServiceLivePauseResumeTests
         public Task NotifyFileSafeToDeleteAsync(string filePath) => Task.CompletedTask;
         public Task SubscribeAsync(string symbol) => Task.CompletedTask;
         public Task UnsubscribeAsync(string symbol) => Task.CompletedTask;
-        public event Action<string, Tick>? OnTickReceived;
+        private Action<string, Tick>? _onTickReceived;
+        public event Action<string, Tick>? OnTickReceived
+        {
+            add { _onTickReceived += value; }
+            remove { _onTickReceived -= value; }
+        }
+        public Action<string, Tick>? TickHandlers => _onTickReceived;
         public Task<AdapterOrderResponse> ExecuteOrderAsync(AdapterOrderRequest request) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
         public Task<AdapterOrderResponse> ModifyOrderAsync(long ticket, double? sl = null, double? tp = null, double? price = null) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
         public Task<AdapterOrderResponse> ClosePositionAsync(long ticket, double? volume = null) => Task.FromResult<AdapterOrderResponse>(new AdapterOrderResponse());
@@ -128,7 +134,12 @@ public class KernelServiceLivePauseResumeTests
         public Task<IReadOnlyList<Position>> GetActivePositionsAsync() => Task.FromResult<IReadOnlyList<Position>>(Array.Empty<Position>());
         public Task<IReadOnlyList<Order>> GetPendingOrdersAsync() => Task.FromResult<IReadOnlyList<Order>>(Array.Empty<Order>());
         public Task<SymbolProperties?> GetSymbolPropertiesAsync(string symbol, CancellationToken cancellationToken = default) => Task.FromResult<SymbolProperties?>(null);
-        public event Action<ExecutionReport>? OnExecutionUpdate;
+        private Action<ExecutionReport>? _onExecutionUpdate;
+        public event Action<ExecutionReport>? OnExecutionUpdate
+        {
+            add { _onExecutionUpdate += value; }
+            remove { _onExecutionUpdate -= value; }
+        }
         public TimeFrame[]? GetSupportedTimeframes(string symbol) => null;
     }
 
