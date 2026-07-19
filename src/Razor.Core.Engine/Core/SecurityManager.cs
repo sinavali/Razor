@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Razor.Core.Engine.Core.Exceptions;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Reflection;

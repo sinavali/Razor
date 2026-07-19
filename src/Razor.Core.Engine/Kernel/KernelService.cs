@@ -545,41 +545,55 @@ internal sealed class KernelService : IKernelService, IDisposable
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Pausing unsubscribes the tick handler from the adapter so no new ticks are processed,
-    /// and replaces the cancellation token source so any in-flight work can observe cancellation.
+    /// Pausing unsubscribes the tick handler from the adapter so no new ticks are processed.
     /// Existing positions and orders remain open.
     /// </remarks>
-    public Task PauseLiveAsync(string taskId, CancellationToken cancellationToken)
+    public async Task PauseLiveAsync(string taskId, CancellationToken cancellationToken)
     {
-        if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker broker)
+        await _taskLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            if (state.Adapter != null && state.TickHandler != null)
+            if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker)
             {
-                state.Adapter.OnTickReceived -= state.TickHandler;
+                if (state.Adapter != null && state.TickHandler != null)
+                {
+                    state.Adapter.OnTickReceived -= state.TickHandler;
+                }
+                _logger.LogInformation("Paused live task {TaskId}", taskId);
             }
             state.DisposeCts();
             _activeTasks[taskId] = state with { Cts = new CancellationTokenSource() };
             _logLivePaused(_logger, taskId, null);
         }
-        return Task.CompletedTask;
+        finally
+        {
+            _taskLock.Release();
+        }
     }
 
     /// <inheritdoc/>
     /// <remarks>
     /// Resuming resubscribes the tick handler to the adapter so ticks are processed again.
-    /// The cancellation token source is left intact from the pause operation.
     /// </remarks>
-    public Task ResumeLiveAsync(string taskId, CancellationToken cancellationToken)
+    public async Task ResumeLiveAsync(string taskId, CancellationToken cancellationToken)
     {
-        if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker broker)
+        await _taskLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            if (state.Adapter != null && state.TickHandler != null)
+            if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker)
             {
-                state.Adapter.OnTickReceived += state.TickHandler;
+                if (state.Adapter != null && state.TickHandler != null)
+                {
+                    state.Adapter.OnTickReceived += state.TickHandler;
+                }
+                _logger.LogInformation("Resumed live task {TaskId}", taskId);
             }
             _logLiveResumed(_logger, taskId, null);
         }
-        return Task.CompletedTask;
+        finally
+        {
+            _taskLock.Release();
+        }
     }
 
     /// <inheritdoc/>
