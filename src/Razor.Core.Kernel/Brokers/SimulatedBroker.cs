@@ -232,15 +232,16 @@ public sealed class SimulatedBroker : IBroker
             }
 
             double requiredMargin = _calculator.CalculateRequiredMargin(spec, price, volume, _leverage);
-            if (FreeMargin < requiredMargin - 1e-8)
+            double conversionRate = GetConversionRate(symbol);
+            double marginInAccountCurrency = requiredMargin * conversionRate;
+            if (FreeMargin < marginInAccountCurrency - 1e-8)
             {
                 return Task.FromResult(new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" });
             }
 
             // DAT: normalize margin to account currency (matches tick-update path which
             // stores totalUsedMargin converted) so MarginUsed/FreeMargin stay consistent.
-            double executionConversionRate = GetConversionRate(symbol);
-            _marginUsed += requiredMargin * executionConversionRate;
+            _marginUsed += marginInAccountCurrency;
             var ticket = _ticketCounter++;
             _pendingOrders.Add(new Order
             {
@@ -328,7 +329,8 @@ public sealed class SimulatedBroker : IBroker
             if (order != null && _symbolSpecs.TryGetValue(order.Symbol, out var spec))
             {
                 double margin = _calculator.CalculateRequiredMargin(spec, order.Price, order.Volume, _leverage);
-                _marginUsed = Math.Max(0, _marginUsed - margin);
+                double conversionRate = GetConversionRate(order.Symbol);
+                _marginUsed = Math.Max(0, _marginUsed - margin * conversionRate);
             }
 
             int removed = _pendingOrders.RemoveAll(o => o.Ticket == ticket);
@@ -383,7 +385,8 @@ public sealed class SimulatedBroker : IBroker
                     if (_symbolSpecs.TryGetValue(o.Symbol, out var spec))
                     {
                         double margin = _calculator.CalculateRequiredMargin(spec, o.Price, o.Volume, _leverage);
-                        _marginUsed = Math.Max(0, _marginUsed - margin);
+                        double conversionRate = GetConversionRate(o.Symbol);
+                        _marginUsed = Math.Max(0, _marginUsed - margin * conversionRate);
                     }
                     _pendingOrders.RemoveAt(i);
                 }
@@ -457,7 +460,9 @@ public sealed class SimulatedBroker : IBroker
         execPrice = _calculator.NormalizePrice(spec, execPrice);
 
         double requiredMargin = _calculator.CalculateRequiredMargin(spec, execPrice, volume, _leverage);
-        if (FreeMargin < requiredMargin - 1e-8)
+        double conversionRate = GetConversionRate(symbol);
+        double marginInAccountCurrency = requiredMargin * conversionRate;
+        if (FreeMargin < marginInAccountCurrency - 1e-8)
         {
             return new AdapterOrderResponse { Success = false, ErrorMessage = "Insufficient margin" };
         }
@@ -482,8 +487,7 @@ public sealed class SimulatedBroker : IBroker
         };
 
         _positions.Add(position);
-        double execConversionRate = GetConversionRate(symbol);
-        _marginUsed += requiredMargin * execConversionRate;
+        _marginUsed += marginInAccountCurrency;
         UpdateDrawdowns();
 
         _messageBus?.Publish(new OrderExecutedEvent
@@ -718,7 +722,9 @@ public sealed class SimulatedBroker : IBroker
         var spec = _symbolSpecs[o.Symbol];
         OrderType execDir = (o.Type == OrderType.BuyLimit || o.Type == OrderType.BuyStop) ? OrderType.Buy : OrderType.Sell;
         double reqMargin = _calculator.CalculateRequiredMargin(spec, price, o.Volume, _leverage);
-        if (FreeMargin < reqMargin - 1e-8)
+        double conversionRate = GetConversionRate(o.Symbol);
+        double marginInAccountCurrency = reqMargin * conversionRate;
+        if (FreeMargin < marginInAccountCurrency - 1e-8)
         {
             return;
         }
@@ -727,9 +733,6 @@ public sealed class SimulatedBroker : IBroker
         double execPx = execDir == OrderType.Buy ? price + slippage : price - slippage;
         execPx = _calculator.NormalizePrice(spec, execPx);
         double comm = _calculator.CalculateCommission(spec, execPx, o.Volume);
-        double conversionRate = GetConversionRate(o.Symbol);
-        double marginInAccountCurrency = reqMargin * conversionRate;
-
         var newPos = new MutablePosition
         {
             Ticket = _ticketCounter++,
