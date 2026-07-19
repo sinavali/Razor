@@ -114,7 +114,7 @@ public class KernelServiceLivePauseResumeTests
         public Task ReloadExtensionsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task ActivateExtensionsAsync(string adapterName, string strategyName, string? nnModelName, string[] hookPluginNames, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task DeployExtensionAsync(string name, byte[] binaryData, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task RemoveExtensionAsync(string name) => Task.CompletedTask;
+        public Task RemoveExtensionAsync(string name, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<object> GetManifestAsync(CancellationToken cancellationToken) => Task.FromResult<object>(new object());
         public IStrategyCapability? CreateTransientStrategy(string strategyName) => null;
         public void EnableBehaviorLoggingOnStrategy(string sessionId, int snapshotIntervalSeconds = 10) { }
@@ -134,18 +134,36 @@ public class KernelServiceLivePauseResumeTests
 
     private sealed class StubMessageBus : IMessageBus
     {
+        public void Publish<T>(T message) where T : IMessage { }
+        public IDisposable Subscribe<T>(Action<T> handler) where T : IMessage => new Unsubscriber(() => { });
         public Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SubscribeAsync(string topic, Action<string> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UnsubscribeAsync(string topic, Action<string> handler, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private sealed class Unsubscriber : IDisposable
+        {
+            private readonly Action _onDispose;
+            public Unsubscriber(Action onDispose) => _onDispose = onDispose;
+            public void Dispose() => _onDispose();
+        }
     }
 
     private sealed class StubCoreMetrics : ICoreMetrics
     {
+        public bool IsConnected { get; set; }
+        public string AdapterName { get; set; } = string.Empty;
+        public void SetConnectionState(bool connected, string adapterName) { }
         public void RecordBacktestDuration(string taskId, double seconds) { }
         public void RecordLiveTick(string taskId, string symbol) { }
         public void RecordOrderPlaced(string taskId) { }
         public void RecordOrderFilled(string taskId) { }
         public void IncrementActiveTasks() { }
         public void DecrementActiveTasks() { }
+        public void RecordLiveTickLatency(long ticks) { }
+        public void RecordGaFitnessImprovement(double improvement) { }
+        public void RecordBacktestTicksPerSecond(double ticksPerSec) { }
+        public void RecordLiveOrderLatency(long milliseconds) { }
+        public void RecordLiveOrderRejection() { }
+        public void RecordOptimizationDuration(double seconds) { }
     }
 }
