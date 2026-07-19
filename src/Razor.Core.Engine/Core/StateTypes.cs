@@ -60,9 +60,6 @@ internal sealed record LiveState
 
     /// <summary>Gets the start time of the task.</summary>
     public DateTime StartTime { get; init; }
-
-    /// <summary>Gets the ISO currency code for the trading account.</summary>
-    public string AccountCurrency { get; init; } = string.Empty;
 }
 
 /// <summary>
