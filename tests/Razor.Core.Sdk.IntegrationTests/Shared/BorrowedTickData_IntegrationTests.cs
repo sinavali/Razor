@@ -1,6 +1,7 @@
 using Razor.Core.Sdk.Shared;
 using Razor.Core.Sdk.Slots;
 using Razor.Core.Sdk.Slots.Adapter;
+using Razor.Core.Shared;
 
 namespace Razor.Core.Sdk.IntegrationTests.Shared;
 
@@ -102,8 +103,8 @@ public sealed class BorrowedTickData_IntegrationTests : IDisposable
             adapter);
 
         await data.DisposeAsync();
-        Assert.Throws<ObjectDisposedException>(() => mm1[0]);
-        Assert.Throws<ObjectDisposedException>(() => mm2[0]);
+        Assert.Throws<ObjectDisposedException>(() => { var _ = mm1[0]; });
+        Assert.Throws<ObjectDisposedException>(() => { var _ = mm2[0]; });
         Assert.Equal(2, adapter.NotifyCount);
     }
 
@@ -156,7 +157,7 @@ public sealed class BorrowedTickData_IntegrationTests : IDisposable
         Assert.Equal(count, adapter.NotifyCount);
         for (int i = 0; i < count; i++)
         {
-            Assert.Throws<ObjectDisposedException>(() => mmLists[i][0]);
+            Assert.Throws<ObjectDisposedException>(() => { var _ = mmLists[i][0]; });
         }
     }
 

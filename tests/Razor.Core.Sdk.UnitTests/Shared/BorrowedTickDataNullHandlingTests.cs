@@ -1,6 +1,7 @@
 using Razor.Core.Sdk.Shared;
 using Razor.Core.Sdk.Slots;
 using Razor.Core.Sdk.Slots.Adapter;
+using Razor.Core.Shared;
 
 namespace Razor.Core.Sdk.UnitTests.Shared;
 

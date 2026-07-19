@@ -197,7 +197,10 @@ internal sealed class SecurityManager : ISecurityManager
             // and out-of-order messages (Product Model 6.1 replay protection).
             if (sequence <= _lastAcceptedSequence)
             {
-                _logRejectedMessage(_logger, sequence, _lastAcceptedSequence, null);
+                if (_logger != null)
+                {
+                    _logRejectedMessage(_logger, sequence, _lastAcceptedSequence, null);
+                }
                 throw new SecurityException(
                     $"Rejected message with sequence {sequence}: strictly-increasing sequence validation failed (last accepted {_lastAcceptedSequence}).");
             }

@@ -1,4 +1,5 @@
 using Razor.Core.Sdk.Shared;
+using Razor.Core.Shared;
 
 namespace Razor.Core.Sdk.IntegrationTests.Shared;
 

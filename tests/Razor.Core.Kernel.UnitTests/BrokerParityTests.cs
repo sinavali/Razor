@@ -167,11 +167,11 @@ public sealed class BrokerParityTests
 
         var adapter = new MockAdapter(calc, symbol, position, balance: 100_000, equity: 100_000);
 
-        await using var metrics = new CoreMetrics("broker-parity-test");
-        await using var broker = new LiveBroker(adapter, magicNumber: 1, leverage: 100, new TickClock(), new SystemClock(), metrics,
+        using var metrics = new CoreMetrics("broker-parity-test");
+        using var broker = new LiveBroker(adapter, magicNumber: 1, leverage: 100, new TickClock(), new SystemClock(), metrics,
             currencyConverter: new FixedConverter(), accountCurrency: "USD");
 
-        await broker.InitializeLiveStateAsync(CancellationToken.None);
+        await broker.InitializeLiveStateAsync(CancellationToken.None).ConfigureAwait(false);
 
         double expectedMargin = calc.CalculateRequiredMargin(symbol, position.OpenPrice, position.Volume, 100) * ConversionRate;
         Assert.Equal(expectedMargin, broker.MarginUsed, 6);
