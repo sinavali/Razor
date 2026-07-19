@@ -1,3 +1,5 @@
+using Razor.Core.Sdk.Shared;
+
 namespace Razor.Core.Sdk.UnitTests;
 
 public class SdkVersionAttributeTests
