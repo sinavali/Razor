@@ -649,10 +649,11 @@ public sealed class SimulatedBroker : IBroker
         double closedSwap = p.Swap * (closeVolume / p.Volume);
         double realizedProfit = (closedRawPnl - closeComm) * conversionRate + closedSwap;
 
-        // DAT: the opening commission booked on the position was never charged to
-        // the balance when the trade was opened; charge it now at close so the
-        // account balance reflects the full cost of the round-trip trade.
-        _balance += realizedProfit - p.Commission;
+        // realizedProfit already debits the close-leg commission in account
+        // currency; the open-leg commission (p.Commission) is the same per-leg
+        // cost and must not be debited again here, otherwise the round-trip
+        // commission is double-counted.
+        _balance += realizedProfit;
         MutablePosition historyRecord;
 
         if (isPartial)
