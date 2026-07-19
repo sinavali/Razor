@@ -3,9 +3,15 @@ namespace Razor.Core.Engine.UnitTests;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Razor.Core.Engine.Extensions;
 using Razor.Core.Engine.Kernel;
+using Razor.Core.Kernel.Messaging;
+using Razor.Core.Kernel.Telemetry;
+using Razor.Core.Sdk.Hooks;
 using Razor.Core.Sdk.Shared;
 using Razor.Core.Sdk.Slots.Adapter;
+using Razor.Core.Sdk.Slots.NeuralNetwork;
+using Razor.Core.Sdk.Slots.Strategy;
 
 public class KernelServiceLivePauseResumeTests
 {
@@ -94,7 +100,7 @@ public class KernelServiceLivePauseResumeTests
     private static void SetActiveTasks(KernelService kernel, object taskState)
     {
         var field = typeof(KernelService).GetField("_activeTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var dict = (ConcurrentDictionary<string, TaskState>)field!.GetValue(kernel)!;
+        var dict = (ConcurrentDictionary<string, object>)field!.GetValue(kernel)!;
         dict["task-1"] = taskState;
     }
 
@@ -118,10 +124,11 @@ public class KernelServiceLivePauseResumeTests
 
     private sealed class StubHookRegistry : IHookRegistry
     {
-        public event Action<string, object>? OnHookTriggered;
-        public IReadOnlyList<IHookPlugin> Plugins => Array.Empty<IHookPlugin>();
-        public void Register(IHookPlugin plugin) { }
-        public void Unregister(string pluginName) { }
+        public IBacktestHooks Backtest => null!;
+        public ILiveHooks Live => null!;
+        public IOptimizationHooks Optimization => null!;
+        public IReportHooks Report => null!;
+        public void ClearAll() { }
         public Task TriggerAsync(string hookName, object context, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
