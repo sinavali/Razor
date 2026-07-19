@@ -890,7 +890,14 @@ public sealed class SimulatedBroker : IBroker
 
     private bool InvokeOrderValidationFilter(AdapterOrderRequest request, out AdapterOrderRequest filtered, out string? reason)
     {
-        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks!.OnOrderValidation).Entries;
+        if (_hooks == null)
+        {
+            filtered = request;
+            reason = null;
+            return true;
+        }
+
+        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks.OnOrderValidation).Entries;
         var ctx = new BacktestContext(_clock, new Tick(), 0, 0, _equity, _balance, 0, this, null!, new List<Position>(),
             "backtest.order.validation");
         var result = HookInvoker.InvokeFilterChain(entries, request, ctx);
@@ -901,7 +908,14 @@ public sealed class SimulatedBroker : IBroker
 
     private bool InvokeOrderBeforeExecuteFilter(AdapterOrderRequest request, out AdapterOrderRequest filtered, out string? reason)
     {
-        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks!.OnOrderBeforeExecute).Entries;
+        if (_hooks == null)
+        {
+            filtered = request;
+            reason = null;
+            return true;
+        }
+
+        var entries = ((FilterRegistration<AdapterOrderRequest>)_hooks.OnOrderBeforeExecute).Entries;
         var ctx = new BacktestContext(_clock, new Tick(), 0, 0, _equity, _balance, 0, this, null!, new List<Position>(),
             "backtest.order.before_execute");
         var result = HookInvoker.InvokeFilterChain(entries, request, ctx);
@@ -912,7 +926,12 @@ public sealed class SimulatedBroker : IBroker
 
     private void InvokeOrderAfterExecuteHook(AdapterOrderRequest request, AdapterOrderResponse response)
     {
-        var entries = ((ActionRegistration<(AdapterOrderRequest, AdapterOrderResponse)>)_hooks!.OnOrderAfterExecute).Entries;
+        if (_hooks == null)
+        {
+            return;
+        }
+
+        var entries = ((ActionRegistration<(AdapterOrderRequest, AdapterOrderResponse)>)_hooks.OnOrderAfterExecute).Entries;
         var ctx = new BacktestContext(_clock, new Tick(), 0, 0, _equity, _balance, 0, this, null!, new List<Position>(),
             "backtest.order.after_execute");
         HookInvoker.InvokeActionChain(entries, (request, response), ctx);
