@@ -553,17 +553,19 @@ internal sealed class KernelService : IKernelService, IDisposable
         await _taskLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker)
+            if (_activeTasks.TryGetValue(taskId, out var state))
             {
-                if (state.Adapter != null && state.TickHandler != null)
+                if (state.Broker is LiveBroker)
                 {
-                    state.Adapter.OnTickReceived -= state.TickHandler;
+                    if (state.Adapter != null && state.TickHandler != null)
+                    {
+                        state.Adapter.OnTickReceived -= state.TickHandler;
+                    }
                 }
-                _logger.LogInformation("Paused live task {TaskId}", taskId);
+                state.DisposeCts();
+                _activeTasks[taskId] = state with { Cts = new CancellationTokenSource() };
+                _logLivePaused(_logger, taskId, null);
             }
-            state.DisposeCts();
-            _activeTasks[taskId] = state with { Cts = new CancellationTokenSource() };
-            _logLivePaused(_logger, taskId, null);
         }
         finally
         {
@@ -580,15 +582,17 @@ internal sealed class KernelService : IKernelService, IDisposable
         await _taskLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_activeTasks.TryGetValue(taskId, out var state) && state.Broker is LiveBroker)
+            if (_activeTasks.TryGetValue(taskId, out var state))
             {
-                if (state.Adapter != null && state.TickHandler != null)
+                if (state.Broker is LiveBroker)
                 {
-                    state.Adapter.OnTickReceived += state.TickHandler;
+                    if (state.Adapter != null && state.TickHandler != null)
+                    {
+                        state.Adapter.OnTickReceived += state.TickHandler;
+                    }
                 }
-                _logger.LogInformation("Resumed live task {TaskId}", taskId);
+                _logLiveResumed(_logger, taskId, null);
             }
-            _logLiveResumed(_logger, taskId, null);
         }
         finally
         {
