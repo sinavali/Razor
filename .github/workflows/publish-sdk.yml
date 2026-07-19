@@ -1,5 +1,8 @@
-name: Publish SDK to GitHub Packages
+name: Build and Package SDK (artifact-only)
 
+# Artifact-only: builds and packs the SDK and uploads the .nupkg as a workflow
+# artifact. NO automatic push to NuGet or GitHub Packages (no-deploy constraint,
+# issue #3). Publishing is manual/opt-in and never auto-runs on push.
 on:
   push:
     tags:
@@ -9,10 +12,6 @@ on:
 jobs:
   publish-sdk:
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout repository
@@ -47,8 +46,10 @@ jobs:
             --output ./nupkg \
             /p:Version=${{ steps.version.outputs.VERSION }}
 
-      - name: Push to GitHub Packages
-        run: |
-          dotnet nuget push ./nupkg/*.nupkg \
-            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
-            --api-key ${{ secrets.GITHUB_TOKEN }}
+      # Artifact-only: publish the packed .nupkg as a workflow artifact.
+      # No automatic push to NuGet or GitHub Packages (no-deploy constraint).
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: razor-sdk-${{ steps.version.outputs.VERSION }}
+          path: ./nupkg/*.nupkg

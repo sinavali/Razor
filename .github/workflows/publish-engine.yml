@@ -1,4 +1,8 @@
-name: Build and Package Engine
+name: Build and Package Engine (artifact-only)
+
+# Artifact-only: builds and packages the Engine and uploads it as a workflow
+# artifact. NO deploy step and NO push to any registry (no-deploy constraint,
+# issue #3). Publishing is manual/opt-in.
 
 on:
   push:
