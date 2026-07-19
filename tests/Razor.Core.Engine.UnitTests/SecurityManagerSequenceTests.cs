@@ -1,3 +1,6 @@
+using Razor.Core.Engine.Core;
+using Razor.Core.Engine.Core.Exceptions;
+
 namespace Razor.Core.Engine.UnitTests;
 
 public class SecurityManagerSequenceTests
@@ -45,7 +48,7 @@ public class SecurityManagerSequenceTests
 
         receiver.DecryptMessage(cipherText);
 
-        Assert.Throws<SecurityException>(() => receiver.DecryptMessage(cipherText));
+        Assert.Throws<SecurityException>(() => { receiver.DecryptMessage(cipherText); });
     }
 
     [Fact]
@@ -69,6 +72,6 @@ public class SecurityManagerSequenceTests
 
         receiver.DecryptMessage(secondCipher);
 
-        Assert.Throws<SecurityException>(() => receiver.DecryptMessage(firstCipher));
+        Assert.Throws<SecurityException>(() => { receiver.DecryptMessage(firstCipher); });
     }
 }

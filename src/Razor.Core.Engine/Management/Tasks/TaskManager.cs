@@ -109,8 +109,8 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 OrderGuardTimeoutSeconds = state.OrderGuardTimeoutSeconds,
                 StopOutLevel = state.StopOutLevel,
                 MaxOpenPositions = state.MaxOpenPositions,
-                Genes = state.Genes,
                 NeuralNetworkName = state.NeuralNetworkName ?? string.Empty,
+                Genes = state.Genes,
                 AccountCurrency = state.AccountCurrency
             };
 
@@ -234,6 +234,7 @@ internal sealed class TaskManager : ITaskManager, IDisposable
                 MaxOpenPositions = liveConfig.MaxOpenPositions,
                 NeuralNetworkName = liveConfig.NeuralNetworkName ?? string.Empty,
                 Genes = liveConfig.Genes,
+                AccountCurrency = liveConfig.AccountCurrency,
                 LastTickTime = null,
                 StartTime = task.StartTime,
                 AccountCurrency = liveConfig.AccountCurrency

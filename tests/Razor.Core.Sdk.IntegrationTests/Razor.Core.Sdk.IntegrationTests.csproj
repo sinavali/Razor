@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -18,10 +18,15 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <ProjectReference Include="../../src/Razor.Core.Sdk/Razor.Core.Sdk.csproj" />
+        <ProjectReference Include="../../src/Razor.Core.Shared/Razor.Core.Shared.csproj" />
     </ItemGroup>
 
     <ItemGroup>
         <Using Include="Xunit"/>
+        <Using Include="Razor.Core.Sdk.Shared"/>
+        <Using Include="Razor.Core.Shared"/>
+        <Using Include="Razor.Core.Sdk.Slots.Adapter"/>
+        <Using Include="Razor.Core.Sdk.Slots.NeuralNetwork"/>
     </ItemGroup>
 
 </Project>

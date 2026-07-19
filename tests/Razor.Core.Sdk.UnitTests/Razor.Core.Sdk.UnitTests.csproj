@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -21,10 +21,15 @@
 
     <ItemGroup>
         <Using Include="Xunit"/>
+        <Using Include="Razor.Core.Sdk.Shared"/>
+        <Using Include="Razor.Core.Shared"/>
+        <Using Include="Razor.Core.Sdk.Slots.Adapter"/>
+        <Using Include="Razor.Core.Sdk.Slots.NeuralNetwork"/>
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="../../src/Razor.Core.Sdk/Razor.Core.Sdk.csproj" />
+        <ProjectReference Include="../../src/Razor.Core.Shared/Razor.Core.Shared.csproj" />
     </ItemGroup>
 
 </Project>
