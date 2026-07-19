@@ -25,7 +25,7 @@ public class KernelServiceLivePauseResumeTests
     [Fact]
     public async Task PauseLiveAsync_UnsubscribesTickHandler()
     {
-        var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
+        using var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
         var adapter = new StubAdapter();
         var tickHandler = (Action<string, Tick>)((symbol, tick) => { });
 
@@ -33,6 +33,7 @@ public class KernelServiceLivePauseResumeTests
         var taskState = CreateTaskState(adapter, tickHandler);
         SetActiveTasks(kernel, taskState);
 
+        Assert.NotNull(adapter.TickHandlers);
         Assert.Single(adapter.TickHandlers.GetInvocationList());
 
         await kernel.PauseLiveAsync("task-1", CancellationToken.None);
@@ -43,7 +44,7 @@ public class KernelServiceLivePauseResumeTests
     [Fact]
     public async Task ResumeLiveAsync_ResubscribesTickHandler()
     {
-        var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
+        using var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
         var adapter = new StubAdapter();
         var tickHandler = (Action<string, Tick>)((symbol, tick) => { });
 
@@ -63,7 +64,7 @@ public class KernelServiceLivePauseResumeTests
     [Fact]
     public async Task PauseThenResume_HandlerIsRestored()
     {
-        var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
+        using var kernel = new KernelService(_extensionManager, _hookRegistry, _messageBus, _metrics, _logger, _loggerFactory);
         var adapter = new StubAdapter();
         var tickHandler = (Action<string, Tick>)((symbol, tick) => { });
 
@@ -75,6 +76,7 @@ public class KernelServiceLivePauseResumeTests
         Assert.Null(adapter.TickHandlers);
 
         await kernel.ResumeLiveAsync("task-1", CancellationToken.None);
+        Assert.NotNull(adapter.TickHandlers);
         Assert.Same(tickHandler, adapter.TickHandlers);
     }
 

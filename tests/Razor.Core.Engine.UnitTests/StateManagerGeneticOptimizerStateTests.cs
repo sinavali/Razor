@@ -30,9 +30,9 @@ public class StateManagerGeneticOptimizerStateTests
             StartTime = DateTime.UtcNow
         };
 
-        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None).ConfigureAwait(false);
+        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None);
 
-        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None).ConfigureAwait(false);
+        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None);
 
         Assert.NotNull(loaded);
         Assert.NotNull(loaded!.Population);
@@ -59,9 +59,9 @@ public class StateManagerGeneticOptimizerStateTests
             StartTime = DateTime.UtcNow
         };
 
-        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None).ConfigureAwait(false);
+        await stateManager.SaveOptimizationStateAsync(optimizationId, state, CancellationToken.None);
 
-        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None).ConfigureAwait(false);
+        var loaded = await stateManager.LoadOptimizationStateAsync(optimizationId, CancellationToken.None);
 
         Assert.NotNull(loaded);
         Assert.Null(loaded!.Population);
